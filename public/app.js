@@ -14,6 +14,7 @@ const screens = {
 const SMART_WAIT_STATUS = "espera_inteligente";
 const CANCELABLE_STATUSES = new Set(["aguardando", "proximo", "chamado", SMART_WAIT_STATUS, "standby"]);
 const QR_SECTORS = new Set(["acougue", "frios", "padaria"]);
+const LOCATION_CACHE_MS = 5 * 60 * 1000;
 const shoppingList = new Set();
 let cartItems = [];
 const identity = getOrCreateIdentity();
@@ -30,6 +31,13 @@ let previousTicketStatuses = new Map();
 let countdownTimer = null;
 let activeJoinSector = null;
 let productsRendered = false;
+let locationState = {
+  status: "idle",
+  value: null,
+  checkedAt: 0,
+  promise: null,
+  error: ""
+};
 
 const productGroups = [
   group("Açougue", [
@@ -74,6 +82,7 @@ async function init() {
   connectRealtime();
   startCountdownTimer();
   navigate("home");
+  warmupLocation();
 }
 
 function getOrCreateIdentity() {
@@ -534,13 +543,17 @@ async function getPresencePayload(sectorId) {
   }
   if (storedToken) return { qrToken: storedToken };
 
-  const currentLocation = await requestLocation();
-  return currentLocation ? { location: currentLocation } : {};
+  const currentLocation = await ensureLocation();
+  return { location: currentLocation };
 }
 
-function confirmSectorPresence(sectorId) {
-  registerSectorPresence(sectorId);
-  navigate("sectors");
+async function confirmSectorPresence(sectorId) {
+  try {
+    await ensureLocation({ force: true });
+    navigate("sectors");
+  } catch (exception) {
+    alert(exception.message);
+  }
 }
 
 function registerSectorPresence(sectorId, token = null) {
@@ -559,7 +572,7 @@ function syncPresenceStatus() {
 
   status.textContent = confirmed.length
     ? `Confirmado: ${confirmed.join(", ")}`
-    : "Nenhum setor confirmado.";
+    : locationStatusText();
 
   document.querySelectorAll("[data-qr-checkin]").forEach((button) => {
     const sectorId = button.dataset.qrCheckin;
@@ -571,17 +584,70 @@ function sectorNameFallback(sectorId) {
   return { acougue: "Açougue", frios: "Frios", padaria: "Padaria" }[sectorId] || sectorId;
 }
 
+function warmupLocation() {
+  ensureLocation().catch(() => {});
+}
+
+async function ensureLocation(options = {}) {
+  if (hasFreshLocation() && !options.force) return locationState.value;
+  if (locationState.promise && !options.force) return locationState.promise;
+
+  locationState.status = "loading";
+  locationState.error = "";
+  syncPresenceStatus();
+
+  locationState.promise = requestLocation()
+    .then((value) => {
+      locationState.status = "ready";
+      locationState.value = value;
+      locationState.checkedAt = Date.now();
+      locationState.error = "";
+      return value;
+    })
+    .catch((error) => {
+      locationState.status = "error";
+      locationState.error = error.message;
+      throw error;
+    })
+    .finally(() => {
+      locationState.promise = null;
+      syncPresenceStatus();
+    });
+
+  return locationState.promise;
+}
+
+function hasFreshLocation() {
+  return Boolean(locationState.value && Date.now() - locationState.checkedAt < LOCATION_CACHE_MS);
+}
+
+function locationStatusText() {
+  if (hasFreshLocation()) return "Localizacao confirmada automaticamente.";
+  if (locationState.status === "loading") return "Confirmando localizacao automaticamente...";
+  if (locationState.status === "error") return locationState.error || "Nao foi possivel confirmar a localizacao.";
+  return "Localizacao sera confirmada automaticamente ao solicitar senha.";
+}
+
 function requestLocation() {
-  if (!("geolocation" in navigator)) return Promise.resolve(null);
-  return new Promise((resolve) => {
+  if (!("geolocation" in navigator)) {
+    return Promise.reject(new Error("Seu navegador nao permite localizacao automatica."));
+  }
+  return new Promise((resolve, reject) => {
     navigator.geolocation.getCurrentPosition(
       (position) => resolve({
         latitude: position.coords.latitude,
         longitude: position.coords.longitude,
         accuracy: position.coords.accuracy
       }),
-      () => resolve(null),
-      { enableHighAccuracy: true, timeout: 6000, maximumAge: 30000 }
+      (error) => {
+        const messages = {
+          1: "Autorize a localizacao do navegador para solicitar senha automaticamente.",
+          2: "Nao foi possivel encontrar sua localizacao agora.",
+          3: "A localizacao demorou para responder. Tente novamente."
+        };
+        reject(new Error(messages[error.code] || "Nao foi possivel confirmar sua localizacao."));
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: LOCATION_CACHE_MS }
     );
   });
 }
