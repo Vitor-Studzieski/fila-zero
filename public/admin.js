@@ -3,6 +3,7 @@ let adminUsers = [];
 let adminMetrics = { sectors: [], satisfaction: { count: 0, average: 0 } };
 let adminSource = null;
 let currentUser = null;
+let adminPollingTimer = null;
 
 initAdmin();
 
@@ -44,6 +45,18 @@ function connectAdminRealtime() {
     renderAdmin();
     await loadMetrics();
   });
+  adminSource.addEventListener("error", () => startAdminPolling());
+  startAdminPolling();
+}
+
+function startAdminPolling() {
+  if (adminPollingTimer) return;
+  adminPollingTimer = setInterval(async () => {
+    try {
+      await loadAdminState();
+      await loadMetrics();
+    } catch {}
+  }, 3000);
 }
 
 function renderAdmin() {
@@ -128,6 +141,7 @@ async function saveSector(event) {
     method: "PUT",
     body: data
   });
+  await loadAdminState();
 }
 
 async function createUser(event) {
@@ -157,7 +171,7 @@ async function api(path, options = {}) {
     headers: { "content-type": "application/json" },
     body: options.body ? JSON.stringify(options.body) : undefined
   });
-  const payload = await response.json();
+  const payload = await response.json().catch(() => ({ error: "Backend indisponivel." }));
   if (!response.ok || payload.error) throw new Error(payload.error || "Falha na API.");
   return payload;
 }

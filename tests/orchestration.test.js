@@ -17,7 +17,7 @@ test.before(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fila-zero-test-"));
   server = spawn(process.execPath, ["--no-warnings", "server/server.js"], {
     cwd: path.resolve(__dirname, ".."),
-    env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir },
+    env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, API_ONLY: "1" },
     stdio: "ignore"
   });
   await waitForServer();

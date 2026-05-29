@@ -41,7 +41,7 @@ async function api(path, options = {}) {
     headers: { "content-type": "application/json" },
     body: options.body ? JSON.stringify(options.body) : undefined
   });
-  const payload = await response.json();
+  const payload = await response.json().catch(() => ({ error: "Backend indisponivel." }));
   if (!response.ok || payload.error) throw new Error(payload.error || "Falha na API.");
   return payload;
 }

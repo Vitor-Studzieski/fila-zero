@@ -1,17 +1,22 @@
 const http = require("node:http");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { DatabaseSync } = require("node:sqlite");
-const next = require("next");
 
 const PORT = Number(process.env.PORT || 3000);
 const ROOT = path.resolve(__dirname, "..");
-const DATA_DIR = process.env.DATA_DIR ? path.resolve(process.env.DATA_DIR) : path.join(ROOT, "data");
+const DATA_DIR = process.env.DATA_DIR
+  ? path.resolve(process.env.DATA_DIR)
+  : process.env.VERCEL
+    ? path.join(os.tmpdir(), "fila-zero-data")
+    : path.join(ROOT, "data");
 const DB_PATH = path.join(DATA_DIR, "fila-zero.sqlite");
 const dev = process.env.NODE_ENV !== "production";
-const nextApp = next({ dev, dir: ROOT });
-const nextHandler = nextApp.getRequestHandler();
+const isStandaloneServer = require.main === module;
+const apiOnly = process.env.API_ONLY === "1";
+let nextHandler = null;
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -48,8 +53,27 @@ const LOGIN_LOCK_MS = 15 * 60 * 1000;
 
 bootstrap();
 
-nextApp.prepare().then(() => {
-  const server = http.createServer(async (req, res) => {
+if (isStandaloneServer) startStandaloneServer();
+
+function startStandaloneServer() {
+  if (apiOnly) {
+    listen(createHttpServer());
+    startBackgroundJobs();
+    return;
+  }
+
+  const next = require("next");
+  const nextApp = next({ dev, dir: ROOT });
+  nextHandler = nextApp.getRequestHandler();
+  nextApp.prepare().then(() => {
+    listen(createHttpServer());
+  });
+
+  startBackgroundJobs();
+}
+
+function createHttpServer() {
+  return http.createServer(async (req, res) => {
     try {
       applySecurityHeaders(req, res);
       const url = new URL(req.url, `http://${req.headers.host}`);
@@ -63,20 +87,28 @@ nextApp.prepare().then(() => {
       sendJson(res, 500, { error: "Erro interno do servidor." });
     }
   });
+}
 
+function listen(server) {
   server.listen(PORT, () => {
     console.log(`Fila Zero Next.js rodando em http://localhost:${PORT}`);
   });
-});
+}
 
-setInterval(() => {
+function startBackgroundJobs() {
+  setInterval(() => {
+    runScheduledJobs();
+  }, 1000);
+
+  setInterval(() => {
+    expireStaleActiveTickets();
+    expireAbsentCalls();
+  }, 15000);
+}
+
+function runScheduledJobs() {
   autoCallReadyTickets();
-}, 1000);
-
-setInterval(() => {
-  expireStaleActiveTickets();
-  expireAbsentCalls();
-}, 15000);
+}
 
 function bootstrap() {
   db.exec(`
@@ -273,6 +305,8 @@ function migrateSchema() {
 }
 
 async function handleApi(req, res, url) {
+  runScheduledJobs();
+
   if (req.method === "POST" && url.pathname === "/api/auth/login") {
     const body = await readBody(req);
     const result = loginUser(body);
@@ -301,6 +335,16 @@ async function handleApi(req, res, url) {
       ? requireAuth(req, res, STAFF_ROLES)
       : requireAuth(req, res, ["customer"]);
     if (!user) return;
+    if (!isStandaloneServer) {
+      const data = url.searchParams.get("scope") === "staff" ? getStaffState(user) : getCustomerState(user.customerId);
+      res.writeHead(200, {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache, no-transform",
+        connection: "close"
+      });
+      res.end(`event: state\ndata: ${JSON.stringify(data)}\n\n`);
+      return;
+    }
     openEventStream(req, res, url, user);
     return;
   }
@@ -496,6 +540,10 @@ async function handlePage(req, res, url) {
     }
   }
   if (requested !== url.pathname) req.url = `${requested}${url.search}`;
+  if (!nextHandler) {
+    sendJson(res, 404, { error: "Pagina nao disponivel neste processo." });
+    return;
+  }
   await nextHandler(req, res);
 }
 
@@ -1545,3 +1593,8 @@ function readBody(req) {
     req.on("error", reject);
   });
 }
+
+module.exports = {
+  applySecurityHeaders,
+  handleApi
+};

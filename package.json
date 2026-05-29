@@ -3,10 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "description": "Aplicativo Fila Zero com backend, SQLite, SSE, painel do atendente e painel administrativo.",
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "node --no-warnings server/server.js",
     "start": "node --no-warnings server/server.js",
-    "build": "next build",
+    "build": "next build --webpack",
     "check": "node --check server/server.js && node --check public/app.js && node --check public/attendant.js && node --check public/admin.js && node --check public/login.js && node --check tests/orchestration.test.js",
     "test": "node --test tests/orchestration.test.js"
   },

@@ -1,6 +1,7 @@
 let staffState = { sectors: [] };
 let staffSource = null;
 let currentUser = null;
+let staffPollingTimer = null;
 
 initAttendant();
 
@@ -23,6 +24,15 @@ function connectStaffRealtime() {
     staffState = JSON.parse(event.data);
     renderAttendant();
   });
+  staffSource.addEventListener("error", () => startStaffPolling());
+  startStaffPolling();
+}
+
+function startStaffPolling() {
+  if (staffPollingTimer) return;
+  staffPollingTimer = setInterval(() => {
+    loadStaffState().catch(() => {});
+  }, 3000);
 }
 
 function renderAttendant() {
@@ -91,14 +101,17 @@ function ticketActions(ticket) {
 
 async function callNext(sectorId) {
   await api(`/api/sectors/${sectorId}/call-next`, { method: "POST" });
+  await loadStaffState();
 }
 
 async function startTicket(ticketId) {
   await api(`/api/tickets/${ticketId}/confirm`, { method: "POST" });
+  await loadStaffState();
 }
 
 async function finishTicket(ticketId) {
   await api(`/api/tickets/${ticketId}/finish`, { method: "POST" });
+  await loadStaffState();
 }
 
 function ticketStatus(ticket) {
@@ -122,7 +135,7 @@ async function api(path, options = {}) {
     headers: { "content-type": "application/json" },
     body: options.body ? JSON.stringify(options.body) : undefined
   });
-  const payload = await response.json();
+  const payload = await response.json().catch(() => ({ error: "Backend indisponivel." }));
   if (!response.ok || payload.error) throw new Error(payload.error || "Falha na API.");
   return payload;
 }

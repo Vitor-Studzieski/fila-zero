@@ -29,6 +29,7 @@ let currentSector = null;
 let activeQueues = {};
 let sectors = {};
 let stateSource = null;
+let pollingTimer = null;
 let previousTicketStatuses = new Map();
 let countdownTimer = null;
 let activeJoinSector = null;
@@ -118,6 +119,15 @@ function connectRealtime() {
   stateSource?.close();
   stateSource = new EventSource("/api/events");
   stateSource.addEventListener("state", (event) => applyState(JSON.parse(event.data)));
+  stateSource.addEventListener("error", () => startStatePolling());
+  startStatePolling();
+}
+
+function startStatePolling() {
+  if (pollingTimer) return;
+  pollingTimer = setInterval(() => {
+    loadState().catch(() => {});
+  }, 3000);
 }
 
 function applyState(state) {
@@ -643,21 +653,25 @@ async function addCurrentProduct() {
   const productId = document.querySelector("#addProduct").dataset.productId;
   if (!productId) return;
   const item = findProduct(productId);
-  await api("/api/cart/items", {
-    method: "POST",
-    body: {
-      customerId: identity.customerId,
-      productId,
-      productName: item.name,
-      sectorName: item.sector,
-      price: item.price
-    }
-  });
-  await loadCart();
-  shoppingList.add(productId);
-  document.querySelector("#addProduct").textContent = "Produto na lista";
-  document.querySelector("#toast").classList.add("visible");
-  updateProductCard(productId);
+  try {
+    await api("/api/cart/items", {
+      method: "POST",
+      body: {
+        customerId: identity.customerId,
+        productId,
+        productName: item.name,
+        sectorName: item.sector,
+        price: item.price
+      }
+    });
+    await loadCart();
+    shoppingList.add(productId);
+    document.querySelector("#addProduct").textContent = "Produto na lista";
+    document.querySelector("#toast").classList.add("visible");
+    updateProductCard(productId);
+  } catch (exception) {
+    alert(exception.message);
+  }
 }
 
 function updateProductCard(productId) {
@@ -741,7 +755,7 @@ async function api(path, options = {}) {
     headers: { "content-type": "application/json" },
     body: options.body ? JSON.stringify(options.body) : undefined
   });
-  const payload = await response.json();
+  const payload = await response.json().catch(() => ({ error: "Backend indisponivel." }));
   if (response.status === 401) {
     location.href = `/login?next=${encodeURIComponent(location.pathname)}`;
     throw new Error("Login necessÃ¡rio.");
