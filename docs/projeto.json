@@ -1,0 +1,226 @@
+{
+  "project_name": "Fila Zero - Supermercado Pompeia",
+  "language": "pt-BR",
+  "prototype_type": "Produto full-stack funcional",
+  "description": "Sistema de fila virtual em Next.js com backend real em Node.js, banco SQLite, API centralizada, autenticação operacional, permissões por perfil, atualização em tempo real via Server-Sent Events, notificações no navegador, painel do atendente e painel administrativo.",
+  "runtime": {
+    "backend": "Node.js HTTP server customizado integrado ao Next.js",
+    "database": "SQLite via node:sqlite",
+    "realtime": "Server-Sent Events",
+    "frontend": "Next.js App Router, React, CSS e JavaScript Vanilla preservado nas interações",
+    "no_external_dependencies": false
+  },
+  "entrypoints": {
+    "customer_app": "/",
+    "attendant_panel": "/attendant",
+    "admin_panel": "/admin",
+    "login": "/login",
+    "api_base": "/api"
+  },
+  "folder_structure": {
+    "app": "Rotas, layout e componentes Next.js.",
+    "server": "Backend Node.js, API, SQLite, SSE e servidor customizado do Next.js.",
+    "public": "Scripts, estilos, imagens e templates HTML legados usados pelas telas Next.",
+    "public/assets": "Imagens e mídia da interface.",
+    "data": "Banco SQLite persistente.",
+    "docs": "Documentação técnica do projeto."
+  },
+  "navigation": {
+    "type": "Single page app em formato mobile",
+    "bottom_tabs": [
+      "Início",
+      "Ofertas",
+      "Senhas",
+      "Clube",
+      "Mais"
+    ]
+  },
+  "functional_behaviors": [
+    "O app inicia sem senha ativa e não exibe números de senha antes da solicitação do cliente.",
+    "Cada senha é emitida pelo backend e persistida no banco.",
+    "A identificação usa customerId e deviceId persistidos no navegador e registrados no backend.",
+    "Ao atualizar a página, o cliente recupera senhas ativas da mesma sessão.",
+    "O cliente pode abrir a mesma sessão em outro dispositivo usando o mesmo customerId na URL.",
+    "A página Ofertas só exibe contexto da senha quando existe fila ativa.",
+    "O painel do atendente chama a próxima senha elegível, inicia atendimento e finaliza pedido.",
+    "O painel administrativo configura setores, balcões, fila base, tempo médio, capacidade e status.",
+    "A emissão de senha exige presença validada por geolocalização dentro do raio da loja ou QR Code do setor.",
+    "O sistema limita a quantidade de senhas ativas por cliente e evita solicitações repetidas.",
+    "Senhas chamadas expiram ou são reagendadas quando o cliente não confirma presença dentro do tempo limite.",
+    "A espera inteligente impede que o mesmo cliente seja chamado simultaneamente em setores diferentes.",
+    "Ao finalizar o pedido atual, somente a próxima senha protegida é chamada.",
+    "As telas recebem atualização em tempo real via SSE.",
+    "Quando uma senha é chamada, o cliente recebe modal e notificação do navegador quando permitido.",
+    "A lista de ofertas é persistida no backend como carrinho do cliente.",
+    "O painel administrativo exibe métricas de atendimento, abandono, espera inteligente e satisfação."
+  ],
+  "presence_validation": {
+    "store_location": {
+      "latitude": -22.1064,
+      "longitude": -50.1746,
+      "radius_meters": 100
+    },
+    "qr_tokens": {
+      "acougue": "***REMOVED***",
+      "frios": "***REMOVED***",
+      "padaria": "***REMOVED***"
+    }
+  },
+  "access_control": {
+    "session_type": "Cookie HTTP-only com validade de 12 horas",
+    "password_storage": "PBKDF2 SHA-256 com salt individual",
+    "roles": [
+      {
+        "id": "attendant",
+        "description": "Atendente com acesso aos setores permitidos."
+      },
+      {
+        "id": "manager",
+        "description": "Gerente com acesso operacional amplo e configuração de setores."
+      },
+      {
+        "id": "admin",
+        "description": "Administrador com acesso total, criação de usuários e configuração de setores."
+      }
+    ],
+    "default_users": [
+      {
+        "email": "***REMOVED***",
+        "password": "***REMOVED***",
+        "role": "admin"
+      },
+      {
+        "email": "***REMOVED***",
+        "password": "***REMOVED***",
+        "role": "attendant",
+        "sector": "acougue"
+      }
+    ]
+  },
+  "database_tables": [
+    "customers",
+    "devices",
+    "users",
+    "auth_sessions",
+    "user_sector_permissions",
+    "sectors",
+    "tickets",
+    "calls",
+    "services",
+    "ratings",
+    "cart_items",
+    "events"
+  ],
+  "api_routes": [
+    "POST /api/auth/login",
+    "POST /api/auth/logout",
+    "GET /api/auth/me",
+    "GET /api/users",
+    "POST /api/users",
+    "POST /api/sessions",
+    "GET /api/state",
+    "GET /api/history",
+    "GET /api/metrics",
+    "GET /api/staff/state",
+    "GET /api/events",
+    "POST /api/tickets",
+    "POST /api/tickets/:id/confirm",
+    "POST /api/tickets/:id/finish",
+    "POST /api/sectors/:id/call-next",
+    "PUT /api/sectors/:id",
+    "POST /api/ratings",
+    "GET /api/cart",
+    "POST /api/cart/items",
+    "DELETE /api/cart/items/:id"
+  ],
+  "ticket_orchestration": {
+    "feature_name": "Orquestração Inteligente de Senhas",
+    "goal": "Impedir que o mesmo cliente seja chamado simultaneamente em mais de um setor.",
+    "customer_identifier": [
+      "customerId",
+      "deviceId"
+    ],
+    "statuses": [
+      "aguardando",
+      "proximo",
+      "chamado",
+      "em_atendimento",
+      "espera_inteligente",
+      "atendido",
+      "expirado"
+    ],
+    "blocking_statuses": [
+      "chamado",
+      "em_atendimento"
+    ],
+    "smart_wait_rule": "A senha entra em espera_inteligente quando o cliente já está chamado ou em atendimento em outro setor. Ao finalizar o pedido atual, somente a próxima senha protegida é chamada.",
+    "absence_rule": "Senhas chamadas sem confirmação são reagendadas uma vez e expiram após nova ausência.",
+    "test_access": "Disponível no console do navegador em window.ticketOrchestration."
+  },
+  "project_files": [
+    {
+      "path": "app/layout.jsx",
+      "description": "Layout raiz do Next.js com metadados e estilos globais."
+    },
+    {
+      "path": "app/page.jsx",
+      "description": "Rota Next.js do aplicativo do cliente."
+    },
+    {
+      "path": "app/attendant/page.jsx",
+      "description": "Rota Next.js do painel do atendente."
+    },
+    {
+      "path": "app/admin/page.jsx",
+      "description": "Rota Next.js do painel administrativo."
+    },
+    {
+      "path": "app/login/page.jsx",
+      "description": "Rota Next.js da tela de login operacional."
+    },
+    {
+      "path": "app/_components/HtmlTemplate.jsx",
+      "description": "Componente de transição que reaproveita os templates HTML dentro das rotas Next."
+    },
+    {
+      "path": "server/server.js",
+      "description": "Backend HTTP, servidor customizado Next.js, API REST, SQLite, SSE e regras centrais da fila."
+    },
+    {
+      "path": "public/index.html",
+      "description": "Aplicativo mobile do cliente."
+    },
+    {
+      "path": "public/app.js",
+      "description": "Cliente web conectado ao backend, SSE e notificações."
+    },
+    {
+      "path": "public/attendant.html",
+      "description": "Painel do atendente."
+    },
+    {
+      "path": "public/attendant.js",
+      "description": "Ações de chamada, início e finalização de atendimento."
+    },
+    {
+      "path": "public/admin.html",
+      "description": "Painel administrativo."
+    },
+    {
+      "path": "public/admin.js",
+      "description": "Configuração de setores e criação de usuários."
+    },
+    {
+      "path": "public/login.html",
+      "description": "Tela de login operacional."
+    },
+    {
+      "path": "public/login.js",
+      "description": "Autenticação dos usuários operacionais."
+    },
+    {
+      "path": "public/styles.css",
+      "description": "Estilos compartilhados do app e painéis."
+    }
+  ]
+}

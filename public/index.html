@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fila Zero - Supermercado Pompeia</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app-stage">
+      <section class="phone" aria-label="Aplicativo Fila Zero">
+        <header class="appbar">
+          <button class="icon-button" id="backButton" aria-label="Voltar">
+            <svg class="top-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m15 18-6-6 6-6"></path>
+            </svg>
+          </button>
+          <strong id="appTitle">Supermercado Pompeia</strong>
+          <button class="icon-button" id="notifyButton" aria-label="Notificação">
+            <svg class="top-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M10.27 21a2 2 0 0 0 3.46 0"></path>
+              <path d="M4 17h16"></path>
+              <path d="M6 17v-5a6 6 0 0 1 12 0v5"></path>
+              <path d="M9 6V5a3 3 0 0 1 6 0v1"></path>
+            </svg>
+          </button>
+        </header>
+
+        <section class="queue-banner" id="queueBanner">
+          <div>
+            <strong id="bannerTicket"></strong>
+            <span id="bannerText"></span>
+          </div>
+          <div class="mini-bar"><span id="bannerProgress"></span></div>
+        </section>
+
+        <div class="screen-stack">
+          <section class="screen active" data-screen="qr">
+            <div class="check-card">
+              <strong>Check-in da loja</strong>
+              <span>Entre na fila pelo setor onde você está</span>
+            </div>
+            <div class="hero-photo dark"></div>
+            <p class="hint">Use o QR Code do balcão para iniciar um atendimento.</p>
+            <div class="presence-panel">
+              <strong>Check-in por setor</strong>
+              <span id="presenceStatus">Nenhum setor confirmado.</span>
+              <div>
+                <button data-qr-checkin="acougue">Açougue</button>
+                <button data-qr-checkin="frios">Frios</button>
+                <button data-qr-checkin="padaria">Padaria</button>
+              </div>
+            </div>
+            <button class="yellow-action" data-go="sectors">Escolher setor</button>
+          </section>
+
+          <section class="screen" data-screen="home">
+            <input class="search" type="search" placeholder="Buscar ofertas, setores e serviços" aria-label="Buscar ofertas, setores e serviços" />
+            <h3>Acesso rápido</h3>
+            <div class="quick-grid">
+              <button class="quick highlighted" data-go="sectors"><span>FZ</span>Fila Zero</button>
+              <button class="quick" data-go="offers"><span>%</span>Ofertas</button>
+              <button class="quick" data-go="access"><span>C</span>Clube</button>
+              <button class="quick" data-go="access"><span>+</span>Conta</button>
+            </div>
+            <h3>Destaques da Semana</h3>
+            <div class="promo-photo"></div>
+            <article class="promo-copy">
+              <strong>Seleção Pompeia</strong>
+              <p>Ofertas organizadas por setor para aproveitar enquanto acompanha seu atendimento.</p>
+              <button class="blue-action" data-go="offers">Ver ofertas</button>
+            </article>
+            <div class="shelf-photo"></div>
+          </section>
+
+          <section class="screen" data-screen="sectors">
+            <h2>Escolha o setor</h2>
+            <p class="muted center">A senha será criada somente após sua solicitação.</p>
+            <article class="sector-card">
+              <div class="sector-head">
+                <div><strong>Açougue</strong><span>Carnes frescas e cortes especiais</span></div>
+                <b>Balcão 1</b>
+              </div>
+              <div class="sector-meta"><span>Fila atual: 7 pessoas</span><span>Atendimento médio: 42s</span></div>
+              <button class="yellow-action compact" data-join="acougue">Solicitar senha - Açougue</button>
+            </article>
+            <article class="sector-card">
+              <div class="sector-head">
+                <div><strong>Frios e Laticínios</strong><span>Queijos, embutidos e fatiados</span></div>
+                <b>Balcão 2</b>
+              </div>
+              <div class="sector-meta"><span>Fila atual: 4 pessoas</span><span>Atendimento médio: 36s</span></div>
+              <button class="yellow-action compact" data-join="frios">Solicitar senha - Frios</button>
+            </article>
+            <article class="sector-card">
+              <div class="sector-head">
+                <div><strong>Padaria</strong><span>Pães, bolos e salgados frescos</span></div>
+                <b>Balcão 3</b>
+              </div>
+              <div class="sector-meta"><span>Fila atual: 5 pessoas</span><span>Atendimento médio: 34s</span></div>
+              <button class="yellow-action compact" data-join="padaria">Solicitar senha - Padaria</button>
+            </article>
+          </section>
+
+          <section class="screen" data-screen="ticket">
+            <div class="ticket-circle"><span id="ticketNumber">--</span></div>
+            <h3 class="center" id="ticketSector">Nenhuma senha ativa</h3>
+            <p class="muted center" id="ticketSub">Solicite uma senha para acompanhar o atendimento.</p>
+            <div class="row-card"><span>Senha em atendimento</span><strong id="currentQueue">--</strong></div>
+            <div class="active-ticket-list" id="activeTicketList"></div>
+            <div class="quick-add-ticket">
+              <strong>Adicionar outra senha</strong>
+              <div>
+                <button data-quick-join="acougue">Açougue</button>
+                <button data-quick-join="frios">Frios</button>
+                <button data-quick-join="padaria">Padaria</button>
+              </div>
+            </div>
+            <div class="hero-photo small"></div>
+            <button class="yellow-action" data-go="status">Acompanhar senha</button>
+            <button class="soft-action cancel-ticket-action" id="ticketCancelButton">Cancelar senha</button>
+            <button class="blue-action" data-go="offers">Ver ofertas</button>
+          </section>
+
+          <section class="screen" data-screen="status">
+            <h2>Status da fila</h2>
+            <p class="muted center" id="statusSector">Nenhuma senha ativa</p>
+            <div class="progress-donut"><span id="positionNumber">--</span></div>
+            <button class="soft-yellow" id="estimatedTime">Sem atendimento em andamento</button>
+            <div class="info-row"><strong>Tempo estimado</strong><span id="timeInfo">--</span></div>
+            <div class="info-row"><strong>Pessoas na frente</strong><span id="aheadInfo">--</span></div>
+            <button class="soft-action cancel-ticket-action" id="statusCancelButton">Cancelar senha</button>
+            <button class="yellow-action service-finish-action" id="statusFinishButton">Informar fim do pedido</button>
+            <button class="blue-action" data-go="offers">Ver ofertas</button>
+          </section>
+
+          <section class="screen" data-screen="offers">
+            <div class="queue-mini" id="offersQueue"></div>
+            <h2>Ofertas selecionadas</h2>
+            <p class="muted">Produtos organizados por setor para montar sua lista de compras.</p>
+            <div class="cart-panel">
+              <strong>Minha lista</strong>
+              <div id="cartList"></div>
+            </div>
+            <div class="product-list" id="productList"></div>
+          </section>
+
+          <section class="screen" data-screen="detail">
+            <img class="detail-photo" id="detailPhoto" alt="Foto do produto em promoção" />
+            <span class="tag" id="detailSector">Oferta</span>
+            <h2 id="detailName">Produto</h2>
+            <p class="muted" id="detailDescription">Detalhes da oferta selecionada.</p>
+            <div class="price-box">
+              <del id="detailOld">--</del>
+              <strong id="detailPrice">--</strong>
+            </div>
+            <button class="yellow-action" id="addProduct">Adicionar à lista</button>
+            <button class="text-action" data-go="offers">Voltar para ofertas</button>
+            <p class="toast" id="toast">Produto adicionado à lista.</p>
+          </section>
+
+          <section class="screen centered" data-screen="done">
+            <div class="success-ring">OK</div>
+            <h2 id="serviceTitle">Atendimento</h2>
+            <p class="muted center" id="serviceMessage">Acompanhe o pedido em andamento.</p>
+            <div class="service-flow-card">
+              <strong id="serviceCurrent">Senha atual: --</strong>
+              <span id="serviceNext">Nenhuma senha protegida.</span>
+            </div>
+            <button class="yellow-action" id="completeServiceButton">Informar fim do pedido</button>
+            <button class="outline-action" data-go="home">Voltar ao início</button>
+          </section>
+
+          <section class="screen" data-screen="access">
+            <h2>Conta</h2>
+            <p class="muted center">Sua sessão está protegida. Use somente dispositivos confiáveis.</p>
+            <div class="access-grid">
+              <button class="access-card" data-go="home">
+                <svg class="access-icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="m3 11 9-8 9 8"></path>
+                  <path d="M5 10v10h14V10"></path>
+                  <path d="M9 20v-6h6v6"></path>
+                </svg>
+                <strong>Cliente</strong>
+                <span>Solicitar senha e acompanhar atendimento.</span>
+              </button>
+            </div>
+          </section>
+
+          <section class="screen" data-screen="rating">
+            <h2>Como foi sua experiência?</h2>
+            <div class="rating-row">
+              <button data-rating="Ruim">1<span>Ruim</span></button>
+              <button data-rating="Regular">2<span>Regular</span></button>
+              <button data-rating="Ótima">3<span>Ótima</span></button>
+            </div>
+            <label class="textarea-label">Comentário opcional</label>
+            <textarea placeholder="Conte-nos como foi sua experiência..."></textarea>
+            <button class="blue-action" id="sendRating">Enviar avaliação</button>
+            <p class="toast" id="ratingToast">Avaliação enviada. Obrigado!</p>
+          </section>
+        </div>
+
+        <nav class="tabbar" aria-label="Navegação principal">
+          <button data-tab="home" aria-label="Início">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m3 11 9-8 9 8"></path>
+              <path d="M5 10v10h14V10"></path>
+              <path d="M9 20v-6h6v6"></path>
+            </svg>
+            <span>Início</span>
+          </button>
+          <button data-tab="offers" aria-label="Ofertas">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V4h9l8.6 8.6a2 2 0 0 1 0 2.8Z"></path>
+              <path d="M7.5 7.5h.01"></path>
+              <path d="m9 15 6-6"></path>
+              <path d="M9 9h.01"></path>
+              <path d="M15 15h.01"></path>
+            </svg>
+            <span>Ofertas</span>
+          </button>
+          <button data-tab="sectors" class="on" aria-label="Senhas">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M6 4h12a2 2 0 0 1 2 2v3a3 3 0 0 0 0 6v3a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-3a3 3 0 0 0 0-6V6a2 2 0 0 1 2-2Z"></path>
+              <path d="M9 9h6"></path>
+              <path d="M9 15h6"></path>
+            </svg>
+            <span>Senhas</span>
+          </button>
+          <button data-tab="access" aria-label="Clube">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 21s-7-4.4-9-10a5.3 5.3 0 0 1 9-5.4 5.3 5.3 0 0 1 9 5.4c-2 5.6-9 10-9 10Z"></path>
+              <path d="M9 11h6"></path>
+              <path d="M12 8v6"></path>
+            </svg>
+            <span>Clube</span>
+          </button>
+          <button data-tab="access" aria-label="Conta e acesso">
+            <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
+            </svg>
+            <span>Conta</span>
+          </button>
+        </nav>
+
+        <button class="floating-queue" id="floatingQueue" aria-label="Voltar para minha senha">
+          <strong id="floatingTicket"></strong>
+          <span id="floatingTime"></span>
+        </button>
+
+        <button class="floating-finish" id="floatingFinishButton" aria-label="Informar fim do pedido">
+          Informar fim do pedido
+        </button>
+
+        <div class="modal-backdrop" id="callModal">
+          <div class="call-card">
+            <div class="notify-icon">!</div>
+            <h3>É a sua vez</h3>
+            <p id="callText"></p>
+            <button class="blue-action" id="confirmCall">Estou a caminho</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>

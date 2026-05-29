@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Admin - Fila Zero</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="ops-stage">
+      <section class="ops-shell">
+        <header class="ops-header">
+          <div>
+            <span>Fila Zero</span>
+            <h1>Painel administrativo</h1>
+          </div>
+          <nav>
+            <button id="logoutButton">Sair</button>
+          </nav>
+        </header>
+        <section class="ops-users">
+          <div class="ops-card-head">
+            <div>
+              <strong>Métricas operacionais</strong>
+              <span>Tempo médio, abandono, espera inteligente e satisfação.</span>
+            </div>
+          </div>
+          <div class="ops-grid" id="adminMetrics"></div>
+        </section>
+        <div class="ops-grid" id="adminSectors"></div>
+        <section class="ops-users">
+          <div class="ops-card-head">
+            <div>
+              <strong>Usuários e permissões</strong>
+              <span>Crie contas para clientes, funcionários e gestores.</span>
+            </div>
+          </div>
+          <form class="ops-card admin-form" id="userForm">
+            <label>Nome<input name="name" required /></label>
+            <label>E-mail<input type="email" name="email" required /></label>
+            <label>Senha<input type="password" name="password" minlength="6" required /></label>
+            <label>Perfil
+              <select name="role">
+                <option value="customer">Cliente</option>
+                <option value="attendant">Funcionário</option>
+                <option value="manager">Gestor</option>
+              </select>
+            </label>
+            <fieldset class="sector-permissions">
+              <legend>Setores do atendente</legend>
+              <label><input type="checkbox" name="sectorIds" value="acougue" /> Açougue</label>
+              <label><input type="checkbox" name="sectorIds" value="frios" /> Frios</label>
+              <label><input type="checkbox" name="sectorIds" value="padaria" /> Padaria</label>
+            </fieldset>
+            <button class="blue-action compact-action">Criar usuário</button>
+          </form>
+          <div class="ops-grid" id="adminUsers"></div>
+        </section>
+      </section>
+    </main>
+    <script src="admin.js"></script>
+  </body>
+</html>

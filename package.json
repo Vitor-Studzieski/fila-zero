@@ -1,0 +1,18 @@
+{
+  "name": "fila-zero-supermercado-pompeia",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Aplicativo Fila Zero com backend, SQLite, SSE, painel do atendente e painel administrativo.",
+  "scripts": {
+    "dev": "node --no-warnings server/server.js",
+    "start": "node --no-warnings server/server.js",
+    "build": "next build",
+    "check": "node --check server/server.js && node --check public/app.js && node --check public/attendant.js && node --check public/admin.js && node --check public/login.js && node --check tests/orchestration.test.js",
+    "test": "node --test tests/orchestration.test.js"
+  },
+  "dependencies": {
+    "next": "^16.2.6",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  }
+}
