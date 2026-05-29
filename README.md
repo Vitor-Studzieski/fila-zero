@@ -59,6 +59,7 @@ Copie `.env.example` como referencia e configure os valores sensiveis fora do Gi
 Para producao, defina pelo menos:
 
 ```text
+AUTH_SECRET
 BOOTSTRAP_ADMIN_EMAIL
 BOOTSTRAP_ADMIN_PASSWORD
 QR_TOKEN_ACOUGUE
@@ -66,7 +67,7 @@ QR_TOKEN_FRIOS
 QR_TOKEN_PADARIA
 ```
 
-`BOOTSTRAP_ADMIN_PASSWORD` precisa ter ao menos 12 caracteres. Os tokens de QR devem ser longos, aleatorios e diferentes por setor.
+`AUTH_SECRET` precisa ser um segredo fixo com ao menos 32 caracteres. `BOOTSTRAP_ADMIN_PASSWORD` precisa ter ao menos 12 caracteres. Os tokens de QR devem ser longos, aleatorios e diferentes por setor.
 
 ## Banco de dados local
 

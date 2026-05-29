@@ -47,6 +47,7 @@ const LOGIN_ATTEMPT_LIMIT = 5;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
 const CSRF_EXEMPT_PATHS = new Set(["/api/auth/login"]);
+const AUTH_SECRET = authSecret();
 
 bootstrap();
 
@@ -749,8 +750,13 @@ function loginUser(body, req) {
   const expiresAt = new Date(Date.now() + 1000 * SESSION_TTL_SECONDS).toISOString();
   db.prepare("INSERT INTO auth_sessions (id, user_id, csrf_token, created_at, expires_at) VALUES (?, ?, ?, ?, ?)")
     .run(sessionId, user.id, csrfToken, now, expiresAt);
+  const sessionToken = signSessionToken({
+    email: user.email,
+    csrfToken,
+    expiresAt
+  });
   registerEvent("login", "user", user.id, null, null, { email: user.email, role: user.role });
-  return { sessionId, csrfToken, user: userDto(user) };
+  return { sessionId: sessionToken, csrfToken, user: userDto(user) };
 }
 
 function logoutUser(req, res) {
@@ -768,6 +774,11 @@ function getAuthUser(req) {
 function getSessionForRequest(req) {
   const sessionId = getCookie(req, "fz_auth");
   if (!sessionId) return null;
+  const statelessSession = verifySessionToken(sessionId);
+  if (statelessSession) {
+    const user = db.prepare("SELECT * FROM users WHERE email = ? AND status = ?").get(statelessSession.email, "active");
+    return user ? { ...user, csrf_token: statelessSession.csrfToken } : null;
+  }
   return db.prepare(`
     SELECT users.*, auth_sessions.csrf_token AS csrf_token FROM auth_sessions
     JOIN users ON users.id = auth_sessions.user_id
@@ -812,6 +823,41 @@ function appendCookie(res, cookie) {
     return;
   }
   res.setHeader("set-cookie", Array.isArray(current) ? [...current, cookie] : [current, cookie]);
+}
+
+function signSessionToken(payload) {
+  const encoded = base64UrlEncode(JSON.stringify(payload));
+  const signature = signValue(encoded);
+  return `session.${encoded}.${signature}`;
+}
+
+function verifySessionToken(token) {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 3 || parts[0] !== "session") return null;
+  const [, encoded, signature] = parts;
+  if (!safeEqual(signature, signValue(encoded))) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+    if (!payload.email || !payload.csrfToken || new Date(payload.expiresAt).getTime() <= Date.now()) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function signValue(value) {
+  return crypto.createHmac("sha256", AUTH_SECRET).update(value).digest("base64url");
+}
+
+function base64UrlEncode(value) {
+  return Buffer.from(value).toString("base64url");
+}
+
+function authSecret() {
+  if (process.env.AUTH_SECRET && process.env.AUTH_SECRET.length >= 32) return process.env.AUTH_SECRET;
+  if (dev || process.env.ALLOW_DEMO_USERS === "1") return "fila-zero-demo-auth-secret-change-before-production";
+  console.warn("AUTH_SECRET nao configurado. Defina um segredo com ao menos 32 caracteres em producao.");
+  return crypto.randomBytes(32).toString("hex");
 }
 
 function createUser(body) {
