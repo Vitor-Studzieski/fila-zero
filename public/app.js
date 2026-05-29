@@ -534,8 +534,8 @@ async function getPresencePayload(sectorId) {
   }
   if (storedToken) return { qrToken: storedToken };
 
-  const location = await requestLocation();
-  return location ? { location } : {};
+  const currentLocation = await requestLocation();
+  return currentLocation ? { location: currentLocation } : {};
 }
 
 function confirmSectorPresence(sectorId) {
