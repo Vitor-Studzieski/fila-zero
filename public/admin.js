@@ -168,12 +168,28 @@ function roleLabel(role) {
 async function api(path, options = {}) {
   const response = await fetch(path, {
     method: options.method || "GET",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...csrfHeader()
+    },
     body: options.body ? JSON.stringify(options.body) : undefined
   });
   const payload = await response.json().catch(() => ({ error: "Backend indisponivel." }));
   if (!response.ok || payload.error) throw new Error(payload.error || "Falha na API.");
   return payload;
+}
+
+function csrfHeader() {
+  const token = getCookie("fz_csrf");
+  return token ? { "x-csrf-token": token } : {};
+}
+
+function getCookie(name) {
+  return document.cookie
+    .split(";")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(`${name}=`))
+    ?.slice(name.length + 1) || "";
 }
 
 async function requireSession(roles) {

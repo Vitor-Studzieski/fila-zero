@@ -19,14 +19,22 @@ async function route(request) {
 function handleWithNodeResponse(nodeReq, url) {
   return new Promise((resolve) => {
     const chunks = [];
+    const responseHeaders = new Map();
     const headers = new Headers();
     const nodeRes = {
       statusCode: 200,
       setHeader(name, value) {
-        headers.set(name, value);
+        const key = name.toLowerCase();
+        responseHeaders.set(key, value);
+        if (key === "set-cookie" && Array.isArray(value)) {
+          headers.delete("set-cookie");
+          value.forEach((cookie) => headers.append("set-cookie", cookie));
+          return;
+        }
+        headers.set(name, Array.isArray(value) ? value.join(", ") : value);
       },
       getHeader(name) {
-        return headers.get(name);
+        return responseHeaders.get(name.toLowerCase()) || headers.get(name);
       },
       writeHead(status, nextHeaders = {}) {
         this.statusCode = status;

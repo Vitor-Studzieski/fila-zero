@@ -13,11 +13,7 @@ const screens = {
 
 const SMART_WAIT_STATUS = "espera_inteligente";
 const CANCELABLE_STATUSES = new Set(["aguardando", "proximo", "chamado", SMART_WAIT_STATUS, "standby"]);
-const QR_TOKENS = {
-  acougue: "***REMOVED***",
-  frios: "***REMOVED***",
-  padaria: "***REMOVED***"
-};
+const QR_SECTORS = new Set(["acougue", "frios", "padaria"]);
 const shoppingList = new Set();
 let cartItems = [];
 const identity = getOrCreateIdentity();
@@ -532,12 +528,14 @@ function renderCart() {
 async function getPresencePayload(sectorId) {
   const qrToken = new URLSearchParams(location.search).get("qr");
   const storedToken = presenceCheckins[sectorId];
-  if (qrToken || storedToken) return { qrToken: qrToken || storedToken };
-
-  if (!storedToken) {
-    registerSectorPresence(sectorId);
+  if (qrToken) {
+    registerSectorPresence(sectorId, qrToken);
+    return { qrToken };
   }
-  return { qrToken: presenceCheckins[sectorId] || undefined };
+  if (storedToken) return { qrToken: storedToken };
+
+  const location = await requestLocation();
+  return location ? { location } : {};
 }
 
 function confirmSectorPresence(sectorId) {
@@ -545,9 +543,9 @@ function confirmSectorPresence(sectorId) {
   navigate("sectors");
 }
 
-function registerSectorPresence(sectorId) {
-  if (!QR_TOKENS[sectorId]) return;
-  presenceCheckins = { ...presenceCheckins, [sectorId]: QR_TOKENS[sectorId] };
+function registerSectorPresence(sectorId, token = null) {
+  if (!QR_SECTORS.has(sectorId) || !token) return;
+  presenceCheckins = { ...presenceCheckins, [sectorId]: token };
   localStorage.setItem("filaZeroPresenceCheckins", JSON.stringify(presenceCheckins));
   syncPresenceStatus();
 }
@@ -556,7 +554,7 @@ function syncPresenceStatus() {
   const status = document.querySelector("#presenceStatus");
   if (!status) return;
   const confirmed = Object.keys(presenceCheckins)
-    .filter((sectorId) => QR_TOKENS[sectorId] === presenceCheckins[sectorId])
+    .filter((sectorId) => QR_SECTORS.has(sectorId) && presenceCheckins[sectorId])
     .map((sectorId) => sectors[sectorId]?.name || sectorNameFallback(sectorId));
 
   status.textContent = confirmed.length
@@ -752,7 +750,10 @@ function formatTimer(totalSeconds) {
 async function api(path, options = {}) {
   const response = await fetch(path, {
     method: options.method || "GET",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      ...csrfHeader()
+    },
     body: options.body ? JSON.stringify(options.body) : undefined
   });
   const payload = await response.json().catch(() => ({ error: "Backend indisponivel." }));
@@ -762,6 +763,19 @@ async function api(path, options = {}) {
   }
   if (!response.ok || payload.error) throw new Error(payload.error || "Falha na API.");
   return payload;
+}
+
+function csrfHeader() {
+  const token = getCookie("fz_csrf");
+  return token ? { "x-csrf-token": token } : {};
+}
+
+function getCookie(name) {
+  return document.cookie
+    .split(";")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith(`${name}=`))
+    ?.slice(name.length + 1) || "";
 }
 
 async function requireSession(roles) {

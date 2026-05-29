@@ -63,6 +63,47 @@ test("bloqueia senha sem presenca por localizacao ou QR", async () => {
   assert.match(result.error, /localiza|QR Code/i);
 });
 
+test("bloqueia acoes autenticadas sem token CSRF", async () => {
+  const { cookie, identity } = await createCustomer("sem-csrf");
+  const response = await fetch(`${BASE_URL}/api/cart/items`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie
+    },
+    body: JSON.stringify({
+      ...identity,
+      productId: "picanha",
+      productName: "Picanha Bovina",
+      sectorName: "Acougue",
+      price: "R$ 59,90"
+    })
+  });
+  const payload = await response.json();
+  assert.equal(response.status, 403);
+  assert.match(payload.error, /seguranca/i);
+});
+
+test("bloqueia login apos muitas tentativas invalidas", async () => {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const response = await fetch(`${BASE_URL}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: "***REMOVED***", password: "senha-errada" })
+    });
+    assert.equal(response.status, 401);
+  }
+
+  const response = await fetch(`${BASE_URL}/api/auth/login`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email: "***REMOVED***", password: "***REMOVED_DEMO_PASSWORD***" })
+  });
+  const payload = await response.json();
+  assert.equal(response.status, 401);
+  assert.match(payload.error, /Muitas tentativas/i);
+});
+
 test("mantem tempo estimado baseado na posicao real da fila", async () => {
   const firstCustomer = await createCustomer("tempo-primeiro");
   const secondCustomer = await createCustomer("tempo-segundo");
@@ -139,7 +180,12 @@ async function login(email, password) {
     body: JSON.stringify({ email, password })
   });
   assert.ok(response.ok, response.statusText);
-  return response.headers.get("set-cookie").split(";")[0];
+  const setCookie = response.headers.get("set-cookie") || "";
+  const auth = setCookie.match(/fz_auth=[^;,]+/)?.[0];
+  const csrf = setCookie.match(/fz_csrf=[^;,]+/)?.[0];
+  assert.ok(auth, "Cookie de autenticacao ausente.");
+  assert.ok(csrf, "Cookie CSRF ausente.");
+  return `${auth}; ${csrf}`;
 }
 
 async function createCustomer(slug) {
@@ -162,7 +208,8 @@ async function api(pathname, options = {}) {
     method: options.method || "GET",
     headers: {
       "content-type": "application/json",
-      ...(options.cookie ? { cookie: options.cookie } : {})
+      ...(options.cookie ? { cookie: options.cookie } : {}),
+      ...csrfHeader(options.cookie)
     },
     body: options.body ? JSON.stringify(options.body) : undefined
   });
@@ -170,6 +217,11 @@ async function api(pathname, options = {}) {
   if (options.ok === false) return payload;
   assert.ok(response.ok, payload.error || response.statusText);
   return payload;
+}
+
+function csrfHeader(cookie = "") {
+  const token = String(cookie).match(/fz_csrf=([^;]+)/)?.[1];
+  return token ? { "x-csrf-token": token } : {};
 }
 
 async function waitForServer() {

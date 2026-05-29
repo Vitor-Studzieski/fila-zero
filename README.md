@@ -40,7 +40,7 @@ O backend, as paginas Next.js e os arquivos de `public/` rodam pelo mesmo servid
 
 ## Contas de teste
 
-Estas contas sao criadas automaticamente apenas para desenvolvimento/testes:
+Estas contas sao criadas automaticamente apenas em desenvolvimento/testes. Em producao, elas nao sao criadas, a menos que `ALLOW_DEMO_USERS=1` seja definido manualmente.
 
 | Perfil | E-mail | Senha | Acesso |
 | --- | --- | --- | --- |
@@ -51,6 +51,22 @@ Estas contas sao criadas automaticamente apenas para desenvolvimento/testes:
 | Gestor | `***REMOVED***` | `***REMOVED***` | Painel completo |
 
 Nao use essas senhas em producao.
+
+## Variaveis de ambiente
+
+Copie `.env.example` como referencia e configure os valores sensiveis fora do Git.
+
+Para producao, defina pelo menos:
+
+```text
+BOOTSTRAP_ADMIN_EMAIL
+BOOTSTRAP_ADMIN_PASSWORD
+QR_TOKEN_ACOUGUE
+QR_TOKEN_FRIOS
+QR_TOKEN_PADARIA
+```
+
+`BOOTSTRAP_ADMIN_PASSWORD` precisa ter ao menos 12 caracteres. Os tokens de QR devem ser longos, aleatorios e diferentes por setor.
 
 ## Banco de dados local
 
@@ -102,4 +118,6 @@ Executa os testes de orquestracao da fila.
 
 ## Observacoes para deploy
 
-O projeto possui adaptacao para Vercel em `app/api/[...path]/route.js`, mas o SQLite em ambiente serverless deve ser tratado como temporario. Para producao real, use um banco persistente como Vercel Postgres, Neon ou Supabase e remova as contas/senhas padrao.
+O projeto possui adaptacao para Vercel em `app/api/[...path]/route.js`, mas o SQLite em ambiente serverless deve ser tratado como temporario. Para producao real, use um banco persistente como Vercel Postgres, Neon ou Supabase.
+
+As acoes autenticadas usam cookie `HttpOnly` e token CSRF. Se o login funcionar, mas acoes como carrinho ou senha falharem com erro de token de seguranca, recarregue a pagina para sincronizar o cookie `fz_csrf`.

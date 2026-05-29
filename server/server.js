@@ -22,18 +22,13 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new DatabaseSync(DB_PATH);
 const sseClients = new Set();
-const loginAttempts = new Map();
 
 const STORE_LOCATION = {
   latitude: -22.1064,
   longitude: -50.1746,
   radiusMeters: 50000
 };
-const QR_TOKENS = {
-  acougue: "***REMOVED***",
-  frios: "***REMOVED***",
-  padaria: "***REMOVED***"
-};
+const QR_TOKENS = loadQrTokens();
 const MAX_ACTIVE_TICKETS_PER_CUSTOMER = 3;
 const AUTO_CALL_DELAY_SECONDS = 10;
 const CALL_ABSENCE_SECONDS = 10 * 60;
@@ -50,6 +45,8 @@ const CUSTOMER_CANCELABLE_STATUSES = ["aguardando", "proximo", "chamado", "esper
 const LOGIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_ATTEMPT_LIMIT = 5;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
+const SESSION_TTL_SECONDS = 60 * 60 * 12;
+const CSRF_EXEMPT_PATHS = new Set(["/api/auth/login"]);
 
 bootstrap();
 
@@ -236,6 +233,7 @@ function bootstrap() {
     CREATE TABLE IF NOT EXISTS auth_sessions (
       id TEXT PRIMARY KEY,
       user_id TEXT NOT NULL,
+      csrf_token TEXT,
       created_at TEXT NOT NULL,
       expires_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id)
@@ -258,6 +256,14 @@ function bootstrap() {
       price TEXT NOT NULL,
       quantity INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS login_attempts (
+      attempt_key TEXT PRIMARY KEY,
+      count INTEGER NOT NULL,
+      first_attempt_at INTEGER NOT NULL,
+      locked_until INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL
     );
   `);
@@ -302,6 +308,11 @@ function migrateSchema() {
   migrations.forEach(([column, sql]) => {
     if (!columns.includes(column)) db.exec(sql);
   });
+
+  const sessionColumns = db.prepare("PRAGMA table_info(auth_sessions)").all().map((column) => column.name);
+  if (!sessionColumns.includes("csrf_token")) {
+    db.exec("ALTER TABLE auth_sessions ADD COLUMN csrf_token TEXT");
+  }
 }
 
 async function handleApi(req, res, url) {
@@ -309,24 +320,26 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && url.pathname === "/api/auth/login") {
     const body = await readBody(req);
-    const result = loginUser(body);
+    const result = loginUser(body, req);
     if (result.error) {
       sendJson(res, 401, result);
       return;
     }
-    setAuthCookie(res, result.sessionId);
-    sendJson(res, 200, { user: result.user });
+    setAuthCookies(res, result.sessionId, result.csrfToken);
+    sendJson(res, 200, { user: result.user, csrfToken: result.csrfToken });
     return;
   }
 
   if (req.method === "POST" && url.pathname === "/api/auth/logout") {
+    if (!verifyCsrf(req, res, getAuthUser(req))) return;
     logoutUser(req, res);
     sendJson(res, 200, { ok: true });
     return;
   }
 
   if (req.method === "GET" && url.pathname === "/api/auth/me") {
-    sendJson(res, 200, { user: getAuthUser(req) });
+    const user = getAuthUser(req);
+    sendJson(res, 200, { user, csrfToken: user ? getSessionForRequest(req)?.csrf_token || null : null });
     return;
   }
 
@@ -352,6 +365,7 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && url.pathname === "/api/sessions") {
     const user = requireAuth(req, res, ["customer"]);
     if (!user) return;
+    if (!verifyCsrf(req, res, user)) return;
     const body = await readBody(req);
     const session = upsertSession({ ...body, customerId: user.customerId }, req.headers["user-agent"] || "");
     sendJson(res, 200, session);
@@ -388,6 +402,7 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && url.pathname === "/api/tickets") {
     const user = requireAuth(req, res, ["customer"]);
     if (!user) return;
+    if (!verifyCsrf(req, res, user)) return;
     const body = await readBody(req);
     const result = createTicket({ ...body, customerId: user.customerId });
     broadcast();
@@ -398,6 +413,7 @@ async function handleApi(req, res, url) {
   const ticketConfirm = url.pathname.match(/^\/api\/tickets\/([^/]+)\/confirm$/);
   if (req.method === "POST" && ticketConfirm) {
     const user = getAuthUser(req);
+    if (!verifyCsrf(req, res, user)) return;
     const body = await readBody(req);
     if (!canOperateOnTicket(user, ticketConfirm[1], body.customerId)) {
       sendJson(res, 401, { error: "Autenticação necessária." });
@@ -412,6 +428,7 @@ async function handleApi(req, res, url) {
   const ticketFinish = url.pathname.match(/^\/api\/tickets\/([^/]+)\/finish$/);
   if (req.method === "POST" && ticketFinish) {
     const user = getAuthUser(req);
+    if (!verifyCsrf(req, res, user)) return;
     const body = await readBody(req);
     if (!canOperateOnTicket(user, ticketFinish[1], body.customerId)) {
       sendJson(res, 401, { error: "Autenticação necessária." });
@@ -427,6 +444,7 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && ticketCancel) {
     const user = requireAuth(req, res, ["customer"]);
     if (!user) return;
+    if (!verifyCsrf(req, res, user)) return;
     const body = await readBody(req);
     const customerId = body.customerId || user.customerId;
     if (customerId !== user.customerId || !canCustomerAccessTicket(ticketCancel[1], user.customerId)) {
@@ -443,6 +461,7 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && callNext) {
     const user = requireAuth(req, res, STAFF_ROLES);
     if (!user) return;
+    if (!verifyCsrf(req, res, user)) return;
     if (!canAccessSector(user, callNext[1])) {
       sendJson(res, 403, { error: "Usuário sem permissão para este setor." });
       return;
@@ -455,7 +474,9 @@ async function handleApi(req, res, url) {
 
   const sectorUpdate = url.pathname.match(/^\/api\/sectors\/([^/]+)$/);
   if (req.method === "PUT" && sectorUpdate) {
-    if (!requireAuth(req, res, ADMIN_ROLES)) return;
+    const user = requireAuth(req, res, ADMIN_ROLES);
+    if (!user) return;
+    if (!verifyCsrf(req, res, user)) return;
     const body = await readBody(req);
     const result = updateSector(sectorUpdate[1], body);
     broadcast();
@@ -466,6 +487,7 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && url.pathname === "/api/ratings") {
     const user = requireAuth(req, res, ["customer"]);
     if (!user) return;
+    if (!verifyCsrf(req, res, user)) return;
     const body = await readBody(req);
     const result = createRating({ ...body, customerId: user.customerId });
     broadcast();
@@ -483,6 +505,7 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && url.pathname === "/api/cart/items") {
     const user = requireAuth(req, res, ["customer"]);
     if (!user) return;
+    if (!verifyCsrf(req, res, user)) return;
     const body = await readBody(req);
     const result = addCartItem({ ...body, customerId: user.customerId });
     broadcast();
@@ -494,6 +517,7 @@ async function handleApi(req, res, url) {
   if (req.method === "DELETE" && cartDelete) {
     const user = requireAuth(req, res, ["customer"]);
     if (!user) return;
+    if (!verifyCsrf(req, res, user)) return;
     const result = removeCartItem(cartDelete[1], user.customerId);
     broadcast();
     sendApiResult(res, 200, result);
@@ -507,7 +531,9 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "POST" && url.pathname === "/api/users") {
-    if (!requireAuth(req, res, ADMIN_ROLES)) return;
+    const user = requireAuth(req, res, ADMIN_ROLES);
+    if (!user) return;
+    if (!verifyCsrf(req, res, user)) return;
     const body = await readBody(req);
     const result = createUser(body);
     broadcast();
@@ -591,6 +617,11 @@ function sendSse(client) {
 function seedDefaultUsers() {
   deactivateLegacySeedUsers();
 
+  if (!dev && process.env.ALLOW_DEMO_USERS !== "1") {
+    seedProductionBootstrapUser();
+    return;
+  }
+
   Array.from({ length: 10 }, (_, index) => index + 1).forEach((number) => {
     const suffix = String(number).padStart(2, "0");
     seedUser({
@@ -632,6 +663,26 @@ function seedDefaultUsers() {
   });
 }
 
+function seedProductionBootstrapUser() {
+  const hasActiveUser = db.prepare("SELECT 1 FROM users WHERE status = 'active' LIMIT 1").get();
+  if (hasActiveUser) return;
+
+  const email = String(process.env.BOOTSTRAP_ADMIN_EMAIL || "").trim().toLowerCase();
+  const password = String(process.env.BOOTSTRAP_ADMIN_PASSWORD || "");
+  if (!email || password.length < 12) {
+    console.warn("Nenhum usuario inicial foi criado. Configure BOOTSTRAP_ADMIN_EMAIL e BOOTSTRAP_ADMIN_PASSWORD com ao menos 12 caracteres.");
+    return;
+  }
+
+  createUser({
+    name: process.env.BOOTSTRAP_ADMIN_NAME || "Gestor Inicial",
+    email,
+    password,
+    role: "manager",
+    sectorIds: []
+  });
+}
+
 function deactivateLegacySeedUsers() {
   db.prepare(`
     UPDATE users
@@ -648,34 +699,40 @@ function seedUser(user) {
 
 function isLoginLocked(key) {
   const now = Date.now();
-  const entry = loginAttempts.get(key);
+  const entry = db.prepare("SELECT * FROM login_attempts WHERE attempt_key = ?").get(key);
   if (!entry) return false;
-  if (entry.lockedUntil && entry.lockedUntil > now) return true;
-  if (entry.lockedUntil && entry.lockedUntil <= now) loginAttempts.delete(key);
+  if (entry.locked_until && entry.locked_until > now) return true;
+  if (entry.locked_until && entry.locked_until <= now) clearLoginFailures(key);
   return false;
 }
 
 function registerLoginFailure(key) {
   const now = Date.now();
-  const entry = loginAttempts.get(key);
-  const attempts = entry && now - entry.firstAttemptAt <= LOGIN_ATTEMPT_WINDOW_MS
+  const entry = db.prepare("SELECT * FROM login_attempts WHERE attempt_key = ?").get(key);
+  const attempts = entry && now - entry.first_attempt_at <= LOGIN_ATTEMPT_WINDOW_MS
     ? entry.count + 1
     : 1;
-  loginAttempts.set(key, {
-    count: attempts,
-    firstAttemptAt: entry && now - entry.firstAttemptAt <= LOGIN_ATTEMPT_WINDOW_MS ? entry.firstAttemptAt : now,
-    lockedUntil: attempts >= LOGIN_ATTEMPT_LIMIT ? now + LOGIN_LOCK_MS : 0
-  });
+  const firstAttemptAt = entry && now - entry.first_attempt_at <= LOGIN_ATTEMPT_WINDOW_MS ? entry.first_attempt_at : now;
+  const lockedUntil = attempts >= LOGIN_ATTEMPT_LIMIT ? now + LOGIN_LOCK_MS : 0;
+  db.prepare(`
+    INSERT INTO login_attempts (attempt_key, count, first_attempt_at, locked_until, updated_at)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(attempt_key) DO UPDATE SET
+      count = excluded.count,
+      first_attempt_at = excluded.first_attempt_at,
+      locked_until = excluded.locked_until,
+      updated_at = excluded.updated_at
+  `).run(key, attempts, firstAttemptAt, lockedUntil, isoNow());
 }
 
 function clearLoginFailures(key) {
-  loginAttempts.delete(key);
+  db.prepare("DELETE FROM login_attempts WHERE attempt_key = ?").run(key);
 }
 
-function loginUser(body) {
+function loginUser(body, req) {
   const email = String(body.email || "").trim().toLowerCase();
   const password = String(body.password || "");
-  const attemptKey = email || "unknown";
+  const attemptKey = `${clientIp(req)}:${email || "unknown"}`;
   if (isLoginLocked(attemptKey)) {
     return { error: "Muitas tentativas. Aguarde alguns minutos e tente novamente." };
   }
@@ -687,28 +744,46 @@ function loginUser(body) {
   clearLoginFailures(attemptKey);
 
   const sessionId = `auth-${crypto.randomUUID()}`;
+  const csrfToken = crypto.randomBytes(32).toString("hex");
   const now = isoNow();
-  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 12).toISOString();
-  db.prepare("INSERT INTO auth_sessions (id, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)").run(sessionId, user.id, now, expiresAt);
+  const expiresAt = new Date(Date.now() + 1000 * SESSION_TTL_SECONDS).toISOString();
+  db.prepare("INSERT INTO auth_sessions (id, user_id, csrf_token, created_at, expires_at) VALUES (?, ?, ?, ?, ?)")
+    .run(sessionId, user.id, csrfToken, now, expiresAt);
   registerEvent("login", "user", user.id, null, null, { email: user.email, role: user.role });
-  return { sessionId, user: userDto(user) };
+  return { sessionId, csrfToken, user: userDto(user) };
 }
 
 function logoutUser(req, res) {
   const sessionId = getCookie(req, "fz_auth");
   if (sessionId) db.prepare("DELETE FROM auth_sessions WHERE id = ?").run(sessionId);
   res.setHeader("set-cookie", "fz_auth=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
+  appendCookie(res, "fz_csrf=; SameSite=Lax; Path=/; Max-Age=0");
 }
 
 function getAuthUser(req) {
+  const session = getSessionForRequest(req);
+  return session ? userDto(session) : null;
+}
+
+function getSessionForRequest(req) {
   const sessionId = getCookie(req, "fz_auth");
   if (!sessionId) return null;
-  const row = db.prepare(`
-    SELECT users.* FROM auth_sessions
+  return db.prepare(`
+    SELECT users.*, auth_sessions.csrf_token AS csrf_token FROM auth_sessions
     JOIN users ON users.id = auth_sessions.user_id
     WHERE auth_sessions.id = ? AND auth_sessions.expires_at > ? AND users.status = 'active'
   `).get(sessionId, isoNow());
-  return row ? userDto(row) : null;
+}
+
+function verifyCsrf(req, res, user) {
+  if (!user || !["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) return Boolean(user);
+  const session = getSessionForRequest(req);
+  const headerToken = String(req.headers["x-csrf-token"] || "");
+  const cookieToken = getCookie(req, "fz_csrf") || "";
+  const expected = session?.csrf_token || "";
+  if (safeEqual(headerToken, expected) && safeEqual(cookieToken, expected)) return true;
+  sendJson(res, 403, { error: "Token de seguranca invalido. Recarregue a pagina e tente novamente." });
+  return false;
 }
 
 function requireAuth(req, res, roles) {
@@ -724,9 +799,19 @@ function requireAuth(req, res, roles) {
   return user;
 }
 
-function setAuthCookie(res, sessionId) {
+function setAuthCookies(res, sessionId, csrfToken) {
   const secure = dev ? "" : "; Secure";
-  res.setHeader("set-cookie", `fz_auth=${sessionId}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${60 * 60 * 12}${secure}`);
+  res.setHeader("set-cookie", `fz_auth=${sessionId}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`);
+  appendCookie(res, `fz_csrf=${csrfToken}; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`);
+}
+
+function appendCookie(res, cookie) {
+  const current = res.getHeader?.("set-cookie");
+  if (!current) {
+    res.setHeader("set-cookie", cookie);
+    return;
+  }
+  res.setHeader("set-cookie", Array.isArray(current) ? [...current, cookie] : [current, cookie]);
 }
 
 function createUser(body) {
@@ -854,6 +939,39 @@ function validatePresence(body, sectorId) {
   }
 
   return { ok: false, error: "QR Code do setor inválido." };
+}
+
+function loadQrTokens() {
+  const fromJson = parseJsonEnv("QR_TOKENS");
+  const tokens = fromJson && typeof fromJson === "object" ? fromJson : {
+    acougue: process.env.QR_TOKEN_ACOUGUE,
+    frios: process.env.QR_TOKEN_FRIOS,
+    padaria: process.env.QR_TOKEN_PADARIA
+  };
+
+  if (dev || process.env.ALLOW_DEMO_QR_TOKENS === "1") {
+    return {
+      acougue: tokens.acougue || "***REMOVED***",
+      frios: tokens.frios || "***REMOVED***",
+      padaria: tokens.padaria || "***REMOVED***"
+    };
+  }
+
+  return {
+    acougue: tokens.acougue || "",
+    frios: tokens.frios || "",
+    padaria: tokens.padaria || ""
+  };
+}
+
+function parseJsonEnv(name) {
+  if (!process.env[name]) return null;
+  try {
+    return JSON.parse(process.env[name]);
+  } catch {
+    console.warn(`${name} nao contem JSON valido.`);
+    return null;
+  }
 }
 
 function normalizeLocation(location) {
@@ -1546,10 +1664,21 @@ function verifyPassword(password, salt, expectedHash) {
   return crypto.timingSafeEqual(Buffer.from(actualHash, "hex"), Buffer.from(expectedHash, "hex"));
 }
 
+function safeEqual(left, right) {
+  if (!left || !right) return false;
+  const leftBuffer = Buffer.from(String(left));
+  const rightBuffer = Buffer.from(String(right));
+  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
 function getCookie(req, name) {
   const cookies = String(req.headers.cookie || "").split(";").map((item) => item.trim());
   const match = cookies.find((item) => item.startsWith(`${name}=`));
   return match ? decodeURIComponent(match.slice(name.length + 1)) : null;
+}
+
+function clientIp(req) {
+  return String(req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "local").split(",")[0].trim();
 }
 
 function placeholders(values) {
