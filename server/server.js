@@ -618,50 +618,18 @@ function sendSse(client) {
 function seedDefaultUsers() {
   deactivateLegacySeedUsers();
 
+  const configuredDemoUsers = parseJsonEnv("DEMO_USERS_JSON");
+  if (Array.isArray(configuredDemoUsers) && configuredDemoUsers.length) {
+    configuredDemoUsers.forEach(seedUser);
+    return;
+  }
+
   if (!dev && process.env.ALLOW_DEMO_USERS !== "1") {
     seedProductionBootstrapUser();
     return;
   }
 
-  Array.from({ length: 10 }, (_, index) => index + 1).forEach((number) => {
-    const suffix = String(number).padStart(2, "0");
-    seedUser({
-      name: `Cliente ${suffix}`,
-      email: `cliente${suffix}@example.invalid`,
-      password: "***REMOVED_DEMO_PASSWORD***",
-      role: "customer",
-      sectorIds: []
-    });
-  });
-
-  seedUser({
-    name: "Gestor Geral",
-    email: "***REMOVED***",
-    password: "***REMOVED***",
-    role: "manager",
-    sectorIds: []
-  });
-  seedUser({
-    name: "Funcionario Acougue",
-    email: "***REMOVED***",
-    password: "***REMOVED***",
-    role: "attendant",
-    sectorIds: ["acougue"]
-  });
-  seedUser({
-    name: "Funcionario Frios",
-    email: "***REMOVED***",
-    password: "***REMOVED***",
-    role: "attendant",
-    sectorIds: ["frios"]
-  });
-  seedUser({
-    name: "Funcionario Padaria",
-    email: "***REMOVED***",
-    password: "***REMOVED***",
-    role: "attendant",
-    sectorIds: ["padaria"]
-  });
+  seedProductionBootstrapUser();
 }
 
 function seedProductionBootstrapUser() {
@@ -685,11 +653,15 @@ function seedProductionBootstrapUser() {
 }
 
 function deactivateLegacySeedUsers() {
+  const legacyPatterns = parseJsonEnv("LEGACY_USER_EMAIL_PATTERNS");
+  if (!Array.isArray(legacyPatterns) || !legacyPatterns.length) return;
+
+  const placeholders = legacyPatterns.map(() => "email LIKE ?").join(" OR ");
   db.prepare(`
     UPDATE users
     SET status = ?, updated_at = ?
-    WHERE email IN ('***REMOVED***', '***REMOVED***')
-  `).run("inactive", isoNow());
+    WHERE ${placeholders}
+  `).run("inactive", isoNow(), ...legacyPatterns);
 }
 
 function seedUser(user) {

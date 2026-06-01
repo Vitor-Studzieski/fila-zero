@@ -40,17 +40,30 @@ O backend, as paginas Next.js e os arquivos de `public/` rodam pelo mesmo servid
 
 ## Contas de teste
 
-Estas contas sao criadas automaticamente apenas em desenvolvimento/testes. Em producao, elas nao sao criadas, a menos que `ALLOW_DEMO_USERS=1` seja definido manualmente.
+O repositorio nao versiona logins ou senhas de demonstracao. Para criar contas locais ou de demo, configure `DEMO_USERS_JSON` em um arquivo `.env` local ou nas Environment Variables da Vercel.
 
-| Perfil | E-mail | Senha | Acesso |
-| --- | --- | --- | --- |
-| Cliente | `***REMOVED***` ate `***REMOVED***` | `***REMOVED_DEMO_PASSWORD***` | App do cliente e promocoes |
-| Funcionario Acougue | `***REMOVED***` | `***REMOVED***` | Painel do acougue |
-| Funcionario Frios | `***REMOVED***` | `***REMOVED***` | Painel de frios |
-| Funcionario Padaria | `***REMOVED***` | `***REMOVED***` | Painel da padaria |
-| Gestor | `***REMOVED***` | `***REMOVED***` | Painel completo |
+Exemplo de estrutura, usando valores ficticios:
 
-Nao use essas senhas em producao.
+```json
+[
+  {
+    "name": "Cliente Demo",
+    "email": "<email-do-cliente-demo>",
+    "password": "<senha-forte-fora-do-git>",
+    "role": "customer",
+    "sectorIds": []
+  },
+  {
+    "name": "Gestor Demo",
+    "email": "<email-do-gestor-demo>",
+    "password": "<outra-senha-forte-fora-do-git>",
+    "role": "manager",
+    "sectorIds": []
+  }
+]
+```
+
+Esses valores sao apenas modelo. Use senhas diferentes e mantenha os valores reais fora do Git.
 
 ## Variaveis de ambiente
 
@@ -62,6 +75,7 @@ Para producao, defina pelo menos:
 AUTH_SECRET
 BOOTSTRAP_ADMIN_EMAIL
 BOOTSTRAP_ADMIN_PASSWORD
+DEMO_USERS_JSON
 QR_TOKEN_ACOUGUE
 QR_TOKEN_FRIOS
 QR_TOKEN_PADARIA

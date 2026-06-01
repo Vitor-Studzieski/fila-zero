@@ -83,19 +83,7 @@
         "description": "Administrador com acesso total, criação de usuários e configuração de setores."
       }
     ],
-    "default_users": [
-      {
-        "email": "***REMOVED***",
-        "password": "***REMOVED***",
-        "role": "admin"
-      },
-      {
-        "email": "***REMOVED***",
-        "password": "***REMOVED***",
-        "role": "attendant",
-        "sector": "acougue"
-      }
-    ]
+    "default_users": "Nao versionar usuarios ou senhas. Use BOOTSTRAP_ADMIN_* ou DEMO_USERS_JSON via variaveis de ambiente."
   },
   "database_tables": [
     "customers",

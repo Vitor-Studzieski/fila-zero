@@ -3,11 +3,14 @@ const test = require("node:test");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { spawn } = require("node:child_process");
 const { DatabaseSync } = require("node:sqlite");
 
 const PORT = 3199;
 const BASE_URL = `http://localhost:${PORT}`;
+const TEST_DOMAIN = "example.invalid";
+const testCredentials = createTestCredentials();
 
 let server;
 let dataDir;
@@ -17,11 +20,18 @@ test.before(async () => {
   dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fila-zero-test-"));
   server = spawn(process.execPath, ["--no-warnings", "server/server.js"], {
     cwd: path.resolve(__dirname, ".."),
-    env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir, API_ONLY: "1" },
+    env: {
+      ...process.env,
+      PORT: String(PORT),
+      DATA_DIR: dataDir,
+      API_ONLY: "1",
+      DEMO_USERS_JSON: JSON.stringify(testCredentials.seedUsers),
+      AUTH_SECRET: crypto.randomBytes(32).toString("hex")
+    },
     stdio: "ignore"
   });
   await waitForServer();
-  adminCookie = await login("***REMOVED***", "***REMOVED***");
+  adminCookie = await login(testCredentials.manager.email, testCredentials.manager.password);
 });
 
 test.after(async () => {
@@ -89,7 +99,7 @@ test("bloqueia login apos muitas tentativas invalidas", async () => {
     const response = await fetch(`${BASE_URL}/api/auth/login`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email: "***REMOVED***", password: "senha-errada" })
+      body: JSON.stringify({ email: testCredentials.lockedCustomer.email, password: crypto.randomUUID() })
     });
     assert.equal(response.status, 401);
   }
@@ -97,7 +107,7 @@ test("bloqueia login apos muitas tentativas invalidas", async () => {
   const response = await fetch(`${BASE_URL}/api/auth/login`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: "***REMOVED***", password: "***REMOVED_DEMO_PASSWORD***" })
+    body: JSON.stringify({ email: testCredentials.lockedCustomer.email, password: testCredentials.lockedCustomer.password })
   });
   const payload = await response.json();
   assert.equal(response.status, 401);
@@ -189,8 +199,8 @@ async function login(email, password) {
 }
 
 async function createCustomer(slug) {
-  const email = `${slug}@example.invalid`;
-  const password = "***REMOVED_DEMO_PASSWORD***";
+  const email = `${slug}-${crypto.randomUUID()}@${TEST_DOMAIN}`;
+  const password = crypto.randomBytes(18).toString("base64url");
   const result = await api("/api/users", {
     method: "POST",
     cookie: adminCookie,
@@ -200,6 +210,29 @@ async function createCustomer(slug) {
   return {
     cookie,
     identity: { customerId: result.user.customerId, deviceId: `device-${slug}` }
+  };
+}
+
+function createTestCredentials() {
+  const password = () => crypto.randomBytes(18).toString("base64url");
+  const manager = {
+    name: "Gestor Teste",
+    email: `manager-${crypto.randomUUID()}@${TEST_DOMAIN}`,
+    password: password(),
+    role: "manager",
+    sectorIds: []
+  };
+  const lockedCustomer = {
+    name: "Cliente Bloqueio",
+    email: `customer-${crypto.randomUUID()}@${TEST_DOMAIN}`,
+    password: password(),
+    role: "customer",
+    sectorIds: []
+  };
+  return {
+    manager,
+    lockedCustomer,
+    seedUsers: [manager, lockedCustomer]
   };
 }
 
