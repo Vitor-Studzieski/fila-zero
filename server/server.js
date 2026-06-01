@@ -967,14 +967,6 @@ function loadQrTokens() {
     padaria: process.env.QR_TOKEN_PADARIA
   };
 
-  if (dev || process.env.ALLOW_DEMO_QR_TOKENS === "1") {
-    return {
-      acougue: tokens.acougue || "***REMOVED***",
-      frios: tokens.frios || "***REMOVED***",
-      padaria: tokens.padaria || "***REMOVED***"
-    };
-  }
-
   return {
     acougue: tokens.acougue || "",
     frios: tokens.frios || "",

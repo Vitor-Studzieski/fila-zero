@@ -26,7 +26,10 @@ test.before(async () => {
       DATA_DIR: dataDir,
       API_ONLY: "1",
       DEMO_USERS_JSON: JSON.stringify(testCredentials.seedUsers),
-      AUTH_SECRET: crypto.randomBytes(32).toString("hex")
+      AUTH_SECRET: crypto.randomBytes(32).toString("hex"),
+      QR_TOKEN_ACOUGUE: testCredentials.qrTokens.acougue,
+      QR_TOKEN_FRIOS: testCredentials.qrTokens.frios,
+      QR_TOKEN_PADARIA: testCredentials.qrTokens.padaria
     },
     stdio: "ignore"
   });
@@ -44,13 +47,13 @@ test("orquestra espera inteligente e libera uma senha por vez", async () => {
   const { cookie, identity } = await createCustomer("cliente-teste");
   await api("/api/sessions", { method: "POST", cookie, body: identity });
 
-  const first = await api("/api/tickets", { method: "POST", cookie, body: { ...identity, sectorId: "acougue", qrToken: "***REMOVED***" } });
+  const first = await api("/api/tickets", { method: "POST", cookie, body: { ...identity, sectorId: "acougue", qrToken: qrToken("acougue") } });
   assert.equal(first.ticket.ticket, "A000");
   const calledFirst = await api("/api/sectors/acougue/call-next", { method: "POST", cookie: adminCookie });
   assert.equal(calledFirst.ticket.ticket, first.ticket.ticket);
 
   await api(`/api/tickets/${first.ticket.id}/confirm`, { method: "POST", cookie, body: identity });
-  const second = await api("/api/tickets", { method: "POST", cookie, body: { ...identity, sectorId: "frios", qrToken: "***REMOVED***" } });
+  const second = await api("/api/tickets", { method: "POST", cookie, body: { ...identity, sectorId: "frios", qrToken: qrToken("frios") } });
   assert.ok(second.ticket.ticket.startsWith("F"));
 
   await api("/api/sectors/frios/call-next", { method: "POST", cookie: adminCookie });
@@ -118,8 +121,8 @@ test("mantem tempo estimado baseado na posicao real da fila", async () => {
   const firstCustomer = await createCustomer("tempo-primeiro");
   const secondCustomer = await createCustomer("tempo-segundo");
 
-  await api("/api/tickets", { method: "POST", cookie: firstCustomer.cookie, body: { ...firstCustomer.identity, sectorId: "padaria", qrToken: "***REMOVED***" } });
-  const second = await api("/api/tickets", { method: "POST", cookie: secondCustomer.cookie, body: { ...secondCustomer.identity, sectorId: "padaria", qrToken: "***REMOVED***" } });
+  await api("/api/tickets", { method: "POST", cookie: firstCustomer.cookie, body: { ...firstCustomer.identity, sectorId: "padaria", qrToken: qrToken("padaria") } });
+  const second = await api("/api/tickets", { method: "POST", cookie: secondCustomer.cookie, body: { ...secondCustomer.identity, sectorId: "padaria", qrToken: qrToken("padaria") } });
   assert.equal(second.ticket.position, 2);
   assert.ok(second.ticket.secondsToCall > 0);
   assert.ok(second.ticket.estimatedCallAt);
@@ -133,7 +136,7 @@ test("mantem tempo estimado baseado na posicao real da fila", async () => {
 
 test("senha sem ninguem na frente conta 10 segundos e chama automaticamente", async () => {
   const { cookie, identity } = await createCustomer("auto-chamada");
-  const created = await api("/api/tickets", { method: "POST", cookie, body: { ...identity, sectorId: "acougue", qrToken: "***REMOVED***" } });
+  const created = await api("/api/tickets", { method: "POST", cookie, body: { ...identity, sectorId: "acougue", qrToken: qrToken("acougue") } });
   assert.equal(created.ticket.position, 1);
   assert.ok(created.ticket.secondsToCall <= 10);
   assert.ok(created.ticket.secondsToCall > 0);
@@ -145,7 +148,7 @@ test("senha sem ninguem na frente conta 10 segundos e chama automaticamente", as
 
 test("cliente cancela senha ativa e libera o setor para outra senha", async () => {
   const { cookie, identity } = await createCustomer("cancelar-cliente");
-  const created = await api("/api/tickets", { method: "POST", cookie, body: { ...identity, sectorId: "frios", qrToken: "***REMOVED***" } });
+  const created = await api("/api/tickets", { method: "POST", cookie, body: { ...identity, sectorId: "frios", qrToken: qrToken("frios") } });
 
   const canceled = await api(`/api/tickets/${created.ticket.id}/cancel`, { method: "POST", cookie, body: identity });
   assert.equal(canceled.canceledTicket.status, "cancelado");
@@ -153,7 +156,7 @@ test("cliente cancela senha ativa e libera o setor para outra senha", async () =
   const state = await api(`/api/state?customer_id=${identity.customerId}`, { cookie });
   assert.equal(state.tickets.length, 0);
 
-  const recreated = await api("/api/tickets", { method: "POST", cookie, body: { ...identity, sectorId: "frios", qrToken: "***REMOVED***" } });
+  const recreated = await api("/api/tickets", { method: "POST", cookie, body: { ...identity, sectorId: "frios", qrToken: qrToken("frios") } });
   assert.equal(recreated.ticket.position, 1);
 });
 
@@ -171,12 +174,12 @@ test("contador de senha usa 000 a 999 e reinicia depois do limite", async () => 
   const first = await api("/api/tickets", {
     method: "POST",
     cookie: firstCustomer.cookie,
-    body: { ...firstCustomer.identity, sectorId: "padaria", qrToken: "***REMOVED***" }
+    body: { ...firstCustomer.identity, sectorId: "padaria", qrToken: qrToken("padaria") }
   });
   const second = await api("/api/tickets", {
     method: "POST",
     cookie: secondCustomer.cookie,
-    body: { ...secondCustomer.identity, sectorId: "padaria", qrToken: "***REMOVED***" }
+    body: { ...secondCustomer.identity, sectorId: "padaria", qrToken: qrToken("padaria") }
   });
 
   assert.equal(first.ticket.ticket, "P999");
@@ -232,8 +235,17 @@ function createTestCredentials() {
   return {
     manager,
     lockedCustomer,
+    qrTokens: {
+      acougue: crypto.randomBytes(18).toString("base64url"),
+      frios: crypto.randomBytes(18).toString("base64url"),
+      padaria: crypto.randomBytes(18).toString("base64url")
+    },
     seedUsers: [manager, lockedCustomer]
   };
+}
+
+function qrToken(sectorId) {
+  return testCredentials.qrTokens[sectorId];
 }
 
 async function api(pathname, options = {}) {

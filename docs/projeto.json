@@ -60,11 +60,7 @@
       "longitude": -50.1746,
       "radius_meters": 100
     },
-    "qr_tokens": {
-      "acougue": "***REMOVED***",
-      "frios": "***REMOVED***",
-      "padaria": "***REMOVED***"
-    }
+    "qr_tokens": "Configurados por variaveis de ambiente QR_TOKEN_* ou QR_TOKENS."
   },
   "access_control": {
     "session_type": "Cookie HTTP-only com validade de 12 horas",
