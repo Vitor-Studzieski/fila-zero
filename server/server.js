@@ -5,8 +5,10 @@ const path = require("node:path");
 const crypto = require("node:crypto");
 const { DatabaseSync } = require("node:sqlite");
 
-const PORT = Number(process.env.PORT || 3000);
 const ROOT = path.resolve(__dirname, "..");
+loadEnvFile(path.join(ROOT, ".env"));
+
+const PORT = Number(process.env.PORT || 3000);
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : process.env.VERCEL
@@ -48,6 +50,9 @@ const LOGIN_LOCK_MS = 15 * 60 * 1000;
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
 const CSRF_EXEMPT_PATHS = new Set(["/api/auth/login"]);
 const AUTH_SECRET = authSecret();
+const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
+const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || "");
+const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
 
 bootstrap();
 
@@ -321,7 +326,7 @@ async function handleApi(req, res, url) {
 
   if (req.method === "POST" && url.pathname === "/api/auth/login") {
     const body = await readBody(req);
-    const result = loginUser(body, req);
+    const result = await loginUser(body, req);
     if (result.error) {
       sendJson(res, 401, result);
       return;
@@ -527,7 +532,7 @@ async function handleApi(req, res, url) {
 
   if (req.method === "GET" && url.pathname === "/api/users") {
     if (!requireAuth(req, res, ADMIN_ROLES)) return;
-    sendJson(res, 200, { users: listUsers() });
+    sendJson(res, 200, { users: await listUsers() });
     return;
   }
 
@@ -702,7 +707,12 @@ function clearLoginFailures(key) {
   db.prepare("DELETE FROM login_attempts WHERE attempt_key = ?").run(key);
 }
 
-function loginUser(body, req) {
+async function loginUser(body, req) {
+  if (isSupabaseConfigured()) return loginSupabaseUser(body, req);
+  return loginLocalUser(body, req);
+}
+
+function loginLocalUser(body, req) {
   const email = String(body.email || "").trim().toLowerCase();
   const password = String(body.password || "");
   const attemptKey = `${clientIp(req)}:${email || "unknown"}`;
@@ -724,11 +734,52 @@ function loginUser(body, req) {
     .run(sessionId, user.id, csrfToken, now, expiresAt);
   const sessionToken = signSessionToken({
     email: user.email,
+    user: userDto(user),
     csrfToken,
     expiresAt
   });
   registerEvent("login", "user", user.id, null, null, { email: user.email, role: user.role });
   return { sessionId: sessionToken, csrfToken, user: userDto(user) };
+}
+
+async function loginSupabaseUser(body, req) {
+  const email = String(body.email || "").trim().toLowerCase();
+  const password = String(body.password || "");
+  const attemptKey = `${clientIp(req)}:${email || "unknown"}`;
+  if (isLoginLocked(attemptKey)) {
+    return { error: "Muitas tentativas. Aguarde alguns minutos e tente novamente." };
+  }
+
+  const auth = await supabaseFetch("/auth/v1/token?grant_type=password", {
+    method: "POST",
+    apiKey: SUPABASE_ANON_KEY,
+    bearer: SUPABASE_ANON_KEY,
+    body: { email, password }
+  });
+
+  if (auth.error || !auth.user?.id) {
+    registerLoginFailure(attemptKey);
+    return { error: "E-mail ou senha invalidos." };
+  }
+
+  const profile = await getSupabaseProfile(auth.user.id, auth.user.email);
+  if (!profile || profile.status !== "active") {
+    registerLoginFailure(attemptKey);
+    return { error: "Usuario sem perfil ativo no sistema." };
+  }
+
+  clearLoginFailures(attemptKey);
+  const csrfToken = crypto.randomBytes(32).toString("hex");
+  const expiresAt = new Date(Date.now() + 1000 * SESSION_TTL_SECONDS).toISOString();
+  const sessionToken = signSessionToken({
+    provider: "supabase",
+    email: profile.email,
+    user: profile,
+    csrfToken,
+    expiresAt
+  });
+
+  return { sessionId: sessionToken, csrfToken, user: profile };
 }
 
 function logoutUser(req, res) {
@@ -748,6 +799,9 @@ function getSessionForRequest(req) {
   if (!sessionId) return null;
   const statelessSession = verifySessionToken(sessionId);
   if (statelessSession) {
+    if (statelessSession.user) {
+      return { ...statelessSession.user, csrf_token: statelessSession.csrfToken };
+    }
     const user = db.prepare("SELECT * FROM users WHERE email = ? AND status = ?").get(statelessSession.email, "active");
     return user ? { ...user, csrf_token: statelessSession.csrfToken } : null;
   }
@@ -832,7 +886,81 @@ function authSecret() {
   return crypto.randomBytes(32).toString("hex");
 }
 
+function isSupabaseConfigured() {
+  if (process.env.SUPABASE_AUTH_ENABLED === "0") return false;
+  return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_SERVICE_ROLE_KEY);
+}
+
+async function supabaseFetch(pathname, options = {}) {
+  const headers = {
+    "content-type": "application/json",
+    apikey: options.apiKey || SUPABASE_SERVICE_ROLE_KEY,
+    Authorization: `Bearer ${options.bearer || SUPABASE_SERVICE_ROLE_KEY}`,
+    ...(options.headers || {})
+  };
+  const response = await fetch(`${SUPABASE_URL}${pathname}`, {
+    method: options.method || "GET",
+    headers,
+    body: options.body ? JSON.stringify(options.body) : undefined
+  });
+  const text = await response.text();
+  const payload = text ? JSON.parse(text) : null;
+  if (!response.ok) {
+    return { error: payload?.error_description || payload?.message || response.statusText, status: response.status };
+  }
+  return payload;
+}
+
+async function getSupabaseProfile(userId, fallbackEmail = "") {
+  const profileRows = await supabaseFetch(`/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=id,name,email,role,status,created_at`);
+  if (profileRows.error) return null;
+  const profile = profileRows[0];
+  if (!profile) return null;
+
+  const permissionRows = await supabaseFetch(`/rest/v1/profile_sector_permissions?profile_id=eq.${encodeURIComponent(userId)}&select=sector_id`);
+  const sectorIds = Array.isArray(permissionRows) ? permissionRows.map((item) => item.sector_id) : [];
+  return {
+    id: profile.id,
+    customerId: profile.id,
+    name: profile.name,
+    email: profile.email || fallbackEmail,
+    role: normalizeRole(profile.role),
+    status: profile.status,
+    sectorIds,
+    createdAt: profile.created_at
+  };
+}
+
+async function listSupabaseUsers() {
+  const profileRows = await supabaseFetch("/rest/v1/profiles?select=id,name,email,role,status,created_at&order=created_at.asc");
+  if (profileRows.error || !Array.isArray(profileRows)) return [];
+  const permissionRows = await supabaseFetch("/rest/v1/profile_sector_permissions?select=profile_id,sector_id");
+  const permissionsByProfile = new Map();
+  if (Array.isArray(permissionRows)) {
+    permissionRows.forEach((item) => {
+      const current = permissionsByProfile.get(item.profile_id) || [];
+      current.push(item.sector_id);
+      permissionsByProfile.set(item.profile_id, current);
+    });
+  }
+
+  return profileRows.map((profile) => ({
+    id: profile.id,
+    customerId: profile.id,
+    name: profile.name,
+    email: profile.email,
+    role: normalizeRole(profile.role),
+    status: profile.status,
+    sectorIds: permissionsByProfile.get(profile.id) || [],
+    createdAt: profile.created_at
+  }));
+}
+
 function createUser(body) {
+  if (isSupabaseConfigured()) {
+    return fail("Crie usuarios em Supabase > Authentication > Users. O app apenas le os perfis do Supabase.");
+  }
+
   const role = AUTH_ROLES.includes(body.role) ? body.role : "attendant";
   const email = String(body.email || "").trim().toLowerCase();
   const name = String(body.name || "").trim();
@@ -856,11 +984,25 @@ function createUser(body) {
   return { user: userDto(db.prepare("SELECT * FROM users WHERE id = ?").get(id)) };
 }
 
-function listUsers() {
+async function listUsers() {
+  if (isSupabaseConfigured()) return listSupabaseUsers();
   return db.prepare("SELECT * FROM users WHERE status = 'active' ORDER BY created_at ASC").all().map(userDto);
 }
 
 function userDto(row) {
+  if (Array.isArray(row.sectorIds)) {
+    return {
+      id: row.id,
+      customerId: row.customerId || row.id,
+      name: row.name,
+      email: row.email,
+      role: normalizeRole(row.role),
+      status: row.status,
+      sectorIds: row.sectorIds,
+      createdAt: row.createdAt || row.created_at || null
+    };
+  }
+
   const sectorIds = db.prepare("SELECT sector_id FROM user_sector_permissions WHERE user_id = ? ORDER BY sector_id").all(row.id).map((item) => item.sector_id);
   const role = normalizeRole(row.role);
   return {
@@ -883,6 +1025,7 @@ function setUserSectorPermissions(userId, sectorIds) {
 
 function canAccessSector(user, sectorId) {
   if (hasAnyRole(user, ADMIN_ROLES)) return true;
+  if (Array.isArray(user?.sectorIds)) return user.sectorIds.includes(sectorId);
   return db.prepare("SELECT 1 FROM user_sector_permissions WHERE user_id = ? AND sector_id = ?").get(user.id, sectorId);
 }
 
@@ -1730,6 +1873,23 @@ function readBody(req) {
       }
     });
     req.on("error", reject);
+  });
+}
+
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return;
+  const lines = fs.readFileSync(filePath, "utf8").split(/\r?\n/);
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return;
+    const separator = trimmed.indexOf("=");
+    if (separator <= 0) return;
+    const key = trimmed.slice(0, separator).trim();
+    let value = trimmed.slice(separator + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    if (!(key in process.env)) process.env[key] = value;
   });
 }
 

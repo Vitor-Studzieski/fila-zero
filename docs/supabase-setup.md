@@ -38,6 +38,7 @@ SUPABASE_URL=
 SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 DATABASE_URL=
+SUPABASE_AUTH_ENABLED=1
 AUTH_SECRET=
 QR_TOKEN_ACOUGUE=
 QR_TOKEN_FRIOS=
@@ -135,6 +136,6 @@ Troque `acougue` por `frios` ou `padaria` conforme o caso.
 
 ## Estado atual do codigo
 
-Esta etapa cria a estrutura do Supabase e prepara as variaveis.
+Com `SUPABASE_AUTH_ENABLED=1` e as chaves configuradas, o login do app usa Supabase Auth e busca perfil/permissoes nas tabelas `profiles` e `profile_sector_permissions`.
 
-O backend atual ainda usa SQLite. A proxima etapa da migracao e trocar o acesso a dados do `server/server.js` para Postgres/Supabase.
+O restante dos dados operacionais da fila ainda usa SQLite nesta etapa. A proxima etapa da migracao e trocar tickets, carrinho, eventos e metricas para Postgres/Supabase.

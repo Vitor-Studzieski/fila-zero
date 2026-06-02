@@ -25,6 +25,7 @@ test.before(async () => {
       PORT: String(PORT),
       DATA_DIR: dataDir,
       API_ONLY: "1",
+      SUPABASE_AUTH_ENABLED: "0",
       DEMO_USERS_JSON: JSON.stringify(testCredentials.seedUsers),
       AUTH_SECRET: crypto.randomBytes(32).toString("hex"),
       QR_TOKEN_ACOUGUE: testCredentials.qrTokens.acougue,

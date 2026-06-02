@@ -72,6 +72,10 @@ Copie `.env.example` como referencia e configure os valores sensiveis fora do Gi
 Para producao, defina pelo menos:
 
 ```text
+SUPABASE_URL
+SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY
+SUPABASE_AUTH_ENABLED
 AUTH_SECRET
 BOOTSTRAP_ADMIN_EMAIL
 BOOTSTRAP_ADMIN_PASSWORD
