@@ -136,3 +136,19 @@ Executa os testes de orquestracao da fila.
 O projeto possui adaptacao para Vercel em `app/api/[...path]/route.js`, mas o SQLite em ambiente serverless deve ser tratado como temporario. Para producao real, use um banco persistente como Vercel Postgres, Neon ou Supabase.
 
 As acoes autenticadas usam cookie `HttpOnly` e token CSRF. Se o login funcionar, mas acoes como carrinho ou senha falharem com erro de token de seguranca, recarregue a pagina para sincronizar o cookie `fz_csrf`.
+
+## Preparacao Supabase
+
+Para manter o dominio/deploy na Vercel e migrar banco/contas para Supabase, use o guia:
+
+```text
+docs/supabase-setup.md
+```
+
+A estrutura SQL inicial esta em:
+
+```text
+supabase/migrations/0001_initial_schema.sql
+```
+
+Depois de criar as tabelas no Supabase e configurar as variaveis na Vercel, a proxima etapa tecnica e trocar o acesso a dados do backend de SQLite para Postgres/Supabase.
