@@ -38,6 +38,7 @@ const TICKET_MIN_NUMBER = 0;
 const TICKET_MAX_NUMBER = 999;
 const BUSINESS_TIME_ZONE = "America/Sao_Paulo";
 const AUTH_ROLES = ["customer", "attendant", "manager", "admin"];
+const CUSTOMER_ROLES = ["customer", "manager", "admin"];
 const STAFF_ROLES = ["attendant", "manager", "admin"];
 const ADMIN_ROLES = ["manager", "admin"];
 const ACTIVE_STATUSES = ["aguardando", "proximo", "chamado", "em_atendimento", "espera_inteligente", "standby"];
@@ -352,7 +353,7 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/events") {
     const user = url.searchParams.get("scope") === "staff"
       ? requireAuth(req, res, STAFF_ROLES)
-      : requireAuth(req, res, ["customer"]);
+      : requireAuth(req, res, CUSTOMER_ROLES);
     if (!user) return;
     if (!isStandaloneServer) {
       const data = url.searchParams.get("scope") === "staff" ? getStaffState(user) : getCustomerState(user.customerId);
@@ -369,7 +370,7 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "POST" && url.pathname === "/api/sessions") {
-    const user = requireAuth(req, res, ["customer"]);
+    const user = requireAuth(req, res, CUSTOMER_ROLES);
     if (!user) return;
     if (!verifyCsrf(req, res, user)) return;
     const body = await readBody(req);
@@ -379,14 +380,14 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "GET" && url.pathname === "/api/state") {
-    const user = requireAuth(req, res, ["customer"]);
+    const user = requireAuth(req, res, CUSTOMER_ROLES);
     if (!user) return;
     sendJson(res, 200, getCustomerState(user.customerId));
     return;
   }
 
   if (req.method === "GET" && url.pathname === "/api/history") {
-    const user = requireAuth(req, res, ["customer"]);
+    const user = requireAuth(req, res, CUSTOMER_ROLES);
     if (!user) return;
     sendJson(res, 200, getCustomerHistory(user.customerId));
     return;
@@ -406,7 +407,7 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "POST" && url.pathname === "/api/tickets") {
-    const user = requireAuth(req, res, ["customer"]);
+    const user = requireAuth(req, res, CUSTOMER_ROLES);
     if (!user) return;
     if (!verifyCsrf(req, res, user)) return;
     const body = await readBody(req);
@@ -448,7 +449,7 @@ async function handleApi(req, res, url) {
 
   const ticketCancel = url.pathname.match(/^\/api\/tickets\/([^/]+)\/cancel$/);
   if (req.method === "POST" && ticketCancel) {
-    const user = requireAuth(req, res, ["customer"]);
+    const user = requireAuth(req, res, CUSTOMER_ROLES);
     if (!user) return;
     if (!verifyCsrf(req, res, user)) return;
     const body = await readBody(req);
@@ -491,7 +492,7 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "POST" && url.pathname === "/api/ratings") {
-    const user = requireAuth(req, res, ["customer"]);
+    const user = requireAuth(req, res, CUSTOMER_ROLES);
     if (!user) return;
     if (!verifyCsrf(req, res, user)) return;
     const body = await readBody(req);
@@ -502,14 +503,14 @@ async function handleApi(req, res, url) {
   }
 
   if (req.method === "GET" && url.pathname === "/api/cart") {
-    const user = requireAuth(req, res, ["customer"]);
+    const user = requireAuth(req, res, CUSTOMER_ROLES);
     if (!user) return;
     sendJson(res, 200, getCart(user.customerId));
     return;
   }
 
   if (req.method === "POST" && url.pathname === "/api/cart/items") {
-    const user = requireAuth(req, res, ["customer"]);
+    const user = requireAuth(req, res, CUSTOMER_ROLES);
     if (!user) return;
     if (!verifyCsrf(req, res, user)) return;
     const body = await readBody(req);
@@ -553,7 +554,7 @@ async function handleApi(req, res, url) {
 async function handlePage(req, res, url) {
   const requested = normalizePagePath(url.pathname);
   const pageRoles = {
-    "/": ["customer"],
+    "/": CUSTOMER_ROLES,
     "/attendant": STAFF_ROLES,
     "/admin": ADMIN_ROLES
   };
@@ -590,7 +591,7 @@ function normalizePagePath(pathname) {
 function openEventStream(req, res, url, user = getAuthUser(req)) {
   const client = {
     res,
-    customerId: user?.role === "customer" ? user.customerId : url.searchParams.get("customer_id") || null,
+    customerId: hasAnyRole(user, CUSTOMER_ROLES) ? user.customerId : url.searchParams.get("customer_id") || null,
     scope: url.searchParams.get("scope") || "customer",
     user
   };
@@ -1031,7 +1032,7 @@ function canAccessSector(user, sectorId) {
 
 function canOperateOnTicket(user, ticketId, customerId) {
   if (user && hasAnyRole(user, STAFF_ROLES)) return true;
-  if (user?.role === "customer") return canCustomerAccessTicket(ticketId, user.customerId);
+  if (hasAnyRole(user, CUSTOMER_ROLES)) return canCustomerAccessTicket(ticketId, user.customerId);
   return canCustomerAccessTicket(ticketId, customerId);
 }
 

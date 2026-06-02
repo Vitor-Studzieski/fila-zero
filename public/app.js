@@ -73,7 +73,7 @@ async function init() {
   renderProducts();
   bindEvents();
   syncPresenceStatus();
-  currentUser = await requireSession(["customer"]);
+  currentUser = await requireSession(["customer", "manager", "admin"]);
   identity.customerId = currentUser.customerId;
   localStorage.setItem("filaZeroIdentity", JSON.stringify(identity));
   await syncSession();
