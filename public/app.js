@@ -70,6 +70,7 @@ const productGroups = [
 init();
 
 async function init() {
+  syncMobileViewport();
   renderProducts();
   bindEvents();
   syncPresenceStatus();
@@ -84,6 +85,23 @@ async function init() {
   startCountdownTimer();
   navigate("home");
   warmupLocation();
+}
+
+function syncMobileViewport() {
+  const root = document.documentElement;
+  const apply = () => {
+    const viewport = window.visualViewport;
+    const width = Math.round(viewport?.width || window.innerWidth);
+    const height = Math.round(viewport?.height || window.innerHeight);
+    root.style.setProperty("--app-viewport-width", `${width}px`);
+    root.style.setProperty("--app-viewport-height", `${height}px`);
+    root.style.setProperty("--app-viewport-top", `${Math.round(viewport?.offsetTop || 0)}px`);
+  };
+  apply();
+  window.addEventListener("resize", apply, { passive: true });
+  window.addEventListener("orientationchange", () => setTimeout(apply, 120), { passive: true });
+  window.visualViewport?.addEventListener("resize", apply, { passive: true });
+  window.visualViewport?.addEventListener("scroll", apply, { passive: true });
 }
 
 function getOrCreateIdentity() {
