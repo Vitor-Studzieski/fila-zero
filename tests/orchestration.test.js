@@ -135,14 +135,14 @@ test("mantem tempo estimado baseado na posicao real da fila", async () => {
   assert.ok(state.tickets[0].estimatedCallAt);
 });
 
-test("senha sem ninguem na frente conta 10 segundos e chama automaticamente", async () => {
+test("senha sem ninguem na frente conta 30 segundos e chama automaticamente", async () => {
   const { cookie, identity } = await createCustomer("auto-chamada");
   const created = await api("/api/tickets", { method: "POST", cookie, body: { ...identity, sectorId: "acougue", qrToken: qrToken("acougue") } });
   assert.equal(created.ticket.position, 1);
-  assert.ok(created.ticket.secondsToCall <= 10);
+  assert.ok(created.ticket.secondsToCall <= 30);
   assert.ok(created.ticket.secondsToCall > 0);
 
-  await new Promise((resolve) => setTimeout(resolve, 11000));
+  await new Promise((resolve) => setTimeout(resolve, 31000));
   const state = await api(`/api/state?customer_id=${identity.customerId}`, { cookie });
   assert.equal(state.tickets[0].status, "chamado");
 });
