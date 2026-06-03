@@ -7,7 +7,7 @@ const screens = {
   offers: "Ofertas",
   detail: "Detalhe da promoção",
   done: "Atendimento",
-  access: "Conta e acesso",
+  access: "Clube",
   rating: "Avaliação"
 };
 
@@ -74,6 +74,7 @@ async function init() {
   bindEvents();
   syncPresenceStatus();
   currentUser = await requireSession(["customer", "manager", "admin"]);
+  syncAccessArea();
   identity.customerId = currentUser.customerId;
   localStorage.setItem("filaZeroIdentity", JSON.stringify(identity));
   await syncSession();
@@ -197,6 +198,16 @@ function navigate(screen) {
   if (screen === "offers") renderOfferQueueContext();
   updateTabs(screen);
   updateFloatingQueue();
+}
+
+function syncAccessArea() {
+  const isManager = ["manager", "admin"].includes(currentUser?.role);
+  document.querySelectorAll(".manager-access").forEach((item) => {
+    item.hidden = !isManager;
+  });
+  document.querySelector("#accessIntro").textContent = isManager
+    ? "Acesse as areas de teste usando a mesma sessao de gestor."
+    : "Sua sessao esta protegida. Use somente dispositivos confiaveis.";
 }
 
 function updateTabs(screen) {
