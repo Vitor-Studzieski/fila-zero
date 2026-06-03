@@ -223,11 +223,7 @@ async function joinQueue(sectorId) {
   activeJoinSector = sectorId;
   syncActionButtons();
   try {
-    const presence = await getPresencePayload(sectorId);
-    const result = await api("/api/tickets", {
-      method: "POST",
-      body: { ...identity, sectorId, ...presence }
-    });
+    const result = await createTicketWithPresence(sectorId);
     currentSector = result.ticket.sectorId;
     activeQueues[result.ticket.sectorId] = withLiveCountdown(result.ticket);
     syncQueue();
@@ -238,6 +234,29 @@ async function joinQueue(sectorId) {
     activeJoinSector = null;
     syncActionButtons();
   }
+}
+
+async function createTicketWithPresence(sectorId) {
+  try {
+    const presence = await getPresencePayload(sectorId);
+    return await api("/api/tickets", {
+      method: "POST",
+      body: { ...identity, sectorId, ...presence }
+    });
+  } catch (exception) {
+    if (!isInvalidQrError(exception) || !presenceCheckins[sectorId]) throw exception;
+    clearSectorPresence(sectorId);
+    const location = await ensureLocation({ force: true });
+    return api("/api/tickets", {
+      method: "POST",
+      body: { ...identity, sectorId, location }
+    });
+  }
+}
+
+function isInvalidQrError(exception) {
+  return String(exception?.message || "").toLowerCase().includes("qr code do setor invalido")
+    || String(exception?.message || "").toLowerCase().includes("qr code do setor inválido");
 }
 
 function syncQueue() {
@@ -552,10 +571,13 @@ async function getPresencePayload(sectorId) {
     registerSectorPresence(sectorId, qrToken);
     return { qrToken };
   }
-  if (storedToken) return { qrToken: storedToken };
-
-  const currentLocation = await ensureLocation();
-  return { location: currentLocation };
+  try {
+    const currentLocation = await ensureLocation();
+    return storedToken ? { qrToken: storedToken, location: currentLocation } : { location: currentLocation };
+  } catch (exception) {
+    if (storedToken) return { qrToken: storedToken };
+    throw exception;
+  }
 }
 
 async function confirmSectorPresence(sectorId) {
@@ -570,6 +592,15 @@ async function confirmSectorPresence(sectorId) {
 function registerSectorPresence(sectorId, token = null) {
   if (!QR_SECTORS.has(sectorId) || !token) return;
   presenceCheckins = { ...presenceCheckins, [sectorId]: token };
+  localStorage.setItem("filaZeroPresenceCheckins", JSON.stringify(presenceCheckins));
+  syncPresenceStatus();
+}
+
+function clearSectorPresence(sectorId) {
+  if (!presenceCheckins[sectorId]) return;
+  const nextCheckins = { ...presenceCheckins };
+  delete nextCheckins[sectorId];
+  presenceCheckins = nextCheckins;
   localStorage.setItem("filaZeroPresenceCheckins", JSON.stringify(presenceCheckins));
   syncPresenceStatus();
 }
