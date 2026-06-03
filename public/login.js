@@ -66,12 +66,12 @@ function allowedNextForRole(role, next) {
   const home = {
     customer: "/",
     attendant: "/attendant",
-    manager: "/admin",
-    admin: "/admin"
+    manager: "/",
+    admin: "/"
   }[role] || "/";
   const normalizedRole = role === "admin" ? "manager" : role;
   if (!next) return home;
-  if (normalizedRole === "manager" && ["/", "/attendant", "/admin"].includes(next)) return next;
+  if (normalizedRole === "manager") return "/";
   if (role === "attendant" && next === "/attendant") return next;
   if (role === "customer" && next === "/") return next;
   return home;

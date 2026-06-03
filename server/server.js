@@ -1051,7 +1051,6 @@ function hasAnyRole(user, roles) {
 }
 
 function roleHome(user) {
-  if (hasAnyRole(user, ADMIN_ROLES)) return "/admin";
   if (hasAnyRole(user, ["attendant"])) return "/attendant";
   return "/";
 }
