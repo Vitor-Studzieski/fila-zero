@@ -40,6 +40,8 @@ function renderAttendant() {
     const called = sector.tickets.filter((ticket) => ticket.status === "chamado");
     const inService = sector.tickets.filter((ticket) => ticket.status === "em_atendimento");
     const waiting = sector.tickets.filter((ticket) => ["aguardando", "proximo", "espera_inteligente"].includes(ticket.status));
+    const hasActiveService = called.length > 0 || inService.length > 0;
+    const canCallNext = sector.status === "open" && !hasActiveService && waiting.length > 0;
     return `
       <article class="ops-card">
         <div class="ops-card-head">
@@ -53,7 +55,7 @@ function renderAttendant() {
           <span>Senha atual</span>
           <strong>${sector.current}</strong>
         </div>
-        <button class="blue-action compact-action" data-call-next="${sector.id}" ${sector.status !== "open" ? "disabled" : ""}>Chamar próxima senha</button>
+        <button class="blue-action compact-action" data-call-next="${sector.id}" ${canCallNext ? "" : "disabled"}>${hasActiveService ? "Aguardando finalizacao" : "Chamar proxima senha"}</button>
         ${ticketSection("Chamadas", called)}
         ${ticketSection("Em atendimento", inService)}
         ${ticketSection("Fila", waiting)}

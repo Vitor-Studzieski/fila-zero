@@ -147,6 +147,28 @@ test("senha sem ninguem na frente conta 10 segundos e chama automaticamente", as
   assert.equal(state.tickets[0].status, "chamado");
 });
 
+test("setor chama a proxima senha somente depois de finalizar o atendimento atual", async () => {
+  resetSectorTickets("acougue");
+  const firstCustomer = await createCustomer("fila-real-primeiro");
+  const secondCustomer = await createCustomer("fila-real-segundo");
+
+  const first = await api("/api/tickets", { method: "POST", cookie: firstCustomer.cookie, body: { ...firstCustomer.identity, sectorId: "acougue", qrToken: qrToken("acougue") } });
+  const second = await api("/api/tickets", { method: "POST", cookie: secondCustomer.cookie, body: { ...secondCustomer.identity, sectorId: "acougue", qrToken: qrToken("acougue") } });
+  assert.equal(second.ticket.position, 2);
+
+  await api("/api/sectors/acougue/call-next", { method: "POST", cookie: adminCookie });
+  await api(`/api/tickets/${first.ticket.id}/confirm`, { method: "POST", cookie: adminCookie });
+
+  const blocked = await api("/api/sectors/acougue/call-next", { method: "POST", cookie: adminCookie, ok: false });
+  assert.match(blocked.error, /Finalize a senha/i);
+
+  const finished = await api(`/api/tickets/${first.ticket.id}/finish`, { method: "POST", cookie: adminCookie });
+  assert.equal(finished.nextTicket.ticket, second.ticket.ticket);
+
+  const secondState = await api(`/api/state?customer_id=${secondCustomer.identity.customerId}`, { cookie: secondCustomer.cookie });
+  assert.equal(secondState.tickets[0].status, "chamado");
+});
+
 test("cliente cancela senha ativa e libera o setor para outra senha", async () => {
   const { cookie, identity } = await createCustomer("cancelar-cliente");
   const created = await api("/api/tickets", { method: "POST", cookie, body: { ...identity, sectorId: "frios", qrToken: qrToken("frios") } });
@@ -247,6 +269,16 @@ function createTestCredentials() {
 
 function qrToken(sectorId) {
   return testCredentials.qrTokens[sectorId];
+}
+
+function resetSectorTickets(sectorId) {
+  const database = new DatabaseSync(path.join(dataDir, "fila-zero.sqlite"));
+  database.prepare(`
+    UPDATE tickets
+    SET status = 'expirado', expired_at = ?, updated_at = ?
+    WHERE sector_id = ? AND status IN ('aguardando', 'proximo', 'chamado', 'em_atendimento', 'espera_inteligente', 'standby')
+  `).run(new Date().toISOString(), new Date().toISOString(), sectorId);
+  database.close();
 }
 
 async function api(pathname, options = {}) {

@@ -114,6 +114,11 @@ function runScheduledJobs() {
   autoCallReadyTickets();
 }
 
+function syncQueueState() {
+  runScheduledJobs();
+  expireAbsentCalls();
+}
+
 function bootstrap() {
   db.exec(`
     PRAGMA journal_mode = WAL;
@@ -355,6 +360,7 @@ async function handleApi(req, res, url) {
       ? requireAuth(req, res, STAFF_ROLES)
       : requireAuth(req, res, CUSTOMER_ROLES);
     if (!user) return;
+    syncQueueState();
     if (!isStandaloneServer) {
       const data = url.searchParams.get("scope") === "staff" ? getStaffState(user) : getCustomerState(user.customerId);
       res.writeHead(200, {
@@ -382,6 +388,7 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/state") {
     const user = requireAuth(req, res, CUSTOMER_ROLES);
     if (!user) return;
+    syncQueueState();
     sendJson(res, 200, getCustomerState(user.customerId));
     return;
   }
@@ -395,6 +402,7 @@ async function handleApi(req, res, url) {
 
   if (req.method === "GET" && url.pathname === "/api/metrics") {
     if (!requireAuth(req, res, ADMIN_ROLES)) return;
+    syncQueueState();
     sendJson(res, 200, getMetrics());
     return;
   }
@@ -402,6 +410,7 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/staff/state") {
     const user = requireAuth(req, res, STAFF_ROLES);
     if (!user) return;
+    syncQueueState();
     sendJson(res, 200, getStaffState(user));
     return;
   }
@@ -1263,6 +1272,8 @@ function callNextTicket(sectorId, options = {}) {
   const sector = getSector(sectorId);
   if (!sector) return fail("Setor não encontrado.");
   if (sector.status !== "open") return fail("Setor fechado.");
+  const active = getActiveSectorTicket(sectorId);
+  if (active) return fail(`Finalize a senha ${active.code} antes de chamar a proxima.`);
 
   const eligibilityClause = options.requireEligible ? "AND COALESCE(eligible_at, created_at) <= ?" : "";
   const params = options.requireEligible
@@ -1413,14 +1424,21 @@ function finishTicket(ticketId) {
   if (!ticket) return fail("Senha não encontrada.");
   if (ticket.status !== "em_atendimento") return fail("A senha precisa estar em atendimento para finalizar pedido.");
 
-  const now = isoNow();
-  db.prepare("UPDATE tickets SET status = ?, finished_at = ?, updated_at = ? WHERE id = ?").run("atendido", now, now, ticket.id);
-  db.prepare("UPDATE services SET finished_at = ? WHERE ticket_id = ? AND finished_at IS NULL").run(now, ticket.id);
-  db.prepare("UPDATE sectors SET current_number = MAX(current_number, ?), updated_at = ? WHERE id = ?").run(ticket.number, now, ticket.sector_id);
-  registerEvent("pedido_finalizado", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { code: ticket.code });
+  return runInTransaction(() => {
+    const now = isoNow();
+    db.prepare("UPDATE tickets SET status = ?, finished_at = ?, updated_at = ? WHERE id = ?").run("atendido", now, now, ticket.id);
+    db.prepare("UPDATE services SET finished_at = ? WHERE ticket_id = ? AND finished_at IS NULL").run(now, ticket.id);
+    db.prepare("UPDATE sectors SET current_number = MAX(current_number, ?), updated_at = ? WHERE id = ?").run(ticket.number, now, ticket.sector_id);
+    registerEvent("pedido_finalizado", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { code: ticket.code });
 
-  const released = releaseSmartWaitTicket(ticket.customer_id);
-  return { finishedTicket: ticketDto(getTicket(ticket.id)), releasedTicket: released ? ticketDto(released) : null };
+    const released = releaseSmartWaitTicket(ticket.customer_id);
+    const nextInSector = callNextTicket(ticket.sector_id);
+    return {
+      finishedTicket: ticketDto(getTicket(ticket.id)),
+      releasedTicket: released ? ticketDto(released) : null,
+      nextTicket: nextInSector?.ticket || null
+    };
+  });
 }
 
 function releaseSmartWaitTicket(customerId) {
@@ -1675,6 +1693,15 @@ function getBlockingTicket(candidate) {
     ORDER BY updated_at DESC
     LIMIT 1
   `).get(candidate.id, candidate.customer_id, candidate.device_id, ...CALL_BLOCKING_STATUSES);
+}
+
+function getActiveSectorTicket(sectorId) {
+  return db.prepare(`
+    SELECT * FROM tickets
+    WHERE sector_id = ? AND status IN (${placeholders(CALL_BLOCKING_STATUSES)})
+    ORDER BY COALESCE(service_started_at, called_at, updated_at) DESC
+    LIMIT 1
+  `).get(sectorId, ...CALL_BLOCKING_STATUSES);
 }
 
 function countAhead(ticket) {

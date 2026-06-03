@@ -60,37 +60,70 @@ function startAdminPolling() {
 }
 
 function renderAdmin() {
-  document.querySelector("#adminSectors").innerHTML = adminState.sectors.map((sector) => `
-    <form class="ops-card admin-form" data-sector-form="${sector.id}">
-      <div class="ops-card-head">
-        <div>
-          <strong>${sector.name}</strong>
-          <span>${sector.id}</span>
+  document.querySelector("#adminSectors").innerHTML = adminState.sectors.map((sector) => {
+    const called = sector.tickets.filter((ticket) => ticket.status === "chamado");
+    const inService = sector.tickets.filter((ticket) => ticket.status === "em_atendimento");
+    const waiting = sector.tickets.filter((ticket) => ["aguardando", "proximo", "espera_inteligente"].includes(ticket.status));
+    return `
+      <form class="ops-card admin-form" data-sector-form="${sector.id}">
+        <div class="ops-card-head">
+          <div>
+            <strong>${sector.name}</strong>
+            <span>${sector.id}</span>
+          </div>
+          <b class="status-pill ${sector.status}">${statusLabel(sector.status)}</b>
         </div>
-        <b class="status-pill ${sector.status}">${statusLabel(sector.status)}</b>
-      </div>
-      <label>Nome do setor<input name="name" value="${sector.name}" /></label>
-      <label>Balcão<input name="counterLabel" value="${sector.counterLabel}" /></label>
-      <label>Descrição<input name="serviceLabel" value="${sector.serviceLabel}" /></label>
-      <div class="form-grid">
-        <label>Fila base<input type="number" name="queueSize" min="1" value="${sector.queueSize}" /></label>
-        <label>Tempo médio<input type="number" name="averageServiceSeconds" min="1" value="${sector.averageServiceSeconds}" /></label>
-        <label>Capacidade<input type="number" name="capacity" min="1" value="${sector.capacity}" /></label>
-      </div>
-      <label>Status
-        <select name="status">
-          <option value="open" ${sector.status === "open" ? "selected" : ""}>Aberto</option>
-          <option value="paused" ${sector.status === "paused" ? "selected" : ""}>Pausado</option>
-          <option value="closed" ${sector.status === "closed" ? "selected" : ""}>Fechado</option>
-        </select>
-      </label>
-      <button class="blue-action compact-action">Salvar setor</button>
-    </form>
-  `).join("");
+        <div class="ops-metric">
+          <span>Senha atual</span>
+          <strong>${sector.current}</strong>
+        </div>
+        ${ticketSection("Chamadas", called)}
+        ${ticketSection("Em atendimento", inService)}
+        ${ticketSection("Fila", waiting)}
+        <label>Nome do setor<input name="name" value="${sector.name}" /></label>
+        <label>Balcão<input name="counterLabel" value="${sector.counterLabel}" /></label>
+        <label>Descrição<input name="serviceLabel" value="${sector.serviceLabel}" /></label>
+        <div class="form-grid">
+          <label>Fila base<input type="number" name="queueSize" min="1" value="${sector.queueSize}" /></label>
+          <label>Tempo médio<input type="number" name="averageServiceSeconds" min="1" value="${sector.averageServiceSeconds}" /></label>
+          <label>Capacidade<input type="number" name="capacity" min="1" value="${sector.capacity}" /></label>
+        </div>
+        <label>Status
+          <select name="status">
+            <option value="open" ${sector.status === "open" ? "selected" : ""}>Aberto</option>
+            <option value="paused" ${sector.status === "paused" ? "selected" : ""}>Pausado</option>
+            <option value="closed" ${sector.status === "closed" ? "selected" : ""}>Fechado</option>
+          </select>
+        </label>
+        <button class="blue-action compact-action">Salvar setor</button>
+      </form>
+    `;
+  }).join("");
 
   document.querySelectorAll("[data-sector-form]").forEach((form) => {
     form.addEventListener("submit", saveSector);
   });
+}
+
+function ticketSection(title, tickets) {
+  return `
+    <section class="ops-ticket-section">
+      <h2>${title}</h2>
+      ${tickets.length ? tickets.map(ticketRow).join("") : `<p class="ops-empty">Nenhuma senha.</p>`}
+    </section>
+  `;
+}
+
+function ticketRow(ticket) {
+  return `
+    <div class="ops-ticket-row">
+      <div>
+        <strong>${ticket.ticket}</strong>
+        <span>${ticket.sector} - ${ticketStatus(ticket)}</span>
+      </div>
+      <small>${ticket.status === "em_atendimento" ? "Agora" : `${ticket.position}º`}</small>
+    </div>
+  `;
 }
 
 function renderMetrics() {
@@ -159,6 +192,17 @@ async function createUser(event) {
 
 function statusLabel(status) {
   return { open: "Aberto", paused: "Pausado", closed: "Fechado" }[status] || status;
+}
+
+function ticketStatus(ticket) {
+  const labels = {
+    aguardando: "aguardando",
+    proximo: "proxima",
+    chamado: "chamada",
+    em_atendimento: "em atendimento",
+    espera_inteligente: "espera inteligente"
+  };
+  return labels[ticket.status] || ticket.status;
 }
 
 function roleLabel(role) {
