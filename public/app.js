@@ -39,6 +39,49 @@ let locationState = {
   error: ""
 };
 
+const productPhotoQueries = {
+  picanha: "raw picanha steak butcher counter",
+  "contra-file": "raw striploin steak butcher paper",
+  alcatra: "fresh raw beef cuts market",
+  "frango-file": "raw chicken breast supermarket tray",
+  mussarela: "sliced mozzarella cheese deli counter",
+  presunto: "sliced cooked ham deli counter",
+  requeijao: "cream cheese spread supermarket",
+  "queijo-prato": "sliced yellow cheese deli",
+  "pao-frances": "fresh french bread bakery",
+  croissant: "buttery croissant bakery display",
+  "bolo-cenoura": "carrot cake chocolate glaze",
+  "pao-forma": "sliced sandwich bread package",
+  banana: "banana bunch supermarket",
+  maca: "fuji apples supermarket display",
+  tomate: "fresh italian tomatoes market",
+  alface: "fresh green lettuce produce",
+  arroz: "rice bag supermarket shelf",
+  feijao: "beans bag supermarket shelf",
+  cafe: "ground coffee package supermarket",
+  macarrao: "spaghetti pasta package shelf",
+  "agua-mineral": "mineral water bottle supermarket",
+  "refrigerante-cola": "cola soda bottle supermarket",
+  "suco-uva": "grape juice bottle supermarket",
+  "cerveja-lata": "beer cans supermarket shelf",
+  detergente: "dish soap bottle supermarket",
+  "sabao-po": "laundry detergent box supermarket",
+  amaciante: "fabric softener bottle shelf",
+  desinfetante: "disinfectant cleaner bottle shelf",
+  "papel-higienico": "toilet paper package supermarket",
+  sabonete: "bar soap package supermarket",
+  shampoo: "shampoo bottle bathroom product",
+  condicionador: "conditioner bottle bathroom product",
+  lasanha: "frozen lasagna package",
+  pizza: "frozen pizza box supermarket",
+  "batata-congelada": "frozen french fries package",
+  nuggets: "chicken nuggets package",
+  pilhas: "alkaline batteries package",
+  "lampada-led": "led light bulb package",
+  "vela-aniversario": "birthday candles package",
+  guardanapo: "paper napkins package"
+};
+
 const productGroups = [
   group("Açougue", [
     product("picanha", "Picanha Bovina", "R$ 69,90", "R$ 59,90", "-14%", "Corte selecionado para churrasco, disponível no balcão do açougue.", "picanha steak"),
@@ -285,7 +328,8 @@ function group(sector, items) {
 }
 
 function product(id, name, old, price, sale, description, query) {
-  return { id, name, old, price, sale, description, image: `https://source.unsplash.com/220x180/?${encodeURIComponent(query)}` };
+  const imageQuery = productPhotoQueries[id] || query;
+  return { id, name, old, price, sale, description, image: `https://source.unsplash.com/220x180/?${encodeURIComponent(imageQuery)}` };
 }
 
 function navigate(screen) {
