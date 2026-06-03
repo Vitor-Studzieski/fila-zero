@@ -66,15 +66,16 @@ test("orquestra espera inteligente e libera uma senha por vez", async () => {
   assert.equal(state.tickets.find((ticket) => ticket.sectorId === "frios").status, "chamado");
 });
 
-test("bloqueia senha sem presenca por localizacao ou QR", async () => {
+test("permite senha sem presenca durante testes controlados", async () => {
   const { cookie, identity } = await createCustomer("sem-presenca");
   const result = await api("/api/tickets", {
     method: "POST",
     cookie,
-    body: { ...identity, sectorId: "padaria" },
-    ok: false
+    body: { ...identity, sectorId: "padaria" }
   });
-  assert.match(result.error, /localiza|QR Code/i);
+  assert.equal(result.ticket.sectorId, "padaria");
+  assert.equal(result.ticket.locationVerified, false);
+  assert.equal(result.ticket.qrVerified, false);
 });
 
 test("bloqueia acoes autenticadas sem token CSRF", async () => {
@@ -119,6 +120,7 @@ test("bloqueia login apos muitas tentativas invalidas", async () => {
 });
 
 test("mantem tempo estimado baseado na posicao real da fila", async () => {
+  resetSectorTickets("padaria");
   const firstCustomer = await createCustomer("tempo-primeiro");
   const secondCustomer = await createCustomer("tempo-segundo");
 

@@ -31,6 +31,7 @@ const STORE_LOCATION = {
   radiusMeters: 50000
 };
 const QR_TOKENS = loadQrTokens();
+const PRESENCE_CHECK_ENABLED = false;
 const MAX_ACTIVE_TICKETS_PER_CUSTOMER = 3;
 const AUTO_CALL_DELAY_SECONDS = 30;
 const CALL_ABSENCE_SECONDS = 10 * 60;
@@ -1090,6 +1091,10 @@ function applySecurityHeaders(req, res) {
 }
 
 function validatePresence(body, sectorId) {
+  if (!PRESENCE_CHECK_ENABLED) {
+    return { ok: true, qrVerified: false, locationVerified: false, location: null, distanceMeters: null };
+  }
+
   const token = String(body.qrToken || "");
   const qrVerified = token && QR_TOKENS[sectorId] === token;
   const location = normalizeLocation(body.location);

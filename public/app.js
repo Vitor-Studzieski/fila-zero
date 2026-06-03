@@ -15,6 +15,7 @@ const SMART_WAIT_STATUS = "espera_inteligente";
 const CANCELABLE_STATUSES = new Set(["aguardando", "proximo", "chamado", SMART_WAIT_STATUS, "standby"]);
 const QR_SECTORS = new Set(["acougue", "frios", "padaria"]);
 const LOCATION_CACHE_MS = 5 * 60 * 1000;
+const PRESENCE_CHECK_ENABLED = false;
 const shoppingList = new Set();
 let cartItems = [];
 const identity = getOrCreateIdentity();
@@ -84,7 +85,7 @@ async function init() {
   connectRealtime();
   startCountdownTimer();
   navigate("home");
-  warmupLocation();
+  if (PRESENCE_CHECK_ENABLED) warmupLocation();
 }
 
 function syncMobileViewport() {
@@ -583,6 +584,8 @@ function renderCart() {
 }
 
 async function getPresencePayload(sectorId) {
+  if (!PRESENCE_CHECK_ENABLED) return {};
+
   const qrToken = new URLSearchParams(location.search).get("qr");
   const storedToken = presenceCheckins[sectorId];
   if (qrToken) {
@@ -599,6 +602,11 @@ async function getPresencePayload(sectorId) {
 }
 
 async function confirmSectorPresence(sectorId) {
+  if (!PRESENCE_CHECK_ENABLED) {
+    navigate("sectors");
+    return;
+  }
+
   try {
     await ensureLocation({ force: true });
     navigate("sectors");
@@ -682,6 +690,7 @@ function hasFreshLocation() {
 }
 
 function locationStatusText() {
+  if (!PRESENCE_CHECK_ENABLED) return "Localizacao desativada durante os testes.";
   if (hasFreshLocation()) return "Localizacao confirmada automaticamente.";
   if (locationState.status === "loading") return "Confirmando localizacao automaticamente...";
   if (locationState.status === "error") return locationState.error || "Nao foi possivel confirmar a localizacao.";
