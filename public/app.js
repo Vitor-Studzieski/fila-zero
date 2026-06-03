@@ -31,7 +31,6 @@ let pollingTimer = null;
 let previousTicketStatuses = new Map();
 let countdownTimer = null;
 let activeJoinSector = null;
-let productsRendered = false;
 let locationState = {
   status: "idle",
   value: null,
@@ -44,29 +43,110 @@ const productGroups = [
   group("Açougue", [
     product("picanha", "Picanha Bovina", "R$ 69,90", "R$ 59,90", "-14%", "Corte selecionado para churrasco, disponível no balcão do açougue.", "picanha steak"),
     product("contra-file", "Contra-filé", "R$ 44,90", "R$ 36,90", "-18%", "Peça fresca para grelha, chapa ou preparo do dia.", "beef steak"),
-    product("alcatra", "Alcatra", "R$ 49,90", "R$ 41,90", "-16%", "Corte macio para bifes, assados e receitas rápidas.", "raw beef")
+    product("alcatra", "Alcatra", "R$ 49,90", "R$ 41,90", "-16%", "Corte macio para bifes, assados e receitas rápidas.", "raw beef"),
+    product("frango-file", "Filé de Frango", "R$ 24,90", "R$ 19,90", "-20%", "Filé resfriado para preparo rápido no dia a dia.", "chicken breast"),
+    product("linguica-toscana", "Linguiça Toscana", "R$ 27,90", "R$ 22,90", "-18%", "Linguiça fresca para churrasco ou forno.", "sausage"),
+    product("costela-bovina", "Costela Bovina", "R$ 39,90", "R$ 32,90", "-18%", "Costela para assar lentamente e servir em família.", "beef ribs"),
+    product("patinho-moido", "Patinho Moído", "R$ 42,90", "R$ 35,90", "-16%", "Moído na hora para molhos, hambúrgueres e recheios.", "ground beef"),
+    product("carne-panela", "Carne para Panela", "R$ 38,90", "R$ 31,90", "-18%", "Corte ideal para cozidos e receitas de conforto.", "stew beef")
   ]),
   group("Frios e Laticínios", [
     product("mussarela", "Queijo Mussarela", "R$ 34,90", "R$ 27,90", "-20%", "Fatiado na hora no setor de frios.", "mozzarella cheese"),
     product("presunto", "Presunto Cozido", "R$ 29,90", "R$ 23,90", "-20%", "Presunto fatiado para lanches e café da manhã.", "sliced ham"),
-    product("requeijao", "Requeijão Cremoso", "R$ 12,90", "R$ 9,90", "-23%", "Oferta válida para unidade tradicional.", "cream cheese")
+    product("requeijao", "Requeijão Cremoso", "R$ 12,90", "R$ 9,90", "-23%", "Oferta válida para unidade tradicional.", "cream cheese"),
+    product("queijo-prato", "Queijo Prato", "R$ 36,90", "R$ 29,90", "-19%", "Queijo fatiado para sanduíches e lanches rápidos.", "sliced cheese"),
+    product("mortadela", "Mortadela Defumada", "R$ 24,90", "R$ 18,90", "-24%", "Fatiada fina para pão francês e tábuas de frios.", "mortadella"),
+    product("iogurte-natural", "Iogurte Natural", "R$ 8,99", "R$ 6,99", "-22%", "Unidade natural para café da manhã ou receitas.", "natural yogurt"),
+    product("manteiga", "Manteiga com Sal", "R$ 19,90", "R$ 15,90", "-20%", "Tablete tradicional para pães, bolos e preparo.", "butter"),
+    product("leite-integral", "Leite Integral", "R$ 5,99", "R$ 4,79", "-20%", "Caixa 1 litro para abastecer a semana.", "milk carton")
   ]),
   group("Padaria", [
     product("pao-frances", "Pão Francês", "R$ 16,90", "R$ 12,90", "-24%", "Pão francês produzido na padaria Pompeia.", "fresh bread"),
     product("croissant", "Croissant", "R$ 8,90", "R$ 6,90", "-22%", "Croissant folhado para consumo imediato.", "croissant"),
-    product("bolo-cenoura", "Bolo de Cenoura", "R$ 24,90", "R$ 19,90", "-20%", "Bolo com cobertura de chocolate.", "carrot cake")
+    product("bolo-cenoura", "Bolo de Cenoura", "R$ 24,90", "R$ 19,90", "-20%", "Bolo com cobertura de chocolate.", "carrot cake"),
+    product("pao-forma", "Pão de Forma", "R$ 11,90", "R$ 8,90", "-25%", "Pacote macio para café da manhã e lanches.", "sandwich bread"),
+    product("sonho-creme", "Sonho de Creme", "R$ 7,90", "R$ 5,90", "-25%", "Doce recheado produzido na padaria.", "cream donut"),
+    product("pao-queijo", "Pão de Queijo", "R$ 34,90", "R$ 27,90", "-20%", "Porção para assar ou consumir no balcão.", "cheese bread"),
+    product("torta-frango", "Torta de Frango", "R$ 39,90", "R$ 31,90", "-20%", "Torta salgada para refeição rápida.", "chicken pie"),
+    product("baguete", "Baguete Artesanal", "R$ 13,90", "R$ 10,90", "-22%", "Baguete fresca para frios, patês e entradas.", "baguette")
   ]),
   group("Hortifruti", [
     product("banana", "Banana Nanica", "R$ 6,99", "R$ 4,99", "-29%", "Fruta selecionada no hortifruti.", "banana"),
     product("maca", "Maçã Fuji", "R$ 12,99", "R$ 9,99", "-23%", "Maçã fresca e crocante.", "apple fruit"),
-    product("tomate", "Tomate Italiano", "R$ 10,99", "R$ 7,99", "-27%", "Ideal para saladas e molhos.", "tomatoes")
+    product("tomate", "Tomate Italiano", "R$ 10,99", "R$ 7,99", "-27%", "Ideal para saladas e molhos.", "tomatoes"),
+    product("alface", "Alface Crespa", "R$ 4,99", "R$ 3,49", "-30%", "Folhas frescas para saladas e lanches.", "lettuce"),
+    product("batata", "Batata Inglesa", "R$ 7,99", "R$ 5,99", "-25%", "Selecionada para purês, assados e frituras.", "potatoes"),
+    product("cebola", "Cebola Nacional", "R$ 6,99", "R$ 4,99", "-29%", "Base para temperos e refogados.", "onion"),
+    product("laranja", "Laranja Pera", "R$ 5,99", "R$ 4,49", "-25%", "Boa para sucos e consumo diário.", "oranges"),
+    product("uva", "Uva Thompson", "R$ 18,90", "R$ 14,90", "-21%", "Bandeja de uvas doces e sem sementes.", "green grapes")
   ]),
   group("Mercearia", [
     product("arroz", "Arroz Tipo 1", "R$ 29,90", "R$ 24,90", "-17%", "Pacote 5 kg.", "rice bag"),
     product("feijao", "Feijão Carioca", "R$ 9,90", "R$ 7,90", "-20%", "Pacote 1 kg.", "beans"),
-    product("cafe", "Café Torrado", "R$ 18,90", "R$ 15,90", "-16%", "Café torrado e moído.", "coffee bag")
+    product("cafe", "Café Torrado", "R$ 18,90", "R$ 15,90", "-16%", "Café torrado e moído.", "coffee bag"),
+    product("macarrao", "Macarrão Espaguete", "R$ 5,99", "R$ 4,49", "-25%", "Pacote 500 g para refeições rápidas.", "spaghetti pasta"),
+    product("molho-tomate", "Molho de Tomate", "R$ 4,99", "R$ 3,79", "-24%", "Molho pronto para massas e carnes.", "tomato sauce"),
+    product("oleo-soja", "Óleo de Soja", "R$ 8,99", "R$ 6,99", "-22%", "Garrafa 900 ml para preparo diário.", "cooking oil"),
+    product("acucar", "Açúcar Refinado", "R$ 5,99", "R$ 4,59", "-23%", "Pacote 1 kg para café e receitas.", "sugar bag"),
+    product("farinha-trigo", "Farinha de Trigo", "R$ 6,99", "R$ 5,29", "-24%", "Pacote 1 kg para bolos, pães e massas.", "flour bag")
+  ]),
+  group("Bebidas", [
+    product("agua-mineral", "Água Mineral", "R$ 2,99", "R$ 1,99", "-33%", "Garrafa 500 ml para levar durante as compras.", "water bottle"),
+    product("refrigerante-cola", "Refrigerante Cola", "R$ 9,99", "R$ 7,49", "-25%", "Garrafa 2 litros para almoço e churrasco.", "cola soda"),
+    product("suco-uva", "Suco de Uva Integral", "R$ 18,90", "R$ 14,90", "-21%", "Suco integral sem adição de açúcar.", "grape juice"),
+    product("cerveja-lata", "Cerveja Lata", "R$ 4,99", "R$ 3,79", "-24%", "Lata gelada para consumo responsável.", "beer can"),
+    product("energetico", "Energético", "R$ 8,99", "R$ 6,99", "-22%", "Lata para quem precisa de energia extra.", "energy drink"),
+    product("cha-gelado", "Chá Gelado", "R$ 6,99", "R$ 4,99", "-29%", "Bebida leve para acompanhar lanches.", "iced tea"),
+    product("agua-coco", "Água de Coco", "R$ 7,99", "R$ 5,99", "-25%", "Caixinha refrescante para hidratação.", "coconut water"),
+    product("vinho-tinto", "Vinho Tinto", "R$ 39,90", "R$ 29,90", "-25%", "Rótulo selecionado para jantar e massas.", "red wine bottle")
+  ]),
+  group("Limpeza", [
+    product("detergente", "Detergente Neutro", "R$ 2,99", "R$ 1,99", "-33%", "Unidade para limpeza diária da cozinha.", "dish soap"),
+    product("sabao-po", "Sabão em Pó", "R$ 18,90", "R$ 14,90", "-21%", "Pacote para roupas do dia a dia.", "laundry detergent"),
+    product("amaciante", "Amaciante", "R$ 16,90", "R$ 12,90", "-24%", "Frasco com perfume suave para roupas.", "fabric softener"),
+    product("desinfetante", "Desinfetante", "R$ 9,90", "R$ 7,49", "-24%", "Perfume de limpeza para pisos e banheiros.", "cleaning bottle"),
+    product("agua-sanitaria", "Água Sanitária", "R$ 6,99", "R$ 4,99", "-29%", "Produto multiuso para limpeza pesada.", "bleach bottle"),
+    product("papel-toalha", "Papel Toalha", "R$ 8,99", "R$ 6,99", "-22%", "Rolo duplo para cozinha e pequenos acidentes.", "paper towel"),
+    product("esponja", "Esponja Multiuso", "R$ 4,99", "R$ 3,49", "-30%", "Pacote com esponjas para louças.", "cleaning sponge"),
+    product("limpa-vidros", "Limpa Vidros", "R$ 12,90", "R$ 9,90", "-23%", "Spray para janelas, espelhos e vitrines.", "glass cleaner")
+  ]),
+  group("Higiene", [
+    product("papel-higienico", "Papel Higiênico", "R$ 24,90", "R$ 18,90", "-24%", "Pacote econômico para abastecer a casa.", "toilet paper"),
+    product("sabonete", "Sabonete", "R$ 3,99", "R$ 2,79", "-30%", "Unidade perfumada para banho diário.", "soap bar"),
+    product("shampoo", "Shampoo", "R$ 18,90", "R$ 14,90", "-21%", "Frasco para cuidado diário dos cabelos.", "shampoo bottle"),
+    product("condicionador", "Condicionador", "R$ 19,90", "R$ 15,90", "-20%", "Condicionador para maciez e brilho.", "conditioner bottle"),
+    product("creme-dental", "Creme Dental", "R$ 7,99", "R$ 5,99", "-25%", "Tubo para proteção diária dos dentes.", "toothpaste"),
+    product("escova-dental", "Escova Dental", "R$ 9,99", "R$ 7,49", "-25%", "Escova macia para uso diário.", "toothbrush"),
+    product("desodorante", "Desodorante Aerosol", "R$ 15,90", "R$ 11,90", "-25%", "Proteção prolongada para rotina corrida.", "deodorant"),
+    product("absorvente", "Absorvente", "R$ 12,90", "R$ 9,90", "-23%", "Pacote regular para cuidado pessoal.", "sanitary pads")
+  ]),
+  group("Congelados", [
+    product("lasanha", "Lasanha Congelada", "R$ 19,90", "R$ 15,90", "-20%", "Refeição prática para forno ou micro-ondas.", "frozen lasagna"),
+    product("pizza", "Pizza Congelada", "R$ 24,90", "R$ 18,90", "-24%", "Pizza família para jantar rápido.", "frozen pizza"),
+    product("batata-congelada", "Batata Pré-Frita", "R$ 18,90", "R$ 13,90", "-26%", "Pacote para air fryer ou forno.", "frozen fries"),
+    product("nuggets", "Nuggets de Frango", "R$ 17,90", "R$ 13,90", "-22%", "Porção prática para crianças e lanches.", "chicken nuggets"),
+    product("sorvete", "Sorvete", "R$ 29,90", "R$ 22,90", "-23%", "Pote familiar de sobremesa gelada.", "ice cream tub"),
+    product("polpa-fruta", "Polpa de Fruta", "R$ 12,90", "R$ 9,90", "-23%", "Pacote para sucos naturais em minutos.", "frozen fruit"),
+    product("hamburguer", "Hambúrguer Bovino", "R$ 21,90", "R$ 16,90", "-23%", "Caixa com hambúrgueres para lanche.", "frozen burger"),
+    product("legumes-congelados", "Legumes Congelados", "R$ 14,90", "R$ 10,90", "-27%", "Mix de legumes para refeições rápidas.", "frozen vegetables")
+  ]),
+  group("Bazar", [
+    product("pilhas", "Pilhas Alcalinas", "R$ 18,90", "R$ 13,90", "-26%", "Cartela com pilhas para controles e brinquedos.", "batteries"),
+    product("lampada-led", "Lâmpada LED", "R$ 12,90", "R$ 8,90", "-31%", "Lâmpada econômica para casa.", "led light bulb"),
+    product("vela-aniversario", "Vela de Aniversário", "R$ 7,99", "R$ 5,99", "-25%", "Kit para bolos e comemorações.", "birthday candle"),
+    product("guardanapo", "Guardanapo", "R$ 6,99", "R$ 4,99", "-29%", "Pacote para mesa e festas.", "napkins"),
+    product("copo-descartavel", "Copo Descartável", "R$ 9,90", "R$ 7,49", "-24%", "Pacote para eventos e uso prático.", "plastic cups"),
+    product("papel-aluminio", "Papel Alumínio", "R$ 8,99", "R$ 6,79", "-24%", "Rolo para assados e conservação.", "aluminum foil"),
+    product("filme-pvc", "Filme PVC", "R$ 7,99", "R$ 5,99", "-25%", "Rolo para proteger alimentos.", "plastic wrap"),
+    product("carvao", "Carvão Vegetal", "R$ 24,90", "R$ 18,90", "-24%", "Saco para churrasco e grelha.", "charcoal bag")
   ])
 ];
+
+const offerPriorityBySector = {
+  acougue: ["Açougue", "Bebidas", "Padaria", "Mercearia", "Bazar"],
+  frios: ["Frios e Laticínios", "Padaria", "Bebidas", "Mercearia", "Hortifruti"],
+  padaria: ["Padaria", "Frios e Laticínios", "Mercearia", "Bebidas", "Hortifruti"]
+};
 
 init();
 
@@ -214,7 +294,10 @@ function navigate(screen) {
   document.querySelectorAll(".screen").forEach((item) => item.classList.toggle("active", item.dataset.screen === screen));
   document.querySelector("#appTitle").textContent = screens[screen];
   if (screen === "done") renderServiceScreen();
-  if (screen === "offers") renderOfferQueueContext();
+  if (screen === "offers") {
+    renderOfferQueueContext();
+    renderProducts();
+  }
   updateTabs(screen);
   updateFloatingQueue();
 }
@@ -722,16 +805,13 @@ function requestLocation() {
 }
 
 function renderProducts() {
-  if (productsRendered) return;
-  productsRendered = true;
-  const activeSector = getCurrentQueueData()?.sector;
-  const groups = productGroups;
+  const groups = personalizedProductGroups();
   document.querySelector("#productList").innerHTML = groups
-    .map((group) => `
+    .map((group, index) => `
         <section class="offer-section">
           <div>
-            <h3>${group.sector}</h3>
-            <span class="offer-section-count">${group.items.length} ofertas selecionadas</span>
+            <h3>${groupTitle(group, index)}</h3>
+            <span class="offer-section-count">${groupSubtitle(group)}</span>
           </div>
           ${group.items.map((item) => productCard(group.sector, item)).join("")}
         </section>
@@ -739,6 +819,44 @@ function renderProducts() {
     .join("");
 
   document.querySelectorAll("[data-product]").forEach((button) => button.addEventListener("click", () => openProduct(button.dataset.product)));
+}
+
+function personalizedProductGroups() {
+  const currentTicket = getCurrentQueueData();
+  const priority = offerPriorityBySector[currentTicket?.sectorId] || [];
+  const addedSectors = new Set(
+    productGroups
+      .filter((group) => group.items.some((item) => shoppingList.has(item.id)))
+      .map((group) => group.sector)
+  );
+
+  return productGroups
+    .map((group, index) => ({
+      ...group,
+      score: personalizedGroupScore(group, index, priority, addedSectors)
+    }))
+    .sort((first, second) => second.score - first.score || productGroups.findIndex((group) => group.sector === first.sector) - productGroups.findIndex((group) => group.sector === second.sector));
+}
+
+function personalizedGroupScore(group, index, priority, addedSectors) {
+  const priorityIndex = priority.indexOf(group.sector);
+  const priorityScore = priorityIndex >= 0 ? 100 - priorityIndex * 8 : 0;
+  const listScore = addedSectors.has(group.sector) ? 18 : 0;
+  return priorityScore + listScore - index;
+}
+
+function groupTitle(group, index) {
+  const currentTicket = getCurrentQueueData();
+  if (index === 0 && currentTicket) return `Recomendado para ${currentTicket.sector}`;
+  if (shoppingList.size && group.items.some((item) => shoppingList.has(item.id))) return `${group.sector} na sua lista`;
+  return group.sector;
+}
+
+function groupSubtitle(group) {
+  const added = group.items.filter((item) => shoppingList.has(item.id)).length;
+  return added
+    ? `${added} na lista · ${group.items.length} ofertas`
+    : `${group.items.length} ofertas selecionadas`;
 }
 
 function syncActionButtons() {
@@ -799,6 +917,7 @@ async function addCurrentProduct() {
     });
     await loadCart();
     shoppingList.add(productId);
+    renderProducts();
     document.querySelector("#addProduct").textContent = "Produto na lista";
     document.querySelector("#toast").classList.add("visible");
     updateProductCard(productId);
