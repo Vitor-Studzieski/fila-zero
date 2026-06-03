@@ -329,7 +329,60 @@ function group(sector, items) {
 
 function product(id, name, old, price, sale, description, query) {
   const imageQuery = productPhotoQueries[id] || query;
-  return { id, name, old, price, sale, description, image: `https://source.unsplash.com/220x180/?${encodeURIComponent(imageQuery)}` };
+  return { id, name, old, price, sale, description, image: productImage(id, name, imageQuery) };
+}
+
+function productImage(id, name, query) {
+  const palette = productPalette(id);
+  const title = name.split(" ").slice(0, 3).join(" ");
+  const subtitle = query.split(" ").slice(0, 3).join(" ");
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="220" height="180" viewBox="0 0 220 180">
+      <defs>
+        <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0" stop-color="${palette[0]}"/>
+          <stop offset="1" stop-color="${palette[1]}"/>
+        </linearGradient>
+        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#172033" flood-opacity=".22"/>
+        </filter>
+      </defs>
+      <rect width="220" height="180" rx="18" fill="url(#bg)"/>
+      <circle cx="184" cy="32" r="42" fill="#ffffff" opacity=".18"/>
+      <circle cx="42" cy="152" r="56" fill="#ffffff" opacity=".14"/>
+      <rect x="28" y="40" width="164" height="104" rx="16" fill="#fffdf7" opacity=".94" filter="url(#shadow)"/>
+      <rect x="46" y="58" width="128" height="52" rx="10" fill="${palette[2]}" opacity=".2"/>
+      <path d="M52 126h116" stroke="${palette[2]}" stroke-width="8" stroke-linecap="round" opacity=".55"/>
+      <text x="110" y="84" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="20" font-weight="900" fill="#0f3154">${escapeSvgText(title)}</text>
+      <text x="110" y="107" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="11" font-weight="800" fill="#5b6678">${escapeSvgText(subtitle)}</text>
+    </svg>
+  `;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+}
+
+function productPalette(seed) {
+  const palettes = [
+    ["#fff2c2", "#f8b84e", "#b45309"],
+    ["#e0f2fe", "#7dd3fc", "#0369a1"],
+    ["#dcfce7", "#86efac", "#15803d"],
+    ["#fee2e2", "#fca5a5", "#b91c1c"],
+    ["#fef3c7", "#fde68a", "#a16207"],
+    ["#ede9fe", "#c4b5fd", "#6d28d9"],
+    ["#fce7f3", "#f9a8d4", "#be185d"],
+    ["#e2e8f0", "#94a3b8", "#334155"]
+  ];
+  const index = [...seed].reduce((total, char) => total + char.charCodeAt(0), 0) % palettes.length;
+  return palettes[index];
+}
+
+function escapeSvgText(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&apos;"
+  }[char]));
 }
 
 function navigate(screen) {
