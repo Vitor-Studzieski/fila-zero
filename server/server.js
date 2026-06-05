@@ -46,6 +46,14 @@ const ACTIVE_STATUSES = ["aguardando", "proximo", "chamado", "em_atendimento", "
 const CALL_ELIGIBLE_STATUSES = ["aguardando", "proximo", "standby"];
 const CALL_BLOCKING_STATUSES = ["chamado", "em_atendimento"];
 const CUSTOMER_CANCELABLE_STATUSES = ["aguardando", "proximo", "chamado", "espera_inteligente", "standby"];
+const PRIORITY_CATEGORIES = new Set([
+  "deficiencia_ou_mobilidade_reduzida",
+  "tea",
+  "idoso_60_mais",
+  "gestante_ou_lactante",
+  "crianca_de_colo",
+  "obesidade"
+]);
 const LOGIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_ATTEMPT_LIMIT = 5;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
@@ -167,6 +175,8 @@ function bootstrap() {
       smart_wait_since TEXT,
       called_at TEXT,
       eligible_at TEXT,
+      priority INTEGER NOT NULL DEFAULT 0,
+      priority_reason TEXT,
       service_started_at TEXT,
       finished_at TEXT,
       canceled_at TEXT,
@@ -316,7 +326,9 @@ function migrateSchema() {
     ["qr_verified", "ALTER TABLE tickets ADD COLUMN qr_verified INTEGER NOT NULL DEFAULT 0"],
     ["absence_count", "ALTER TABLE tickets ADD COLUMN absence_count INTEGER NOT NULL DEFAULT 0"],
     ["canceled_at", "ALTER TABLE tickets ADD COLUMN canceled_at TEXT"],
-    ["eligible_at", "ALTER TABLE tickets ADD COLUMN eligible_at TEXT"]
+    ["eligible_at", "ALTER TABLE tickets ADD COLUMN eligible_at TEXT"],
+    ["priority", "ALTER TABLE tickets ADD COLUMN priority INTEGER NOT NULL DEFAULT 0"],
+    ["priority_reason", "ALTER TABLE tickets ADD COLUMN priority_reason TEXT"]
   ];
   migrations.forEach(([column, sql]) => {
     if (!columns.includes(column)) db.exec(sql);
@@ -1116,6 +1128,19 @@ function validatePresence(body, sectorId) {
   return { ok: false, error: "QR Code do setor inválido." };
 }
 
+function normalizePriority(body = {}) {
+  const requested = body.priority === true || body.preferential === true || body.isPriority === true;
+  const reason = cleanPriorityReason(body.priorityReason || body.preferentialReason || body.priorityCategory);
+  if (!requested && !reason) return { enabled: false, reason: null };
+  if (!reason) return { enabled: false, reason: null };
+  return { enabled: true, reason };
+}
+
+function cleanPriorityReason(value) {
+  const reason = cleanId(value);
+  return PRIORITY_CATEGORIES.has(reason) ? reason : null;
+}
+
 function loadQrTokens() {
   const fromJson = parseJsonEnv("QR_TOKENS");
   const tokens = fromJson && typeof fromJson === "object" ? fromJson : {
@@ -1198,6 +1223,7 @@ function createTicket(body) {
 
   const presence = validatePresence(body, sector.id);
   if (!presence.ok) return fail(presence.error);
+  const priority = normalizePriority(body);
 
   const ticket = runInTransaction(() => {
     const now = isoNow();
@@ -1212,6 +1238,8 @@ function createTicket(body) {
       code: formatTicket(sector.prefix, nextNumber),
       status: "aguardando",
       queueOrder,
+      priority: priority.enabled ? 1 : 0,
+      priorityReason: priority.reason,
       eligibleAt: new Date(Date.now() + AUTO_CALL_DELAY_SECONDS * 1000).toISOString(),
       createdAt: now
     };
@@ -1219,11 +1247,11 @@ function createTicket(body) {
     db.prepare(`
       INSERT INTO tickets (
         id, customer_id, device_id, sector_id, number, code, status, queue_order,
-        eligible_at,
+        eligible_at, priority, priority_reason,
         location_lat, location_lng, location_accuracy, location_distance_meters, location_verified, qr_verified,
         created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       nextTicket.id,
       nextTicket.customerId,
@@ -1234,6 +1262,8 @@ function createTicket(body) {
       nextTicket.status,
       nextTicket.queueOrder,
       nextTicket.eligibleAt,
+      nextTicket.priority,
+      nextTicket.priorityReason,
       presence.location?.latitude || null,
       presence.location?.longitude || null,
       presence.location?.accuracy || null,
@@ -1244,7 +1274,7 @@ function createTicket(body) {
       nextTicket.createdAt
     );
 
-    registerEvent("senha_emitida", "ticket", nextTicket.id, nextTicket.customerId, nextTicket.sectorId, { code: nextTicket.code, presence });
+    registerEvent("senha_emitida", "ticket", nextTicket.id, nextTicket.customerId, nextTicket.sectorId, { code: nextTicket.code, presence, priority });
     return nextTicket;
   });
 
@@ -1288,7 +1318,7 @@ function callNextTicket(sectorId, options = {}) {
     SELECT * FROM tickets
     WHERE sector_id = ? AND status IN (${placeholders(CALL_ELIGIBLE_STATUSES)})
     ${eligibilityClause}
-    ORDER BY queue_order ASC
+    ORDER BY priority DESC, queue_order ASC
   `).all(...params);
 
   for (const candidate of queue) {
@@ -1594,7 +1624,7 @@ function getStaffState(user = null) {
     const tickets = db.prepare(`
       SELECT * FROM tickets
       WHERE sector_id = ? AND status IN (${placeholders(ACTIVE_STATUSES)})
-      ORDER BY queue_order ASC
+      ORDER BY priority DESC, queue_order ASC
     `).all(sector.id, ...ACTIVE_STATUSES).map(ticketDto);
     return { ...sectorDto(sector), tickets };
   });
@@ -1630,6 +1660,8 @@ function ticketDto(row) {
     counterLabel: sector.counter_label,
     serviceLabel: sector.service_label,
     status: row.status,
+    priority: Boolean(row.priority),
+    priorityReason: row.priority_reason,
     position,
     ahead,
     secondsToCall,
@@ -1713,8 +1745,13 @@ function countAhead(ticket) {
   if (!CALL_ELIGIBLE_STATUSES.includes(ticket.status)) return 0;
   return db.prepare(`
     SELECT COUNT(*) AS total FROM tickets
-    WHERE sector_id = ? AND queue_order < ? AND status IN (${placeholders(CALL_ELIGIBLE_STATUSES)})
-  `).get(ticket.sector_id, ticket.queue_order, ...CALL_ELIGIBLE_STATUSES).total;
+    WHERE sector_id = ?
+      AND status IN (${placeholders(CALL_ELIGIBLE_STATUSES)})
+      AND (
+        priority > ?
+        OR (priority = ? AND queue_order < ?)
+      )
+  `).get(ticket.sector_id, ...CALL_ELIGIBLE_STATUSES, Number(ticket.priority || 0), Number(ticket.priority || 0), ticket.queue_order).total;
 }
 
 function activeServiceDelaySeconds(sectorId, averageSeconds) {

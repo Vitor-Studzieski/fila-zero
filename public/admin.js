@@ -119,6 +119,7 @@ function ticketRow(ticket) {
     <div class="ops-ticket-row">
       <div>
         <strong>${ticket.ticket}</strong>
+        ${ticket.priority ? `<em class="priority-badge">Preferencial</em>` : ""}
         <span>${ticket.sector} - ${ticketStatus(ticket)}</span>
       </div>
       <small>${ticket.status === "em_atendimento" ? "Agora" : `${ticket.position}º`}</small>

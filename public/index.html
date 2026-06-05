@@ -79,6 +79,24 @@
           <section class="screen" data-screen="sectors">
             <h2>Escolha o setor</h2>
             <p class="muted center">A senha será criada somente após sua solicitação.</p>
+            <section class="priority-panel" aria-label="Atendimento preferencial">
+              <label class="priority-toggle">
+                <input id="priorityToggle" type="checkbox" />
+                <span>
+                  <strong>Fila preferencial</strong>
+                  <small>Use esta opcao se voce se enquadra em atendimento prioritario.</small>
+                </span>
+              </label>
+              <select id="priorityReason" disabled>
+                <option value="">Selecionar categoria</option>
+                <option value="deficiencia_ou_mobilidade_reduzida">Pessoa com deficiencia ou mobilidade reduzida</option>
+                <option value="tea">Pessoa com Transtorno do Espectro Autista (TEA)</option>
+                <option value="idoso_60_mais">Idoso com 60 anos ou mais</option>
+                <option value="gestante_ou_lactante">Gestante ou lactante</option>
+                <option value="crianca_de_colo">Pessoa acompanhada por crianca de colo</option>
+                <option value="obesidade">Pessoa com obesidade</option>
+              </select>
+            </section>
             <article class="sector-card">
               <div class="sector-head">
                 <div><strong>Açougue</strong><span>Carnes frescas e cortes especiais</span></div>

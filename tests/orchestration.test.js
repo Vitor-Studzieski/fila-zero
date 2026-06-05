@@ -171,7 +171,33 @@ test("setor chama a proxima senha somente depois de finalizar o atendimento atua
   assert.equal(secondState.tickets[0].status, "chamado");
 });
 
+test("fila preferencial e chamada antes da fila comum", async () => {
+  resetSectorTickets("frios");
+  const commonCustomer = await createCustomer("fila-comum");
+  const priorityCustomer = await createCustomer("fila-preferencial");
+
+  await api("/api/tickets", { method: "POST", cookie: commonCustomer.cookie, body: { ...commonCustomer.identity, sectorId: "frios", qrToken: qrToken("frios") } });
+  const priority = await api("/api/tickets", {
+    method: "POST",
+    cookie: priorityCustomer.cookie,
+    body: {
+      ...priorityCustomer.identity,
+      sectorId: "frios",
+      qrToken: qrToken("frios"),
+      priority: true,
+      priorityReason: "idoso_60_mais"
+    }
+  });
+
+  assert.equal(priority.ticket.priority, true);
+  assert.equal(priority.ticket.position, 1);
+
+  const called = await api("/api/sectors/frios/call-next", { method: "POST", cookie: adminCookie });
+  assert.equal(called.ticket.ticket, priority.ticket.ticket);
+});
+
 test("cliente cancela senha ativa e libera o setor para outra senha", async () => {
+  resetSectorTickets("frios");
   const { cookie, identity } = await createCustomer("cancelar-cliente");
   const created = await api("/api/tickets", { method: "POST", cookie, body: { ...identity, sectorId: "frios", qrToken: qrToken("frios") } });
 

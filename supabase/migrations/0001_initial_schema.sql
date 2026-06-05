@@ -89,6 +89,8 @@ create table if not exists public.tickets (
   smart_wait_since timestamptz,
   called_at timestamptz,
   eligible_at timestamptz,
+  priority boolean not null default false,
+  priority_reason text,
   service_started_at timestamptz,
   finished_at timestamptz,
   canceled_at timestamptz,
@@ -170,7 +172,7 @@ create table if not exists public.login_attempts (
 );
 
 create index if not exists idx_tickets_customer_status on public.tickets (customer_id, status);
-create index if not exists idx_tickets_sector_queue on public.tickets (sector_id, queue_order);
+create index if not exists idx_tickets_sector_queue on public.tickets (sector_id, priority desc, queue_order);
 create index if not exists idx_tickets_sector_status on public.tickets (sector_id, status);
 create index if not exists idx_events_created_at on public.events (created_at desc);
 create index if not exists idx_cart_customer on public.cart_items (customer_id);

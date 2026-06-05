@@ -16,6 +16,14 @@ const CANCELABLE_STATUSES = new Set(["aguardando", "proximo", "chamado", SMART_W
 const QR_SECTORS = new Set(["acougue", "frios", "padaria"]);
 const LOCATION_CACHE_MS = 5 * 60 * 1000;
 const PRESENCE_CHECK_ENABLED = false;
+const PRIORITY_LABELS = {
+  deficiencia_ou_mobilidade_reduzida: "Deficiencia ou mobilidade reduzida",
+  tea: "TEA",
+  idoso_60_mais: "Idoso 60+",
+  gestante_ou_lactante: "Gestante ou lactante",
+  crianca_de_colo: "Crianca de colo",
+  obesidade: "Obesidade"
+};
 const shoppingList = new Set();
 let cartItems = [];
 const identity = getOrCreateIdentity();
@@ -197,6 +205,7 @@ async function init() {
   syncMobileViewport();
   renderProducts();
   bindEvents();
+  syncPriorityControls();
   syncPresenceStatus();
   currentUser = await requireSession(["customer", "manager", "admin"]);
   syncAccessArea();
@@ -440,7 +449,7 @@ async function createTicketWithPresence(sectorId) {
     const presence = await getPresencePayload(sectorId);
     return await api("/api/tickets", {
       method: "POST",
-      body: { ...identity, sectorId, ...presence }
+      body: { ...identity, sectorId, ...presence, ...priorityPayload() }
     });
   } catch (exception) {
     if (!isInvalidQrError(exception) || !presenceCheckins[sectorId]) throw exception;
@@ -448,9 +457,18 @@ async function createTicketWithPresence(sectorId) {
     const location = await ensureLocation({ force: true });
     return api("/api/tickets", {
       method: "POST",
-      body: { ...identity, sectorId, location }
+      body: { ...identity, sectorId, location, ...priorityPayload() }
     });
   }
+}
+
+function priorityPayload() {
+  const toggle = document.querySelector("#priorityToggle");
+  const reason = document.querySelector("#priorityReason")?.value || "";
+  const priority = Boolean(toggle?.checked);
+  if (!priority) return { priority: false, priorityReason: "" };
+  if (!reason) throw new Error("Selecione a categoria da fila preferencial.");
+  return { priority: true, priorityReason: reason };
 }
 
 function isInvalidQrError(exception) {
@@ -664,6 +682,8 @@ function floatingTimeText(data) {
 }
 
 function ticketSubText(data) {
+  const priority = priorityText(data);
+  if (priority && ["aguardando", "proximo"].includes(data.status)) return `${priority}. ${data.position} na fila preferencial.`;
   if (data.status === "em_atendimento") return `Pedido em atendimento no ${data.counterLabel}.`;
   if (data.status === SMART_WAIT_STATUS) return "Protegida até o pedido atual terminar.";
   if (data.status === "standby") return "Em standby. Será chamada novamente após o próximo atendimento.";
@@ -675,14 +695,19 @@ function ticketSubText(data) {
 }
 
 function queueItemLine(data) {
+  const priority = priorityText(data);
   if (data.status === SMART_WAIT_STATUS) return "Protegida até o pedido atual terminar";
   if (data.status === "standby") return "Standby - retorno após próximo atendimento";
   if (data.status === "em_atendimento") return "Atendimento em andamento";
   if (data.status === "chamado") return `${data.counterLabel} - senha chamada`;
   if (data.status === "proximo") return "Próxima chamada";
-  if (hasLiveCountdown(data)) return `Chamada em ${formatTimer(data.secondsToCall)}`;
+  if (hasLiveCountdown(data)) return `${priority ? `${priority} - ` : ""}Chamada em ${formatTimer(data.secondsToCall)}`;
   if (data.position === 1) return "Próxima da fila";
   return `${data.ahead} pessoas à frente`;
+}
+
+function priorityText(data) {
+  return data?.priority ? `Preferencial${data.priorityReason && PRIORITY_LABELS[data.priorityReason] ? ` - ${PRIORITY_LABELS[data.priorityReason]}` : ""}` : "";
 }
 
 function updateFloatingQueue() {
@@ -701,6 +726,7 @@ function renderActiveTickets() {
         <button class="mini-ticket ${sectorId === currentSector ? "active" : ""}" data-view-ticket="${sectorId}">
           <div>
             <strong>${data.sector}</strong>
+            ${data.priority ? `<em class="priority-badge">Preferencial</em>` : ""}
             <span>${queueItemLine(data)}</span>
           </div>
           <b>${data.ticket}</b>
@@ -1082,6 +1108,8 @@ function bindEvents() {
   document.querySelector("#statusFinishButton").addEventListener("click", finishCurrentService);
   document.querySelector("#floatingFinishButton").addEventListener("click", finishCurrentService);
   document.querySelector("#addProduct").addEventListener("click", addCurrentProduct);
+  document.querySelector("#priorityToggle")?.addEventListener("change", syncPriorityControls);
+  document.querySelector("#priorityReason")?.addEventListener("change", syncPriorityControls);
   document.querySelectorAll("[data-rating]").forEach((button) => {
     button.addEventListener("click", () => {
       document.querySelectorAll("[data-rating]").forEach((item) => item.classList.remove("selected"));
@@ -1089,6 +1117,14 @@ function bindEvents() {
     });
   });
   document.querySelector("#sendRating").addEventListener("click", sendRating);
+}
+
+function syncPriorityControls() {
+  const toggle = document.querySelector("#priorityToggle");
+  const reason = document.querySelector("#priorityReason");
+  if (!toggle || !reason) return;
+  reason.disabled = !toggle.checked;
+  if (!toggle.checked) reason.value = "";
 }
 
 function formatTimer(totalSeconds) {

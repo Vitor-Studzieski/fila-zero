@@ -476,6 +476,75 @@ h3 {
   padding: 14px;
 }
 
+.priority-panel {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fffdf2;
+}
+
+.priority-toggle {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: 10px;
+  color: var(--text);
+}
+
+.priority-toggle input {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  accent-color: var(--yellow);
+}
+
+.priority-toggle strong,
+.priority-toggle small {
+  display: block;
+}
+
+.priority-toggle strong {
+  color: var(--blue);
+}
+
+.priority-toggle small {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.priority-panel select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--text);
+  font-weight: 800;
+}
+
+.priority-panel select:disabled {
+  color: var(--muted);
+  background: #f3f6f9;
+}
+
+.priority-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #fff1a8;
+  color: #6b4b00;
+  font-size: 11px;
+  font-weight: 900;
+}
+
 .sector-head {
   display: flex;
   justify-content: space-between;
