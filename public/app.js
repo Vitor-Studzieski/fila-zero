@@ -29,6 +29,8 @@ let cartItems = [];
 const identity = getOrCreateIdentity();
 let currentUser = null;
 let presenceCheckins = JSON.parse(localStorage.getItem("filaZeroPresenceCheckins") || "{}");
+let alertPreferences = loadAlertPreferences();
+let queueTutorialSeen = localStorage.getItem("filaZeroQueueTutorialSeen") === "1";
 
 let activeScreen = "qr";
 let currentSector = null;
@@ -37,8 +39,11 @@ let sectors = {};
 let stateSource = null;
 let pollingTimer = null;
 let previousTicketStatuses = new Map();
+let lastStateUpdatedAt = null;
 let countdownTimer = null;
 let activeJoinSector = null;
+let queueAlertHistory = new Set();
+let visibleQueueAlert = null;
 let locationState = {
   status: "idle",
   value: null,
@@ -199,13 +204,97 @@ const offerPriorityBySector = {
   padaria: ["Padaria", "Frios e Laticínios", "Mercearia", "Bebidas", "Hortifruti"]
 };
 
+const offerProfilesBySector = {
+  acougue: {
+    title: "Ofertas para sua espera no Acougue",
+    subtitle: "Carnes, temperos, carvao, molhos e acompanhamentos",
+    featuredProductIds: [
+      "picanha",
+      "contra-file",
+      "alcatra",
+      "frango-file",
+      "linguica-toscana",
+      "costela-bovina",
+      "patinho-moido",
+      "carne-panela",
+      "carvao",
+      "papel-aluminio",
+      "molho-tomate",
+      "cebola"
+    ],
+    relatedProductIds: [
+      "tomate",
+      "batata",
+      "oleo-soja",
+      "refrigerante-cola",
+      "cerveja-lata",
+      "vinho-tinto",
+      "filme-pvc"
+    ]
+  },
+  padaria: {
+    title: "Ofertas para sua espera na Padaria",
+    subtitle: "Paes, cafe, manteiga, bolos e itens de cafe da manha",
+    featuredProductIds: [
+      "pao-frances",
+      "croissant",
+      "bolo-cenoura",
+      "pao-forma",
+      "sonho-creme",
+      "pao-queijo",
+      "baguete",
+      "cafe",
+      "manteiga",
+      "leite-integral",
+      "acucar",
+      "banana"
+    ],
+    relatedProductIds: [
+      "requeijao",
+      "iogurte-natural",
+      "suco-uva",
+      "maca",
+      "farinha-trigo",
+      "guardanapo"
+    ]
+  },
+  frios: {
+    title: "Ofertas para sua espera em Frios",
+    subtitle: "Queijos, presuntos, iogurtes, massas e complementos",
+    featuredProductIds: [
+      "mussarela",
+      "presunto",
+      "queijo-prato",
+      "mortadela",
+      "requeijao",
+      "iogurte-natural",
+      "manteiga",
+      "leite-integral",
+      "pao-frances",
+      "pao-forma",
+      "macarrao",
+      "molho-tomate"
+    ],
+    relatedProductIds: [
+      "baguete",
+      "lasanha",
+      "pizza",
+      "tomate",
+      "suco-uva",
+      "guardanapo"
+    ]
+  }
+};
+
 init();
 
 async function init() {
   syncMobileViewport();
+  simplifyStatusDetails();
   renderProducts();
   bindEvents();
   syncPriorityControls();
+  syncAlertControls();
   syncPresenceStatus();
   currentUser = await requireSession(["customer", "manager", "admin"]);
   syncAccessArea();
@@ -218,6 +307,17 @@ async function init() {
   startCountdownTimer();
   navigate("home");
   if (PRESENCE_CHECK_ENABLED) warmupLocation();
+}
+
+function simplifyStatusDetails() {
+  const panel = document.querySelector(".sync-panel");
+  if (!panel || panel.closest(".sync-details")) return;
+  const details = document.createElement("details");
+  details.className = "sync-details";
+  const summary = document.createElement("summary");
+  summary.textContent = "Detalhes da fila";
+  panel.parentNode.insertBefore(details, panel);
+  details.append(summary, panel);
 }
 
 function syncMobileViewport() {
@@ -289,6 +389,7 @@ function startStatePolling() {
 
 function applyState(state) {
   const nextStatuses = new Map();
+  lastStateUpdatedAt = state.serverTime || new Date().toISOString();
   sectors = Object.fromEntries(state.sectors.map((sector) => [sector.id, sector]));
   activeQueues = Object.fromEntries(state.tickets.map((ticket) => [ticket.sectorId, withLiveCountdown(ticket)]));
 
@@ -302,6 +403,7 @@ function applyState(state) {
   });
 
   previousTicketStatuses = nextStatuses;
+  pruneQueueAlertHistory(state.tickets);
   if (!currentSector || !activeQueues[currentSector]) currentSector = Object.keys(activeQueues)[0] || null;
   syncPresenceStatus();
   syncQueue();
@@ -310,7 +412,7 @@ function applyState(state) {
 function startCountdownTimer() {
   if (countdownTimer) return;
   countdownTimer = setInterval(() => {
-    if (!Object.values(activeQueues).some(hasLiveCountdown)) return;
+    if (!Object.values(activeQueues).some((ticket) => hasLiveCountdown(ticket) || hasStandbyCountdown(ticket))) return;
     activeQueues = Object.fromEntries(
       Object.entries(activeQueues).map(([sectorId, ticket]) => [sectorId, withLiveCountdown(ticket)])
     );
@@ -319,6 +421,10 @@ function startCountdownTimer() {
 }
 
 function withLiveCountdown(ticket) {
+  if (hasStandbyCountdown(ticket)) {
+    const remaining = Math.ceil((new Date(ticket.standbyExpiresAt).getTime() - Date.now()) / 1000);
+    return { ...ticket, standbySecondsRemaining: Math.max(0, remaining) };
+  }
   if (!hasLiveCountdown(ticket)) return ticket;
   const remaining = Math.ceil((new Date(ticket.estimatedCallAt).getTime() - Date.now()) / 1000);
   return {
@@ -329,7 +435,11 @@ function withLiveCountdown(ticket) {
 }
 
 function hasLiveCountdown(ticket) {
-  return Boolean(ticket?.estimatedCallAt && ["aguardando", "proximo", "standby"].includes(ticket.status));
+  return Boolean(ticket?.estimatedCallAt && ["aguardando", "proximo"].includes(ticket.status));
+}
+
+function hasStandbyCountdown(ticket) {
+  return Boolean(ticket?.status === "standby" && ticket.standbyExpiresAt);
 }
 
 function group(sector, items) {
@@ -406,6 +516,30 @@ function navigate(screen) {
   }
   updateTabs(screen);
   updateFloatingQueue();
+  maybeShowQueueTutorial(screen);
+}
+
+function maybeShowQueueTutorial(screen) {
+  if (queueTutorialSeen) return;
+  if (!["sectors", "ticket", "status"].includes(screen)) return;
+  openQueueTutorial({ automatic: true });
+}
+
+function openQueueTutorial(options = {}) {
+  const modal = document.querySelector("#queueTutorial");
+  if (!modal) return;
+  modal.hidden = false;
+  if (options.automatic) markQueueTutorialSeen();
+}
+
+function closeQueueTutorial() {
+  document.querySelector("#queueTutorial").hidden = true;
+  markQueueTutorialSeen();
+}
+
+function markQueueTutorialSeen() {
+  queueTutorialSeen = true;
+  localStorage.setItem("filaZeroQueueTutorialSeen", "1");
 }
 
 function syncAccessArea() {
@@ -491,12 +625,23 @@ function syncQueue() {
   document.querySelector("#ticketSector").textContent = hasQueue ? data.sector : "Nenhuma senha ativa";
   document.querySelector("#ticketSub").textContent = hasQueue ? ticketSubText(data) : "Solicite uma senha em um setor para acompanhar.";
   document.querySelector("#currentQueue").textContent = hasQueue ? data.current : "--";
+  document.querySelector("#ticketSuccessCard").classList.toggle("visible", hasQueue);
+  document.querySelector("#ticketSuccessText").textContent = hasQueue
+    ? `Setor: ${data.sector}. Sua senha: ${data.ticket}. Voce sera avisado quando estiver proximo.`
+    : "Voce sera avisado quando estiver proximo.";
+  renderPriorityBadge(document.querySelector("#ticketPriorityBadge"), data);
 
   document.querySelector("#statusSector").textContent = hasQueue ? `${data.sector} - ${data.counterLabel}` : "Nenhuma senha ativa";
   document.querySelector("#positionNumber").textContent = hasQueue ? positionText(data) : "--";
   document.querySelector("#estimatedTime").textContent = hasQueue ? statusText(data) : "Sem atendimento em andamento";
   document.querySelector("#timeInfo").textContent = hasQueue ? timeInfoText(data) : "--";
+  document.querySelector("#estimateNote").textContent = hasQueue ? estimateNoteText(data) : "Tempo estimado indisponivel.";
   document.querySelector("#aheadInfo").textContent = hasQueue ? aheadInfoText(data) : "--";
+  updateQueueAlert(data);
+  updateSyncPanel(data);
+  renderPriorityBadge(document.querySelector("#statusPriorityBadge"), data);
+  document.querySelector(".ticket-circle").classList.toggle("priority-ticket", Boolean(hasQueue && data.priority));
+  document.querySelector(".progress-donut").classList.toggle("priority-ticket", Boolean(hasQueue && data.priority));
   document.querySelector(".progress-donut").style.setProperty("--donut-progress", `${hasQueue ? donutProgress(data) : 0}%`);
 
   document.querySelector("#statusFinishButton").classList.toggle("visible", Boolean(serviceSector));
@@ -633,7 +778,7 @@ function statusText(data) {
   if (data.status === "chamado") return "Senha chamada";
   if (data.status === "em_atendimento") return "Em atendimento";
   if (data.status === SMART_WAIT_STATUS) return "Espera inteligente";
-  if (data.status === "standby") return "Standby";
+  if (data.status === "standby") return `Standby: ${formatStandbyTime(data)}`;
   if (data.status === "proximo") return "Próxima senha";
   if (hasLiveCountdown(data)) return `Chamada em ${formatTimer(data.secondsToCall)}`;
   if (data.position === 1) return "Aguardando chamada";
@@ -655,7 +800,7 @@ function positionText(data) {
 
 function timeInfoText(data) {
   if (data.status === SMART_WAIT_STATUS) return "Protegida";
-  if (data.status === "standby") return "Até 10 min para retorno";
+  if (data.status === "standby") return `${formatStandbyTime(data)} restantes`;
   if (data.status === "chamado") return "Dirija-se ao balcão";
   if (data.status === "em_atendimento") return "Pedido em andamento";
   if (hasLiveCountdown(data)) return formatTimer(data.secondsToCall);
@@ -663,12 +808,182 @@ function timeInfoText(data) {
   return formatTimer(data.secondsToCall);
 }
 
+function estimateNoteText(data) {
+  if (data.status === "chamado") return `Sua senha foi chamada no ${data.counterLabel}.`;
+  if (data.status === "em_atendimento") return "Atendimento em andamento. O tempo da fila sera atualizado ao finalizar.";
+  if (data.status === SMART_WAIT_STATUS) return "Sua senha esta protegida e sera recalculada quando o atendimento atual terminar.";
+  if (data.status === "standby") return `Sua senha foi chamada, mas você não compareceu. Ela ficará em standby por 10 minutos. Aguarde nova chamada. Tempo restante: ${formatStandbyTime(data)}.`;
+  if (!Number.isFinite(Number(data.secondsToCall))) return "Tempo estimado indisponivel.";
+
+  const estimate = formatEstimateMinutes(data.secondsToCall);
+  const basis = data.estimateBasedOnRecentServices
+    ? `Baseado no tempo medio dos ultimos ${data.averageServiceSamples} atendimentos deste setor.`
+    : `Baseado no tempo medio configurado para ${data.sector}.`;
+  return `Tempo estimado: ${estimate}. ${basis}`;
+}
+
+function formatEstimateMinutes(totalSeconds) {
+  const seconds = Math.max(0, Number(totalSeconds) || 0);
+  if (seconds < 60) return "menos de 1 minuto";
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  return `${minutes} ${minutes === 1 ? "minuto" : "minutos"}`;
+}
+
+function formatStandbyTime(data) {
+  const fromServer = Number(data?.standbySecondsRemaining);
+  const fromDate = data?.standbyExpiresAt
+    ? Math.ceil((new Date(data.standbyExpiresAt).getTime() - Date.now()) / 1000)
+    : 0;
+  return formatTimer(Math.max(0, Number.isFinite(fromServer) ? fromServer : fromDate));
+}
+
 function aheadInfoText(data) {
   if (data.status === SMART_WAIT_STATUS) return "Aguardando fim do pedido atual";
-  if (data.status === "standby") return "Será chamada novamente após o próximo atendimento";
+  if (data.status === "standby") return "Aguardando nova chamada apos o proximo atendimento";
   if (data.status === "chamado" || data.status === "em_atendimento") return "Você é o atendimento atual";
   if (data.position === 1) return "Você é o próximo";
   return `${data.ahead} pessoas`;
+}
+
+function updateSyncPanel(data) {
+  const panel = document.querySelector(".sync-panel");
+  if (!panel) return;
+  panel.classList.toggle("live", Boolean(data));
+  document.querySelector("#syncCounterTicket").textContent = data?.current || "--";
+  document.querySelector("#syncCustomerTicket").textContent = data?.ticket || "--";
+  document.querySelector("#syncSector").textContent = data ? `${data.sector} - ${data.counterLabel}` : "--";
+  document.querySelector("#syncStatus").textContent = data ? ticketStatusLabel(data.status) : "--";
+  document.querySelector("#syncAhead").textContent = data ? syncAheadText(data) : "--";
+  document.querySelector("#syncPriorityRule").textContent = data ? priorityRuleText(data) : "--";
+  document.querySelector("#syncUpdatedAt").textContent = lastStateUpdatedAt
+    ? `Atualizado ${formatClock(lastStateUpdatedAt)}`
+    : "Atualizando...";
+}
+
+function priorityRuleText(data) {
+  return data.priority
+    ? "Fila preferencial: prioridade antes da fila comum; ordem mantida entre preferenciais."
+    : "Fila comum: chamada apos senhas preferenciais e pela ordem de chegada.";
+}
+
+function syncAheadText(data) {
+  if (data.status === "chamado" || data.status === "em_atendimento") return "Atendimento atual";
+  if (data.status === "atendido") return "Finalizado";
+  if (data.status === "cancelado") return "Cancelado";
+  if (data.position === 1) return "Voce e o proximo";
+  return `${data.ahead} pessoas`;
+}
+
+function ticketStatusLabel(status) {
+  return {
+    aguardando: "Aguardando",
+    proximo: "Proximo",
+    chamado: "Chamado",
+    em_atendimento: "Em atendimento",
+    atendido: "Finalizado",
+    standby: "Standby",
+    cancelado: "Cancelado",
+    expirado: "Expirado",
+    espera_inteligente: "Espera inteligente"
+  }[status] || status || "--";
+}
+
+function formatClock(value) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  }).format(new Date(value));
+}
+
+function updateQueueAlert(data) {
+  const alertBox = document.querySelector("#queueAlert");
+  if (!alertBox) return;
+
+  const alert = queueAlertFor(data);
+  visibleQueueAlert = alert;
+  alertBox.hidden = !alert;
+  alertBox.classList.toggle("urgent", alert?.ahead === 1);
+  document.querySelector("#queueAlertTitle").textContent = alert ? alert.title : "Atenção";
+  document.querySelector("#queueAlertText").textContent = alert ? alert.message : "";
+  if (alert) triggerQueueAlert(alert, data);
+}
+
+function queueAlertFor(data) {
+  if (!data || !["aguardando", "proximo"].includes(data.status)) return null;
+  if (![1, 2].includes(Number(data.ahead))) return null;
+  const title = Number(data.ahead) === 1 ? "Atenção: você é o próximo" : "Atenção: sua vez está chegando";
+  return {
+    ahead: Number(data.ahead),
+    title,
+    message: `Sua senha será chamada em breve. Fique próximo ao setor ${data.sector}.`
+  };
+}
+
+function triggerQueueAlert(alert, data) {
+  const key = `${data.id}:${alert.ahead}`;
+  if (queueAlertHistory.has(key)) return;
+  queueAlertHistory.add(key);
+  if (alertPreferences.sound) playQueueAlertSound();
+  if (alertPreferences.vibration) vibrateQueueAlert(alert.ahead);
+}
+
+function pruneQueueAlertHistory(tickets) {
+  const activeIds = new Set(tickets.map((ticket) => ticket.id));
+  queueAlertHistory = new Set([...queueAlertHistory].filter((key) => activeIds.has(key.split(":")[0])));
+}
+
+function loadAlertPreferences() {
+  const stored = JSON.parse(localStorage.getItem("filaZeroAlertPreferences") || "{}");
+  return {
+    sound: stored.sound !== false,
+    vibration: stored.vibration !== false
+  };
+}
+
+function saveAlertPreferences() {
+  localStorage.setItem("filaZeroAlertPreferences", JSON.stringify(alertPreferences));
+}
+
+function syncAlertControls() {
+  const sound = document.querySelector("#soundAlertToggle");
+  const vibration = document.querySelector("#vibrationAlertToggle");
+  if (!sound || !vibration) return;
+  sound.checked = alertPreferences.sound;
+  vibration.checked = alertPreferences.vibration;
+}
+
+function updateAlertPreference(type, enabled) {
+  alertPreferences = { ...alertPreferences, [type]: enabled };
+  saveAlertPreferences();
+  syncAlertControls();
+  if (enabled && type === "sound") playQueueAlertSound({ quiet: true });
+  if (enabled && type === "vibration") vibrateQueueAlert(2);
+}
+
+function playQueueAlertSound(options = {}) {
+  try {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContext) return;
+    const context = new AudioContext();
+    const gain = context.createGain();
+    const oscillator = context.createOscillator();
+    oscillator.type = "sine";
+    oscillator.frequency.value = options.quiet ? 660 : 880;
+    gain.gain.value = options.quiet ? 0.025 : 0.07;
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + (options.quiet ? 0.08 : 0.18));
+    oscillator.addEventListener("ended", () => context.close());
+  } catch {
+    // Browsers can block audio until the user interacts with the page.
+  }
+}
+
+function vibrateQueueAlert(ahead) {
+  if (!("vibrate" in navigator)) return;
+  navigator.vibrate(ahead === 1 ? [180, 90, 180] : [140, 70, 140]);
 }
 
 function floatingTimeText(data) {
@@ -686,7 +1001,7 @@ function ticketSubText(data) {
   if (priority && ["aguardando", "proximo"].includes(data.status)) return `${priority}. ${data.position} na fila preferencial.`;
   if (data.status === "em_atendimento") return `Pedido em atendimento no ${data.counterLabel}.`;
   if (data.status === SMART_WAIT_STATUS) return "Protegida até o pedido atual terminar.";
-  if (data.status === "standby") return "Em standby. Será chamada novamente após o próximo atendimento.";
+  if (data.status === "standby") return `Sua senha foi chamada, mas você não compareceu. Ela ficará em standby por 10 minutos. Aguarde nova chamada.`;
   if (data.status === "chamado") return `Apresente-se no ${data.counterLabel}.`;
   if (data.status === "proximo") return "Você será chamado em instantes.";
   if (hasLiveCountdown(data)) return `Sua senha será chamada em ${formatTimer(data.secondsToCall)}.`;
@@ -697,7 +1012,7 @@ function ticketSubText(data) {
 function queueItemLine(data) {
   const priority = priorityText(data);
   if (data.status === SMART_WAIT_STATUS) return "Protegida até o pedido atual terminar";
-  if (data.status === "standby") return "Standby - retorno após próximo atendimento";
+  if (data.status === "standby") return `Standby - ${formatStandbyTime(data)} restantes`;
   if (data.status === "em_atendimento") return "Atendimento em andamento";
   if (data.status === "chamado") return `${data.counterLabel} - senha chamada`;
   if (data.status === "proximo") return "Próxima chamada";
@@ -708,6 +1023,27 @@ function queueItemLine(data) {
 
 function priorityText(data) {
   return data?.priority ? `Preferencial${data.priorityReason && PRIORITY_LABELS[data.priorityReason] ? ` - ${PRIORITY_LABELS[data.priorityReason]}` : ""}` : "";
+}
+
+function priorityIcon() {
+  return `
+    <svg class="priority-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="4.5" r="2.2"></circle>
+      <path d="M12 8v6"></path>
+      <path d="M8.5 10.5h7"></path>
+      <path d="M9.5 21l2.5-7 2.5 7"></path>
+    </svg>
+  `;
+}
+
+function priorityBadgeMarkup(extraClass = "") {
+  return `<em class="priority-badge ${extraClass}">${priorityIcon()}<span>PREFERENCIAL</span></em>`;
+}
+
+function renderPriorityBadge(element, data) {
+  if (!element) return;
+  element.hidden = !data?.priority;
+  element.innerHTML = data?.priority ? `${priorityIcon()}<span>PREFERENCIAL</span>` : "";
 }
 
 function updateFloatingQueue() {
@@ -723,10 +1059,10 @@ function renderActiveTickets() {
   const entries = Object.entries(activeQueues);
   list.innerHTML = entries.length
     ? entries.map(([sectorId, data]) => `
-        <button class="mini-ticket ${sectorId === currentSector ? "active" : ""}" data-view-ticket="${sectorId}">
+        <button class="mini-ticket ${sectorId === currentSector ? "active" : ""} ${data.priority ? "priority-ticket" : ""}" data-view-ticket="${sectorId}">
           <div>
             <strong>${data.sector}</strong>
-            ${data.priority ? `<em class="priority-badge">Preferencial</em>` : ""}
+            ${data.priority ? priorityBadgeMarkup() : ""}
             <span>${queueItemLine(data)}</span>
           </div>
           <b>${data.ticket}</b>
@@ -931,7 +1267,7 @@ function renderProducts() {
   const groups = personalizedProductGroups();
   document.querySelector("#productList").innerHTML = groups
     .map((group, index) => `
-        <section class="offer-section">
+        <section class="offer-section ${group.personalized ? "personalized-offers" : ""}">
           <div>
             <h3>${groupTitle(group, index)}</h3>
             <span class="offer-section-count">${groupSubtitle(group)}</span>
@@ -947,35 +1283,77 @@ function renderProducts() {
 function personalizedProductGroups() {
   const currentTicket = getCurrentQueueData();
   const priority = offerPriorityBySector[currentTicket?.sectorId] || [];
+  const profile = offerProfilesBySector[currentTicket?.sectorId];
   const addedSectors = new Set(
     productGroups
       .filter((group) => group.items.some((item) => shoppingList.has(item.id)))
       .map((group) => group.sector)
   );
 
-  return productGroups
+  const featuredIds = new Set(profile?.featuredProductIds || []);
+  const relatedIds = new Set(profile?.relatedProductIds || []);
+  const rankedGroups = productGroups
     .map((group, index) => ({
       ...group,
-      score: personalizedGroupScore(group, index, priority, addedSectors)
+      items: orderItemsByRelevance(group.items, featuredIds, relatedIds),
+      score: personalizedGroupScore(group, index, priority, addedSectors, featuredIds, relatedIds)
     }))
     .sort((first, second) => second.score - first.score || productGroups.findIndex((group) => group.sector === first.sector) - productGroups.findIndex((group) => group.sector === second.sector));
+
+  if (!profile) return rankedGroups;
+
+  const highlighted = profile.featuredProductIds
+    .map((id) => findProduct(id))
+    .filter(Boolean);
+  const highlightedIds = new Set(highlighted.map((item) => item.id));
+  const remainingGroups = rankedGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !highlightedIds.has(item.id))
+    }))
+    .filter((group) => group.items.length);
+
+  return [
+    {
+      sector: profile.title,
+      subtitle: profile.subtitle,
+      personalized: true,
+      items: highlighted
+    },
+    ...remainingGroups
+  ];
 }
 
-function personalizedGroupScore(group, index, priority, addedSectors) {
+function orderItemsByRelevance(items, featuredIds, relatedIds) {
+  return [...items].sort((first, second) => productRelevanceScore(second, featuredIds, relatedIds) - productRelevanceScore(first, featuredIds, relatedIds));
+}
+
+function productRelevanceScore(item, featuredIds, relatedIds) {
+  if (featuredIds.has(item.id)) return 30;
+  if (relatedIds.has(item.id)) return 16;
+  if (shoppingList.has(item.id)) return 8;
+  return 0;
+}
+
+function personalizedGroupScore(group, index, priority, addedSectors, featuredIds, relatedIds) {
   const priorityIndex = priority.indexOf(group.sector);
   const priorityScore = priorityIndex >= 0 ? 100 - priorityIndex * 8 : 0;
+  const featuredScore = group.items.filter((item) => featuredIds.has(item.id)).length * 10;
+  const relatedScore = group.items.filter((item) => relatedIds.has(item.id)).length * 4;
   const listScore = addedSectors.has(group.sector) ? 18 : 0;
-  return priorityScore + listScore - index;
+  return priorityScore + featuredScore + relatedScore + listScore - index;
 }
 
 function groupTitle(group, index) {
   const currentTicket = getCurrentQueueData();
+  if (group.personalized) return group.sector;
   if (index === 0 && currentTicket) return `Recomendado para ${currentTicket.sector}`;
   if (shoppingList.size && group.items.some((item) => shoppingList.has(item.id))) return `${group.sector} na sua lista`;
   return group.sector;
 }
 
 function groupSubtitle(group) {
+  if (group.personalized) return group.subtitle;
   const added = group.items.filter((item) => shoppingList.has(item.id)).length;
   return added
     ? `${added} na lista · ${group.items.length} ofertas`
@@ -988,13 +1366,14 @@ function syncActionButtons() {
 
 function productCard(sector, item) {
   const added = shoppingList.has(item.id);
+  const displaySector = item.sector || sector;
   return `
     <button class="product-card ${added ? "added" : ""}" data-product="${item.id}">
       <span class="sale">${item.sale}</span>
       <img class="product-img" src="${item.image}" alt="${item.name}" loading="lazy" />
       <div>
         <strong>${item.name}</strong>
-        <small>${sector}</small>
+        <small>${displaySector}</small>
         <del>${item.old}</del>
         <b>${item.price}</b>
       </div>
@@ -1108,8 +1487,18 @@ function bindEvents() {
   document.querySelector("#statusFinishButton").addEventListener("click", finishCurrentService);
   document.querySelector("#floatingFinishButton").addEventListener("click", finishCurrentService);
   document.querySelector("#addProduct").addEventListener("click", addCurrentProduct);
+  document.querySelector("#queueHelpButton")?.addEventListener("click", () => openQueueTutorial());
+  document.querySelector("#ticketHelpButton")?.addEventListener("click", () => openQueueTutorial());
+  document.querySelector("#statusHelpButton")?.addEventListener("click", () => openQueueTutorial());
+  document.querySelector("#tutorialClose")?.addEventListener("click", closeQueueTutorial);
+  document.querySelector("#tutorialDone")?.addEventListener("click", closeQueueTutorial);
+  document.querySelector("#queueTutorial")?.addEventListener("click", (event) => {
+    if (event.target.id === "queueTutorial") closeQueueTutorial();
+  });
   document.querySelector("#priorityToggle")?.addEventListener("change", syncPriorityControls);
   document.querySelector("#priorityReason")?.addEventListener("change", syncPriorityControls);
+  document.querySelector("#soundAlertToggle")?.addEventListener("change", (event) => updateAlertPreference("sound", event.target.checked));
+  document.querySelector("#vibrationAlertToggle")?.addEventListener("change", (event) => updateAlertPreference("vibration", event.target.checked));
   document.querySelectorAll("[data-rating]").forEach((button) => {
     button.addEventListener("click", () => {
       document.querySelectorAll("[data-rating]").forEach((item) => item.classList.remove("selected"));

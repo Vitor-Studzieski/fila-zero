@@ -78,6 +78,7 @@
 
           <section class="screen" data-screen="sectors">
             <h2>Escolha o setor</h2>
+            <button class="help-action" id="queueHelpButton" type="button">Como funciona?</button>
             <p class="muted center">A senha será criada somente após sua solicitação.</p>
             <section class="priority-panel" aria-label="Atendimento preferencial">
               <label class="priority-toggle">
@@ -124,7 +125,13 @@
           </section>
 
           <section class="screen" data-screen="ticket">
+            <button class="help-action" id="ticketHelpButton" type="button">Como funciona?</button>
+            <section class="success-card" id="ticketSuccessCard">
+              <strong>Senha solicitada com sucesso!</strong>
+              <span id="ticketSuccessText">Voce sera avisado quando estiver proximo.</span>
+            </section>
             <div class="ticket-circle"><span id="ticketNumber">--</span></div>
+            <div id="ticketPriorityBadge" class="priority-badge priority-large" hidden></div>
             <h3 class="center" id="ticketSector">Nenhuma senha ativa</h3>
             <p class="muted center" id="ticketSub">Solicite uma senha para acompanhar o atendimento.</p>
             <div class="row-card"><span>Senha em atendimento</span><strong id="currentQueue">--</strong></div>
@@ -145,10 +152,35 @@
 
           <section class="screen" data-screen="status">
             <h2>Status da fila</h2>
+            <button class="help-action" id="statusHelpButton" type="button">Como funciona?</button>
             <p class="muted center" id="statusSector">Nenhuma senha ativa</p>
             <div class="progress-donut"><span id="positionNumber">--</span></div>
+            <div id="statusPriorityBadge" class="priority-badge priority-large" hidden></div>
             <button class="soft-yellow" id="estimatedTime">Sem atendimento em andamento</button>
+            <div class="queue-alert" id="queueAlert" hidden>
+              <strong id="queueAlertTitle">Atenção</strong>
+              <span id="queueAlertText">Sua senha será chamada em breve.</span>
+            </div>
+            <div class="alert-settings" aria-label="Preferências de alerta">
+              <label><input id="soundAlertToggle" type="checkbox" /> Som</label>
+              <label><input id="vibrationAlertToggle" type="checkbox" /> Vibração</label>
+            </div>
+            <section class="sync-panel" aria-label="Sincronizacao com o balcao">
+              <div class="sync-panel-head">
+                <strong>Sincronizado com o balcao</strong>
+                <span id="syncUpdatedAt">Atualizando...</span>
+              </div>
+              <div class="sync-grid">
+                <div><span>Senha no balcao</span><b id="syncCounterTicket">--</b></div>
+                <div><span>Sua senha</span><b id="syncCustomerTicket">--</b></div>
+                <div><span>Setor</span><b id="syncSector">--</b></div>
+                <div><span>Status</span><b id="syncStatus">--</b></div>
+                <div><span>Pessoas na frente</span><b id="syncAhead">--</b></div>
+                <div><span>Critério da fila</span><b id="syncPriorityRule">--</b></div>
+              </div>
+            </section>
             <div class="info-row"><strong>Tempo estimado</strong><span id="timeInfo">--</span></div>
+            <div class="estimate-note" id="estimateNote">Tempo estimado indisponivel.</div>
             <div class="info-row"><strong>Pessoas na frente</strong><span id="aheadInfo">--</span></div>
             <button class="soft-action cancel-ticket-action" id="statusCancelButton">Cancelar senha</button>
             <button class="yellow-action service-finish-action" id="statusFinishButton">Informar fim do pedido</button>
@@ -302,6 +334,22 @@
             <p id="callText"></p>
             <button class="blue-action" id="confirmCall">Estou a caminho</button>
           </div>
+        </div>
+        <div class="tutorial-backdrop" id="queueTutorial" hidden>
+          <section class="tutorial-card" role="dialog" aria-modal="true" aria-labelledby="tutorialTitle">
+            <div class="tutorial-head">
+              <strong id="tutorialTitle">Como funciona?</strong>
+              <button class="icon-button" id="tutorialClose" type="button" aria-label="Fechar">x</button>
+            </div>
+            <div class="tutorial-steps">
+              <article><b>1</b><span>Escolha o setor: acougue, frios ou padaria.</span></article>
+              <article><b>2</b><span>Toque em solicitar senha para entrar na fila.</span></article>
+              <article><b>3</b><span>Acompanhe sua posicao e o tempo estimado.</span></article>
+              <article><b>4</b><span>Aguarde o alerta de chamada no celular.</span></article>
+              <article><b>5</b><span>Quando for chamado, va ate o balcao indicado.</span></article>
+            </div>
+            <button class="yellow-action" id="tutorialDone" type="button">Entendi</button>
+          </section>
         </div>
       </section>
     </main>

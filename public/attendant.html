@@ -23,6 +23,19 @@
         </header>
         <div class="ops-grid" id="attendantSectors"></div>
       </section>
+      <div class="skip-modal" id="skipModal" hidden>
+        <form class="skip-card" id="skipForm">
+          <strong>Pular senha</strong>
+          <p>Informe o motivo para registrar a excecao na ordem de atendimento.</p>
+          <label><input type="radio" name="reason" value="cliente_ausente" required /> Cliente ausente</label>
+          <label><input type="radio" name="reason" value="cancelamento" /> Cancelamento</label>
+          <label><input type="radio" name="reason" value="erro_operacional" /> Erro operacional</label>
+          <div>
+            <button type="button" class="soft-action" id="skipCancel">Voltar</button>
+            <button class="yellow-action">Confirmar</button>
+          </div>
+        </form>
+      </div>
     </main>
     <script src="attendant.js"></script>
   </body>

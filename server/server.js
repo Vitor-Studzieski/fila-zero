@@ -35,6 +35,7 @@ const PRESENCE_CHECK_ENABLED = false;
 const MAX_ACTIVE_TICKETS_PER_CUSTOMER = 3;
 const AUTO_CALL_DELAY_SECONDS = 30;
 const CALL_ABSENCE_SECONDS = 10 * 60;
+const STANDBY_SECONDS = 10 * 60;
 const TICKET_MIN_NUMBER = 0;
 const TICKET_MAX_NUMBER = 999;
 const BUSINESS_TIME_ZONE = "America/Sao_Paulo";
@@ -46,6 +47,8 @@ const ACTIVE_STATUSES = ["aguardando", "proximo", "chamado", "em_atendimento", "
 const CALL_ELIGIBLE_STATUSES = ["aguardando", "proximo", "standby"];
 const CALL_BLOCKING_STATUSES = ["chamado", "em_atendimento"];
 const CUSTOMER_CANCELABLE_STATUSES = ["aguardando", "proximo", "chamado", "espera_inteligente", "standby"];
+const STAFF_SKIPPABLE_STATUSES = ["aguardando", "proximo", "chamado", "standby", "espera_inteligente"];
+const SKIP_REASONS = new Set(["cliente_ausente", "cancelamento", "erro_operacional"]);
 const PRIORITY_CATEGORIES = new Set([
   "deficiencia_ou_mobilidade_reduzida",
   "tea",
@@ -116,16 +119,20 @@ function startBackgroundJobs() {
   setInterval(() => {
     expireStaleActiveTickets();
     expireAbsentCalls();
+    expireExpiredStandbyTickets();
   }, 15000);
 }
 
 function runScheduledJobs() {
+  expireAbsentCalls();
+  expireExpiredStandbyTickets();
   autoCallReadyTickets();
 }
 
 function syncQueueState() {
   runScheduledJobs();
   expireAbsentCalls();
+  expireExpiredStandbyTickets();
 }
 
 function bootstrap() {
@@ -177,6 +184,8 @@ function bootstrap() {
       eligible_at TEXT,
       priority INTEGER NOT NULL DEFAULT 0,
       priority_reason TEXT,
+      standby_started_at TEXT,
+      standby_expires_at TEXT,
       service_started_at TEXT,
       finished_at TEXT,
       canceled_at TEXT,
@@ -328,7 +337,9 @@ function migrateSchema() {
     ["canceled_at", "ALTER TABLE tickets ADD COLUMN canceled_at TEXT"],
     ["eligible_at", "ALTER TABLE tickets ADD COLUMN eligible_at TEXT"],
     ["priority", "ALTER TABLE tickets ADD COLUMN priority INTEGER NOT NULL DEFAULT 0"],
-    ["priority_reason", "ALTER TABLE tickets ADD COLUMN priority_reason TEXT"]
+    ["priority_reason", "ALTER TABLE tickets ADD COLUMN priority_reason TEXT"],
+    ["standby_started_at", "ALTER TABLE tickets ADD COLUMN standby_started_at TEXT"],
+    ["standby_expires_at", "ALTER TABLE tickets ADD COLUMN standby_expires_at TEXT"]
   ];
   migrations.forEach(([column, sql]) => {
     if (!columns.includes(column)) db.exec(sql);
@@ -464,6 +475,27 @@ async function handleApi(req, res, url) {
       return;
     }
     const result = finishTicket(ticketFinish[1]);
+    broadcast();
+    sendApiResult(res, 200, result);
+    return;
+  }
+
+  const ticketSkip = url.pathname.match(/^\/api\/tickets\/([^/]+)\/skip$/);
+  if (req.method === "POST" && ticketSkip) {
+    const user = requireAuth(req, res, STAFF_ROLES);
+    if (!user) return;
+    if (!verifyCsrf(req, res, user)) return;
+    const ticket = getTicket(ticketSkip[1]);
+    if (!ticket) {
+      sendJson(res, 404, { error: "Senha nÃ£o encontrada." });
+      return;
+    }
+    if (!canAccessSector(user, ticket.sector_id)) {
+      sendJson(res, 403, { error: "UsuÃ¡rio sem permissÃ£o para este setor." });
+      return;
+    }
+    const body = await readBody(req);
+    const result = skipTicket(ticketSkip[1], body);
     broadcast();
     sendApiResult(res, 200, result);
     return;
@@ -1310,15 +1342,16 @@ function callNextTicket(sectorId, options = {}) {
   const active = getActiveSectorTicket(sectorId);
   if (active) return fail(`Finalize a senha ${active.code} antes de chamar a proxima.`);
 
+  const statuses = options.preferStandby ? CALL_ELIGIBLE_STATUSES : CALL_ELIGIBLE_STATUSES.filter((status) => status !== "standby");
   const eligibilityClause = options.requireEligible ? "AND COALESCE(eligible_at, created_at) <= ?" : "";
   const params = options.requireEligible
-    ? [sectorId, ...CALL_ELIGIBLE_STATUSES, isoNow()]
-    : [sectorId, ...CALL_ELIGIBLE_STATUSES];
+    ? [sectorId, ...statuses, isoNow()]
+    : [sectorId, ...statuses];
   const queue = db.prepare(`
     SELECT * FROM tickets
-    WHERE sector_id = ? AND status IN (${placeholders(CALL_ELIGIBLE_STATUSES)})
+    WHERE sector_id = ? AND status IN (${placeholders(statuses)})
     ${eligibilityClause}
-    ORDER BY priority DESC, queue_order ASC
+    ORDER BY ${options.preferStandby ? "CASE WHEN status = 'standby' THEN 0 ELSE 1 END," : ""} priority DESC, queue_order ASC
   `).all(...params);
 
   for (const candidate of queue) {
@@ -1335,7 +1368,7 @@ function callNextTicket(sectorId, options = {}) {
     }
 
     const now = isoNow();
-    db.prepare("UPDATE tickets SET status = ?, called_at = ?, updated_at = ? WHERE id = ?").run("chamado", now, now, candidate.id);
+    db.prepare("UPDATE tickets SET status = ?, called_at = ?, standby_started_at = NULL, standby_expires_at = NULL, updated_at = ? WHERE id = ?").run("chamado", now, now, candidate.id);
     db.prepare("INSERT INTO calls (id, ticket_id, sector_id, action, created_at) VALUES (?, ?, ?, ?, ?)").run(`call-${crypto.randomUUID()}`, candidate.id, sectorId, "senha_chamada", now);
     registerEvent("senha_chamada", "ticket", candidate.id, candidate.customer_id, candidate.sector_id, { code: candidate.code });
     return { ticket: ticketDto(getTicket(candidate.id)) };
@@ -1370,13 +1403,42 @@ function expireAbsentCalls() {
   const now = isoNow();
   expired.forEach((ticket) => {
     const absenceCount = Number(ticket.absence_count || 0) + 1;
-    const nextStatus = absenceCount >= 2 ? "expirado" : "standby";
+    if (absenceCount >= 2) {
+      db.prepare(`
+        UPDATE tickets
+        SET status = ?, absence_count = ?, canceled_at = ?, called_at = NULL,
+            standby_started_at = NULL, standby_expires_at = NULL, updated_at = ?
+        WHERE id = ?
+      `).run("cancelado", absenceCount, now, now, ticket.id);
+      registerEvent("senha_cancelada_por_ausencia", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { absenceCount });
+      return;
+    }
+
+    const standbyExpiresAt = new Date(Date.now() + STANDBY_SECONDS * 1000).toISOString();
     db.prepare(`
       UPDATE tickets
-      SET status = ?, absence_count = ?, expired_at = ?, called_at = NULL, queue_order = queue_order + 1000, updated_at = ?
+      SET status = ?, absence_count = ?, called_at = NULL,
+          standby_started_at = ?, standby_expires_at = ?,
+          queue_order = queue_order + 1000, updated_at = ?
       WHERE id = ?
-    `).run(nextStatus, absenceCount, now, now, ticket.id);
-    registerEvent(nextStatus === "expirado" ? "senha_expirada_por_ausencia" : "senha_em_standby_por_ausencia", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { absenceCount });
+    `).run("standby", absenceCount, now, standbyExpiresAt, now, ticket.id);
+    registerEvent("senha_em_standby_por_ausencia", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { absenceCount, standbyExpiresAt });
+  });
+  broadcast();
+}
+
+function expireExpiredStandbyTickets() {
+  const now = isoNow();
+  const expired = db.prepare("SELECT * FROM tickets WHERE status = ? AND standby_expires_at IS NOT NULL AND standby_expires_at < ?").all("standby", now);
+  if (!expired.length) return;
+
+  expired.forEach((ticket) => {
+    db.prepare(`
+      UPDATE tickets
+      SET status = ?, canceled_at = ?, standby_started_at = NULL, standby_expires_at = NULL, updated_at = ?
+      WHERE id = ?
+    `).run("cancelado", now, now, ticket.id);
+    registerEvent("senha_cancelada_por_standby_expirado", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { code: ticket.code });
   });
   broadcast();
 }
@@ -1454,6 +1516,58 @@ function cancelTicket(ticketId, customerId) {
   };
 }
 
+function skipTicket(ticketId, body = {}) {
+  const ticket = getTicket(ticketId);
+  if (!ticket) return fail("Senha nÃ£o encontrada.");
+  if (!STAFF_SKIPPABLE_STATUSES.includes(ticket.status)) {
+    return fail("Esta senha nÃ£o pode ser pulada neste status.");
+  }
+
+  const reason = cleanId(body.reason);
+  if (!SKIP_REASONS.has(reason)) {
+    return fail("Informe um motivo obrigatÃ³rio para pular a senha.");
+  }
+
+  return runInTransaction(() => {
+    const now = isoNow();
+    const nextStatus = reason === "cliente_ausente" ? "standby" : "cancelado";
+    const absenceCount = reason === "cliente_ausente" ? Number(ticket.absence_count || 0) + 1 : Number(ticket.absence_count || 0);
+    if (reason === "cliente_ausente") {
+      const standbyExpiresAt = new Date(Date.now() + STANDBY_SECONDS * 1000).toISOString();
+      db.prepare(`
+        UPDATE tickets
+        SET status = ?, absence_count = ?, called_at = NULL,
+            smart_wait_reason = NULL, blocked_by_ticket_id = NULL, smart_wait_since = NULL,
+            standby_started_at = ?, standby_expires_at = ?,
+            updated_at = ?, queue_order = queue_order + 1000
+        WHERE id = ?
+      `).run(nextStatus, absenceCount, now, standbyExpiresAt, now, ticket.id);
+    } else {
+      db.prepare(`
+        UPDATE tickets
+        SET status = ?, absence_count = ?, canceled_at = ?, called_at = NULL,
+            smart_wait_reason = NULL, blocked_by_ticket_id = NULL, smart_wait_since = NULL,
+            standby_started_at = NULL, standby_expires_at = NULL, updated_at = ?
+        WHERE id = ?
+      `).run(nextStatus, absenceCount, now, now, ticket.id);
+    }
+
+    db.prepare("INSERT INTO calls (id, ticket_id, sector_id, action, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(`call-${crypto.randomUUID()}`, ticket.id, ticket.sector_id, `senha_pulada:${reason}`, now);
+    registerEvent("senha_pulada_pelo_atendente", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, {
+      code: ticket.code,
+      previousStatus: ticket.status,
+      reason
+    });
+
+    const nextInSector = CALL_BLOCKING_STATUSES.includes(ticket.status) ? callNextTicket(ticket.sector_id) : null;
+    return {
+      skippedTicket: ticketDto(getTicket(ticket.id)),
+      nextTicket: nextInSector?.ticket || null
+    };
+  });
+}
+
 function finishTicket(ticketId) {
   const ticket = getTicket(ticketId);
   if (!ticket) return fail("Senha não encontrada.");
@@ -1467,7 +1581,7 @@ function finishTicket(ticketId) {
     registerEvent("pedido_finalizado", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { code: ticket.code });
 
     const released = releaseSmartWaitTicket(ticket.customer_id);
-    const nextInSector = callNextTicket(ticket.sector_id);
+    const nextInSector = callNextTicket(ticket.sector_id, { preferStandby: true });
     return {
       finishedTicket: ticketDto(getTicket(ticket.id)),
       releasedTicket: released ? ticketDto(released) : null,
@@ -1626,10 +1740,27 @@ function getStaffState(user = null) {
       WHERE sector_id = ? AND status IN (${placeholders(ACTIVE_STATUSES)})
       ORDER BY priority DESC, queue_order ASC
     `).all(sector.id, ...ACTIVE_STATUSES).map(ticketDto);
-    return { ...sectorDto(sector), tickets };
+    return { ...sectorDto(sector), tickets, recentCalls: recentSectorCalls(sector.id) };
   });
 
   return { serverTime: isoNow(), sectors };
+}
+
+function recentSectorCalls(sectorId) {
+  return db.prepare(`
+    SELECT calls.action, calls.created_at, tickets.code, tickets.status, tickets.priority
+    FROM calls
+    JOIN tickets ON tickets.id = calls.ticket_id
+    WHERE calls.sector_id = ?
+    ORDER BY calls.created_at DESC
+    LIMIT 6
+  `).all(sectorId).map((row) => ({
+    action: row.action,
+    ticket: row.code,
+    status: row.status,
+    priority: Boolean(row.priority),
+    createdAt: row.created_at
+  }));
 }
 
 function ticketDto(row) {
@@ -1638,7 +1769,8 @@ function ticketDto(row) {
   const ahead = countAhead(row);
   const isWaiting = CALL_ELIGIBLE_STATUSES.includes(row.status);
   const position = isWaiting ? ahead + 1 : 1;
-  const averageSeconds = effectiveAverageServiceSeconds(sector);
+  const averageStats = averageServiceStats(sector);
+  const averageSeconds = averageStats.seconds;
   const activeDelay = isWaiting ? activeServiceDelaySeconds(sector.id, averageSeconds) : 0;
   const eligibleDelay = isWaiting ? secondsUntil(row.eligible_at || row.created_at) : 0;
   const secondsToCall = isWaiting ? Math.max(eligibleDelay, activeDelay + ahead * averageSeconds) : 0;
@@ -1665,6 +1797,9 @@ function ticketDto(row) {
     position,
     ahead,
     secondsToCall,
+    averageServiceSeconds: averageSeconds,
+    averageServiceSamples: averageStats.samples,
+    estimateBasedOnRecentServices: averageStats.samples > 0,
     countdownTotalSeconds,
     estimatedCallAt,
     progress: progressFor(row.status, position),
@@ -1675,6 +1810,9 @@ function ticketDto(row) {
     absenceCount: row.absence_count || 0,
     calledAt: row.called_at,
     eligibleAt: row.eligible_at,
+    standbyStartedAt: row.standby_started_at,
+    standbyExpiresAt: row.standby_expires_at,
+    standbySecondsRemaining: row.standby_expires_at ? secondsUntil(row.standby_expires_at) : 0,
     serviceStartedAt: row.service_started_at,
     finishedAt: row.finished_at,
     createdAt: row.created_at
@@ -1682,7 +1820,7 @@ function ticketDto(row) {
 }
 
 function sectorDto(row) {
-  const averageServiceSeconds = effectiveAverageServiceSeconds(row);
+  const averageStats = averageServiceStats(row);
   return {
     id: row.id,
     name: row.name,
@@ -1690,7 +1828,9 @@ function sectorDto(row) {
     counterLabel: row.counter_label,
     serviceLabel: row.service_label,
     queueSize: row.queue_size,
-    averageServiceSeconds,
+    averageServiceSeconds: averageStats.seconds,
+    averageServiceSamples: averageStats.samples,
+    estimateBasedOnRecentServices: averageStats.samples > 0,
     capacity: row.capacity,
     status: row.status,
     current: currentCode(row)
@@ -1770,14 +1910,24 @@ function activeServiceDelaySeconds(sectorId, averageSeconds) {
 }
 
 function effectiveAverageServiceSeconds(sector) {
+  return averageServiceStats(sector).seconds;
+}
+
+function averageServiceStats(sector) {
   const rows = db.prepare(`
     SELECT service_started_at, finished_at FROM tickets
     WHERE sector_id = ? AND service_started_at IS NOT NULL AND finished_at IS NOT NULL
     ORDER BY finished_at DESC
     LIMIT 20
   `).all(sector.id);
-  const measured = average(rows.map((row) => secondsBetween(row.service_started_at, row.finished_at)));
-  return measured || sector.average_service_seconds;
+  const durations = rows
+    .map((row) => secondsBetween(row.service_started_at, row.finished_at))
+    .filter((seconds) => Number.isFinite(seconds) && seconds > 0);
+  const measured = average(durations);
+  return {
+    seconds: measured || sector.average_service_seconds,
+    samples: durations.length
+  };
 }
 
 function currentCode(sector) {

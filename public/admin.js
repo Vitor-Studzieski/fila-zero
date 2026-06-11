@@ -64,6 +64,7 @@ function renderAdmin() {
     const called = sector.tickets.filter((ticket) => ticket.status === "chamado");
     const inService = sector.tickets.filter((ticket) => ticket.status === "em_atendimento");
     const waiting = sector.tickets.filter((ticket) => ["aguardando", "proximo", "espera_inteligente"].includes(ticket.status));
+    const currentTicket = inService[0] || called[0] || null;
     return `
       <form class="ops-card admin-form" data-sector-form="${sector.id}">
         <div class="ops-card-head">
@@ -73,9 +74,10 @@ function renderAdmin() {
           </div>
           <b class="status-pill ${sector.status}">${statusLabel(sector.status)}</b>
         </div>
-        <div class="ops-metric">
+        <div class="ops-metric ${currentTicket?.priority ? "priority-current" : ""}">
           <span>Senha atual</span>
           <strong>${sector.current}</strong>
+          ${currentTicket?.priority ? priorityBadgeMarkup("priority-large") : ""}
         </div>
         ${ticketSection("Chamadas", called)}
         ${ticketSection("Em atendimento", inService)}
@@ -116,15 +118,30 @@ function ticketSection(title, tickets) {
 
 function ticketRow(ticket) {
   return `
-    <div class="ops-ticket-row">
+    <div class="ops-ticket-row ${ticket.priority ? "priority-ticket" : ""}">
       <div>
         <strong>${ticket.ticket}</strong>
-        ${ticket.priority ? `<em class="priority-badge">Preferencial</em>` : ""}
+        ${ticket.priority ? priorityBadgeMarkup() : ""}
         <span>${ticket.sector} - ${ticketStatus(ticket)}</span>
       </div>
       <small>${ticket.status === "em_atendimento" ? "Agora" : `${ticket.position}º`}</small>
     </div>
   `;
+}
+
+function priorityIcon() {
+  return `
+    <svg class="priority-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="4.5" r="2.2"></circle>
+      <path d="M12 8v6"></path>
+      <path d="M8.5 10.5h7"></path>
+      <path d="M9.5 21l2.5-7 2.5 7"></path>
+    </svg>
+  `;
+}
+
+function priorityBadgeMarkup(extraClass = "") {
+  return `<em class="priority-badge ${extraClass}">${priorityIcon()}<span>PREFERENCIAL</span></em>`;
 }
 
 function renderMetrics() {
