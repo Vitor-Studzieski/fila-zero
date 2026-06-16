@@ -7,7 +7,8 @@ const screens = {
   offers: "Ofertas",
   detail: "Detalhe da promoção",
   done: "Atendimento",
-  access: "Clube",
+  club: "Clube",
+  account: "Conta",
   rating: "Avaliação"
 };
 
@@ -298,6 +299,8 @@ async function init() {
   syncPresenceStatus();
   currentUser = await requireSession(["customer", "manager", "admin"]);
   syncAccessArea();
+  renderClub();
+  renderAccount();
   identity.customerId = currentUser.customerId;
   localStorage.setItem("filaZeroIdentity", JSON.stringify(identity));
   await syncSession();
@@ -370,6 +373,7 @@ async function loadCart() {
   shoppingList.clear();
   cartItems.forEach((item) => shoppingList.add(item.productId));
   renderCart();
+  renderClub();
 }
 
 function connectRealtime() {
@@ -514,6 +518,8 @@ function navigate(screen) {
     renderOfferQueueContext();
     renderProducts();
   }
+  if (screen === "club") renderClub();
+  if (screen === "account") renderAccount();
   updateTabs(screen);
   updateFloatingQueue();
   maybeShowQueueTutorial(screen);
@@ -544,12 +550,58 @@ function markQueueTutorialSeen() {
 
 function syncAccessArea() {
   const isManager = ["manager", "admin"].includes(currentUser?.role);
+  const isAdmin = ["manager", "admin"].includes(currentUser?.role);
   document.querySelectorAll(".manager-access").forEach((item) => {
     item.hidden = !isManager;
   });
-  document.querySelector("#accessIntro").textContent = isManager
-    ? "Acesse as areas de teste usando a mesma sessao de gestor."
-    : "Sua sessao esta protegida. Use somente dispositivos confiaveis.";
+  document.querySelectorAll(".admin-access").forEach((item) => {
+    item.hidden = !isAdmin;
+  });
+  const authorizedPanel = document.querySelector("#authorizedPanel");
+  if (authorizedPanel) authorizedPanel.hidden = !isManager && !isAdmin;
+}
+
+function renderClub() {
+  const points = Math.max(120, cartItems.length * 80 + Object.keys(activeQueues).length * 150);
+  const level = points >= 700 ? "Cliente Ouro" : points >= 350 ? "Cliente Prata" : "Cliente cadastrado";
+  const pointsElement = document.querySelector("#clubPoints");
+  const levelElement = document.querySelector("#clubLevel");
+  if (pointsElement) pointsElement.textContent = `${points} pts`;
+  if (levelElement) levelElement.textContent = level;
+}
+
+function renderAccount() {
+  if (!currentUser) return;
+  const name = currentUser.name || "Cliente";
+  const email = currentUser.email || "--";
+  const role = roleLabel(currentUser.role);
+  setText("#accountName", name);
+  setText("#accountEmail", email);
+  setText("#accountRole", role);
+  setText("#accountStatus", currentUser.status === "inactive" ? "Inativo" : "Ativo");
+  setText("#accountCustomerId", currentUser.customerId || currentUser.id || "--");
+  setText("#accountAvatar", initials(name, email));
+}
+
+function setText(selector, value) {
+  const element = document.querySelector(selector);
+  if (element) element.textContent = value;
+}
+
+function initials(name, email) {
+  const source = String(name || email || "Cliente").trim();
+  const parts = source.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+  return source.slice(0, 2).toUpperCase();
+}
+
+function roleLabel(role) {
+  return {
+    customer: "Cliente",
+    attendant: "Funcionário",
+    manager: "Gestor",
+    admin: "Administrador"
+  }[role] || "Cliente";
 }
 
 function updateTabs(screen) {
@@ -1471,6 +1523,18 @@ async function sendRating() {
   document.querySelector("#ratingToast").classList.add("visible");
 }
 
+async function logoutAccount() {
+  try {
+    await api("/api/auth/logout", { method: "POST" });
+  } catch (exception) {
+    console.warn(exception);
+  } finally {
+    stateSource?.close();
+    localStorage.removeItem("filaZeroIdentity");
+    location.href = "/login";
+  }
+}
+
 function bindEvents() {
   document.querySelectorAll("[data-go]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.go)));
   document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.tab)));
@@ -1506,6 +1570,7 @@ function bindEvents() {
     });
   });
   document.querySelector("#sendRating").addEventListener("click", sendRating);
+  document.querySelector("#logoutButton")?.addEventListener("click", logoutAccount);
 }
 
 function syncPriorityControls() {

@@ -63,8 +63,8 @@
             <div class="quick-grid">
               <button class="quick highlighted" data-go="sectors"><span>FZ</span>Fila Zero</button>
               <button class="quick" data-go="offers"><span>%</span>Ofertas</button>
-              <button class="quick" data-go="access"><span>C</span>Clube</button>
-              <button class="quick" data-go="access"><span>+</span>Conta</button>
+              <button class="quick" data-go="club"><span>C</span>Clube</button>
+              <button class="quick" data-go="account"><span>+</span>Conta</button>
             </div>
             <h3>Destaques da Semana</h3>
             <div class="promo-photo"></div>
@@ -224,40 +224,75 @@
             <button class="outline-action" data-go="home">Voltar ao início</button>
           </section>
 
-          <section class="screen" data-screen="access">
-            <h2>Clube</h2>
-            <p class="muted center" id="accessIntro">Sua sessão está protegida. Use somente dispositivos confiáveis.</p>
-            <div class="access-grid">
-              <button class="access-card" data-go="home">
-                <svg class="access-icon" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="m3 11 9-8 9 8"></path>
-                  <path d="M5 10v10h14V10"></path>
-                  <path d="M9 20v-6h6v6"></path>
-                </svg>
-                <strong>Cliente</strong>
-                <span>Solicitar senha e acompanhar atendimento.</span>
-              </button>
-              <a class="access-card manager-access" href="/attendant">
-                <svg class="access-icon" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M4 7h16"></path>
-                  <path d="M6 7v13h12V7"></path>
-                  <path d="M9 11h6"></path>
-                  <path d="M9 15h4"></path>
-                  <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-                </svg>
-                <strong>Funcionário</strong>
-                <span>Abrir painel de atendimento dos setores.</span>
-              </a>
-              <a class="access-card manager-access" href="/admin">
-                <svg class="access-icon" viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M12 3 4 7l8 4 8-4-8-4Z"></path>
-                  <path d="M4 11l8 4 8-4"></path>
-                  <path d="M4 15l8 4 8-4"></path>
-                </svg>
-                <strong>Gestor</strong>
-                <span>Acessar administração, usuários e visão geral.</span>
-              </a>
+          <section class="screen" data-screen="club">
+            <h2>Clube Pompeia</h2>
+            <p class="muted center">Vantagens, pontos e ofertas especiais para clientes cadastrados.</p>
+            <article class="club-hero-card">
+              <span>Saldo disponível</span>
+              <strong id="clubPoints">0 pts</strong>
+              <small id="clubLevel">Cliente cadastrado</small>
+            </article>
+            <div class="club-grid">
+              <article class="club-card">
+                <b>2x</b>
+                <strong>Pontos em ofertas</strong>
+                <span>Produtos adicionados à lista geram pontos simulados no protótipo.</span>
+              </article>
+              <article class="club-card">
+                <b>5%</b>
+                <strong>Desconto clube</strong>
+                <span>Benefício demonstrativo para compras vinculadas ao atendimento.</span>
+              </article>
+              <article class="club-card">
+                <b>VIP</b>
+                <strong>Ofertas antecipadas</strong>
+                <span>Acompanhe promoções do setor enquanto aguarda sua senha.</span>
+              </article>
             </div>
+            <button class="yellow-action" data-go="offers">Ver ofertas do clube</button>
+          </section>
+
+          <section class="screen" data-screen="account">
+            <h2>Minha conta</h2>
+            <p class="muted center">Dados da sessão atual e acessos disponíveis.</p>
+            <article class="account-card">
+              <div class="account-avatar" id="accountAvatar">--</div>
+              <div>
+                <strong id="accountName">Cliente</strong>
+                <span id="accountEmail">--</span>
+              </div>
+            </article>
+            <div class="account-details">
+              <div><span>Perfil</span><strong id="accountRole">--</strong></div>
+              <div><span>Status</span><strong id="accountStatus">Ativo</strong></div>
+              <div><span>ID do cliente</span><strong id="accountCustomerId">--</strong></div>
+            </div>
+            <section class="authorized-panel" id="authorizedPanel" hidden>
+              <strong>Acessos autorizados</strong>
+              <div class="access-grid">
+                <a class="access-card manager-access" href="/attendant">
+                  <svg class="access-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 7h16"></path>
+                    <path d="M6 7v13h12V7"></path>
+                    <path d="M9 11h6"></path>
+                    <path d="M9 15h4"></path>
+                    <path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                  </svg>
+                  <strong>Atendente</strong>
+                  <span>Abrir painel de atendimento dos setores.</span>
+                </a>
+                <a class="access-card admin-access" href="/admin">
+                  <svg class="access-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 3 4 7l8 4 8-4-8-4Z"></path>
+                    <path d="M4 11l8 4 8-4"></path>
+                    <path d="M4 15l8 4 8-4"></path>
+                  </svg>
+                  <strong>Gestor</strong>
+                  <span>Acessar administração, usuários e visão geral.</span>
+                </a>
+              </div>
+            </section>
+            <button class="outline-action" id="logoutButton">Sair da conta</button>
           </section>
 
           <section class="screen" data-screen="rating">
@@ -301,7 +336,7 @@
             </svg>
             <span>Senhas</span>
           </button>
-          <button data-tab="access" aria-label="Clube">
+          <button data-tab="club" aria-label="Clube">
             <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M12 21s-7-4.4-9-10a5.3 5.3 0 0 1 9-5.4 5.3 5.3 0 0 1 9 5.4c-2 5.6-9 10-9 10Z"></path>
               <path d="M9 11h6"></path>
@@ -309,7 +344,7 @@
             </svg>
             <span>Clube</span>
           </button>
-          <button data-tab="access" aria-label="Conta e acesso">
+          <button data-tab="account" aria-label="Conta e acesso">
             <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
               <circle cx="12" cy="7" r="4"></circle>
