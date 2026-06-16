@@ -1023,10 +1023,9 @@ function getSessionForRequest(req) {
   if (!sessionId) return null;
   const statelessSession = verifySessionToken(sessionId);
   if (statelessSession) {
-    if (statelessSession.user) {
-      return { ...statelessSession.user, csrf_token: statelessSession.csrfToken };
-    }
-    const user = db.prepare("SELECT * FROM users WHERE email = ? AND status = ?").get(statelessSession.email, "active");
+    const user = statelessSession.user?.id
+      ? db.prepare("SELECT * FROM users WHERE id = ? AND status = ?").get(statelessSession.user.id, "active")
+      : db.prepare("SELECT * FROM users WHERE email = ? AND status = ?").get(statelessSession.email, "active");
     return user ? { ...user, csrf_token: statelessSession.csrfToken } : null;
   }
   return db.prepare(`
@@ -1188,7 +1187,7 @@ function createUser(body) {
   const email = String(body.email || "").trim().toLowerCase();
   const name = String(body.name || "").trim();
   const password = String(body.password || "");
-  if (!email || !name || password.length < 6) return fail("Informe nome, e-mail e senha com ao menos 6 caracteres.");
+  if (!email || !name || !validateStrongPassword(password)) return fail("Informe nome, e-mail e senha com ao menos 12 caracteres, letras maiusculas, minusculas e numeros.");
 
   const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
   if (existing) return fail("Já existe um usuário com este e-mail.");
@@ -1299,6 +1298,9 @@ function applySecurityHeaders(req, res) {
   res.setHeader("referrer-policy", "same-origin");
   res.setHeader("permissions-policy", "camera=(), microphone=(), payment=(), usb=()");
   res.setHeader("cross-origin-opener-policy", "same-origin");
+  if (!dev) {
+    res.setHeader("strict-transport-security", "max-age=31536000; includeSubDomains; preload");
+  }
   if (req.url?.startsWith("/login") || req.url?.startsWith("/api/auth")) {
     res.setHeader("cache-control", "no-store");
   }
@@ -2207,6 +2209,16 @@ function hashPassword(password, salt) {
 function verifyPassword(password, salt, expectedHash) {
   const actualHash = hashPassword(password, salt);
   return crypto.timingSafeEqual(Buffer.from(actualHash, "hex"), Buffer.from(expectedHash, "hex"));
+}
+
+function validateStrongPassword(password, minimum = 12) {
+  return (
+    typeof password === "string" &&
+    password.length >= minimum &&
+    /[a-z]/.test(password) &&
+    /[A-Z]/.test(password) &&
+    /\d/.test(password)
+  );
 }
 
 function safeEqual(left, right) {

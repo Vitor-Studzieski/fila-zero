@@ -77,6 +77,7 @@ SUPABASE_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY
 SUPABASE_AUTH_ENABLED
 DATA_BACKEND
+SUPABASE_AUTO_CONFIRM_CUSTOMERS
 AUTH_SECRET
 BOOTSTRAP_ADMIN_EMAIL
 BOOTSTRAP_ADMIN_PASSWORD
@@ -86,7 +87,7 @@ QR_TOKEN_FRIOS
 QR_TOKEN_PADARIA
 ```
 
-Use `DATA_BACKEND=supabase` para rodar login, filas, carrinho, setores, metricas e usuarios no Supabase/Postgres. `AUTH_SECRET` precisa ser um segredo fixo com ao menos 32 caracteres. `BOOTSTRAP_ADMIN_PASSWORD` precisa ter ao menos 12 caracteres quando o fallback local estiver em uso. Os tokens de QR devem ser longos, aleatorios e diferentes por setor.
+Use `DATA_BACKEND=supabase` para rodar login, filas, carrinho, setores, metricas e usuarios no Supabase/Postgres. `AUTH_SECRET` precisa ser um segredo fixo com ao menos 32 caracteres. `SUPABASE_AUTO_CONFIRM_CUSTOMERS=1` deve ser usado apenas em teste controlado para liberar cadastro publico sem confirmacao de e-mail. `BOOTSTRAP_ADMIN_PASSWORD` precisa ter ao menos 12 caracteres quando o fallback local estiver em uso. Os tokens de QR devem ser longos, aleatorios e diferentes por setor.
 
 ## Banco de dados local
 

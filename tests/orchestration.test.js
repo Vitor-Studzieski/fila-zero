@@ -121,8 +121,8 @@ test("bloqueia login apos muitas tentativas invalidas", async () => {
 
 test("permite alterar senha informando senha atual", async () => {
   const email = `troca-senha-${crypto.randomUUID()}@${TEST_DOMAIN}`;
-  const password = crypto.randomBytes(18).toString("base64url");
-  const nextPassword = crypto.randomBytes(18).toString("base64url");
+  const password = strongPassword();
+  const nextPassword = strongPassword();
   await api("/api/users", {
     method: "POST",
     cookie: adminCookie,
@@ -139,7 +139,7 @@ test("permite alterar senha informando senha atual", async () => {
 
 test("cadastro publico cria apenas conta de cliente", async () => {
   const email = `cadastro-publico-${crypto.randomUUID()}@${TEST_DOMAIN}`;
-  const password = crypto.randomBytes(18).toString("base64url");
+  const password = strongPassword();
   const created = await api("/api/auth/register", {
     method: "POST",
     body: { name: "Cadastro Publico", email, password, role: "manager", sectorIds: ["acougue"] }
@@ -367,7 +367,7 @@ async function login(email, password) {
 
 async function createCustomer(slug) {
   const email = `${slug}-${crypto.randomUUID()}@${TEST_DOMAIN}`;
-  const password = crypto.randomBytes(18).toString("base64url");
+  const password = strongPassword();
   const result = await api("/api/users", {
     method: "POST",
     cookie: adminCookie,
@@ -382,7 +382,7 @@ async function createCustomer(slug) {
 
 async function createStaffUser(slug, role, sectorIds) {
   const email = `${slug}-${crypto.randomUUID()}@${TEST_DOMAIN}`;
-  const password = crypto.randomBytes(18).toString("base64url");
+  const password = strongPassword();
   await api("/api/users", {
     method: "POST",
     cookie: adminCookie,
@@ -392,7 +392,7 @@ async function createStaffUser(slug, role, sectorIds) {
 }
 
 function createTestCredentials() {
-  const password = () => crypto.randomBytes(18).toString("base64url");
+  const password = () => strongPassword();
   const manager = {
     name: "Gestor Teste",
     email: `manager-${crypto.randomUUID()}@${TEST_DOMAIN}`,
@@ -417,6 +417,10 @@ function createTestCredentials() {
     },
     seedUsers: [manager, lockedCustomer]
   };
+}
+
+function strongPassword() {
+  return `Aa1-${crypto.randomBytes(18).toString("base64url")}`;
 }
 
 function qrToken(sectorId) {

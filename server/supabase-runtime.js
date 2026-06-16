@@ -4,6 +4,7 @@ const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || "");
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
 const AUTH_SECRET = authSecret();
+const AUTO_CONFIRM_PUBLIC_CUSTOMERS = process.env.SUPABASE_AUTO_CONFIRM_CUSTOMERS === "1";
 
 const BUSINESS_TIME_ZONE = "America/Sao_Paulo";
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
@@ -146,7 +147,10 @@ async function changePassword(request) {
     method: "PUT",
     body: { password: newPassword }
   });
-  if (updated.error) return json({ error: updated.error }, 400);
+  if (updated.error) {
+    console.error("password_update_failed", updated.error);
+    return json({ error: "Nao foi possivel atualizar a senha agora." }, 400);
+  }
   await clearLoginFailures(attemptKey);
   return json({ ok: true, message: "Senha alterada com sucesso. Entre usando a nova senha." });
 }
@@ -164,14 +168,15 @@ async function registerCustomer(request) {
     body: {
       email: data.email,
       password: data.password,
-      email_confirm: true,
+      email_confirm: AUTO_CONFIRM_PUBLIC_CUSTOMERS,
       user_metadata: { name: data.name, role: "customer" }
     }
   });
   const userId = auth.id || auth.user?.id;
   if (auth.error || !userId) {
     await registerLoginFailure(attemptKey);
-    return json({ error: auth.error || "Nao foi possivel criar a conta." }, 400);
+    console.error("customer_register_failed", auth.error || "missing_user_id");
+    return json({ error: "Nao foi possivel criar a conta com os dados informados." }, 400);
   }
 
   const profile = await upsert("profiles", { id: userId, email: data.email, name: data.name, role: "customer", status: "active" }, "id");
@@ -357,65 +362,29 @@ async function createTicket(body) {
   const existing = active.find((ticket) => ticket.sector_id === sector.id);
   if (existing) return { ticket: await ticketDto(existing), alreadyExists: true };
   const priority = normalizePriority(body);
-  const nextNumber = await nextTicketNumber(sector.id);
-  const queueOrder = await nextQueueOrder(sector.id);
-  const createdAt = isoNow();
-  const row = await insert("tickets", {
-    customer_id: session.customerId,
-    device_id: session.deviceId,
-    sector_id: sector.id,
-    number: nextNumber,
-    code: formatTicket(sector.prefix, nextNumber),
-    status: "aguardando",
-    queue_order: queueOrder,
-    eligible_at: new Date(Date.now() + AUTO_CALL_DELAY_SECONDS * 1000).toISOString(),
-    priority: priority.enabled,
-    priority_reason: priority.reason,
-    location_verified: false,
-    qr_verified: true,
-    created_at: createdAt,
-    updated_at: createdAt
+  const row = await rpc("issue_ticket", {
+    p_customer_id: session.customerId,
+    p_device_id: session.deviceId,
+    p_sector_id: sector.id,
+    p_priority: priority.enabled,
+    p_priority_reason: priority.reason,
+    p_auto_call_delay_seconds: AUTO_CALL_DELAY_SECONDS,
+    p_max_active_tickets: MAX_ACTIVE_TICKETS_PER_CUSTOMER
   });
+  if (!row || row.error) return fail("Nao foi possivel emitir a senha agora.");
   await registerEvent("senha_emitida", "ticket", row.id, row.customer_id, row.sector_id, { code: row.code, priority });
   return { ticket: await ticketDto(row), alreadyExists: false };
 }
 
 async function callNextTicket(sectorId, options = {}) {
-  const sector = await getSector(sectorId);
-  if (!sector) return fail("Setor nao encontrado.");
-  if (sector.status !== "open") return fail("Setor fechado.");
-  const active = await getActiveSectorTicket(sectorId);
-  if (active) return fail(`Finalize a senha ${active.code} antes de chamar a proxima.`);
-  const statuses = options.preferStandby ? CALL_ELIGIBLE_STATUSES : CALL_ELIGIBLE_STATUSES.filter((status) => status !== "standby");
-  const rows = await select("tickets", `sector_id=eq.${encodeURIComponent(sectorId)}&status=in.(${statuses.join(",")})&order=priority.desc,queue_order.asc`);
-  const now = isoNow();
-  const queue = options.requireEligible ? rows.filter((row) => new Date(row.eligible_at || row.created_at).getTime() <= Date.now()) : rows;
-  queue.sort((a, b) => {
-    if (options.preferStandby && a.status !== b.status) return a.status === "standby" ? -1 : 1;
-    return Number(b.priority) - Number(a.priority) || Number(a.queue_order) - Number(b.queue_order);
+  const called = await rpc("call_next_ticket", {
+    p_sector_id: sectorId,
+    p_require_eligible: Boolean(options.requireEligible),
+    p_prefer_standby: Boolean(options.preferStandby)
   });
-  for (const candidate of queue) {
-    const conflict = await getBlockingTicket(candidate);
-    if (conflict) {
-      await update("tickets", candidate.id, {
-        status: "espera_inteligente",
-        smart_wait_reason: `Cliente ja possui a senha ${conflict.code} em atendimento ou chamada.`,
-        blocked_by_ticket_id: conflict.id,
-        smart_wait_since: now,
-        updated_at: now
-      });
-      await registerEvent("espera_inteligente_iniciada", "ticket", candidate.id, candidate.customer_id, candidate.sector_id, { blockedByTicketId: conflict.id });
-      continue;
-    }
-    const called = await update("tickets", candidate.id, {
-      status: "chamado",
-      called_at: now,
-      standby_started_at: null,
-      standby_expires_at: null,
-      updated_at: now
-    });
-    await insert("calls", { ticket_id: candidate.id, sector_id: sectorId, action: "senha_chamada", created_at: now });
-    await registerEvent("senha_chamada", "ticket", candidate.id, candidate.customer_id, candidate.sector_id, { code: candidate.code });
+  if (called.error) return fail("Finalize a senha atual antes de chamar a proxima.");
+  if (called?.id) {
+    await registerEvent("senha_chamada", "ticket", called.id, called.customer_id, called.sector_id, { code: called.code });
     return { ticket: await ticketDto(called) };
   }
   return { ticket: null, message: "Nenhuma senha elegivel para chamada." };
@@ -659,7 +628,7 @@ async function createUser(body) {
   const password = String(body.password || "");
   const name = String(body.name || "").trim();
   const role = ["customer", "attendant", "manager", "admin"].includes(body.role) ? body.role : "attendant";
-  if (!email || !name || password.length < 6) return fail("Informe nome, e-mail e senha com ao menos 6 caracteres.");
+  if (!email || !name || !validateStrongPassword(password)) return fail("Informe nome, e-mail e senha com ao menos 12 caracteres, letras maiusculas, minusculas e numeros.");
   const auth = await supabaseFetch("/auth/v1/admin/users", {
     method: "POST",
     body: { email, password, email_confirm: true, user_metadata: { name, role } }
@@ -967,8 +936,10 @@ async function getProfile(userId, fallbackEmail = "") {
 async function getAuthUser(request) {
   const token = getCookie(request, "fz_auth");
   const session = verifySessionToken(token);
-  if (!session?.user) return null;
-  return { ...session.user, csrf_token: session.csrfToken };
+  if (!session?.user?.id) return null;
+  const profile = await getProfile(session.user.id, session.email);
+  if (!profile || profile.status !== "active") return null;
+  return { ...profile, csrf_token: session.csrfToken };
 }
 
 async function requireUser(request, roles) {
@@ -1050,6 +1021,14 @@ async function upsert(table, body, onConflict) {
   return Array.isArray(result) ? result[0] : result;
 }
 
+async function rpc(name, body) {
+  const result = await supabaseFetch(`/rest/v1/rpc/${name}`, {
+    method: "POST",
+    body
+  });
+  return Array.isArray(result) ? result[0] : result;
+}
+
 async function remove(table, id) {
   return supabaseFetch(`/rest/v1/${table}?id=eq.${encodeURIComponent(id)}`, { method: "DELETE" });
 }
@@ -1087,6 +1066,16 @@ function validateCustomerRegistration(body) {
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Informe um e-mail valido." };
   if (password.length < 8) return { error: "A senha precisa ter ao menos 8 caracteres." };
   return { email, name, password };
+}
+
+function validateStrongPassword(password, minimum = 12) {
+  return (
+    typeof password === "string" &&
+    password.length >= minimum &&
+    /[a-z]/.test(password) &&
+    /[A-Z]/.test(password) &&
+    /\d/.test(password)
+  );
 }
 
 function normalizePriority(body) {
@@ -1212,6 +1201,7 @@ function securityHeaders(extra = {}) {
     "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://source.unsplash.com https://images.unsplash.com; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY",
+    "strict-transport-security": "max-age=31536000; includeSubDomains; preload",
     "referrer-policy": "same-origin",
     "permissions-policy": "camera=(), microphone=(), payment=(), usb=()",
     ...extra

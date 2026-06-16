@@ -41,7 +41,7 @@
           <form class="ops-card admin-form" id="userForm">
             <label>Nome<input name="name" required /></label>
             <label>E-mail<input type="email" name="email" required /></label>
-            <label>Senha<input type="password" name="password" minlength="6" required /></label>
+            <label>Senha<input type="password" name="password" minlength="12" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{12,}" title="Use ao menos 12 caracteres com letras maiusculas, minusculas e numeros." required /></label>
             <label>Perfil
               <select name="role">
                 <option value="customer">Cliente</option>

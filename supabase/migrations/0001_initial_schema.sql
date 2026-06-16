@@ -106,6 +106,27 @@ create table if not exists public.tickets (
   updated_at timestamptz not null default now()
 );
 
+alter table public.tickets add column if not exists smart_wait_reason text;
+alter table public.tickets add column if not exists blocked_by_ticket_id uuid references public.tickets(id) on delete set null;
+alter table public.tickets add column if not exists smart_wait_since timestamptz;
+alter table public.tickets add column if not exists called_at timestamptz;
+alter table public.tickets add column if not exists eligible_at timestamptz;
+alter table public.tickets add column if not exists priority boolean not null default false;
+alter table public.tickets add column if not exists priority_reason text;
+alter table public.tickets add column if not exists standby_started_at timestamptz;
+alter table public.tickets add column if not exists standby_expires_at timestamptz;
+alter table public.tickets add column if not exists service_started_at timestamptz;
+alter table public.tickets add column if not exists finished_at timestamptz;
+alter table public.tickets add column if not exists canceled_at timestamptz;
+alter table public.tickets add column if not exists expired_at timestamptz;
+alter table public.tickets add column if not exists location_lat double precision;
+alter table public.tickets add column if not exists location_lng double precision;
+alter table public.tickets add column if not exists location_accuracy double precision;
+alter table public.tickets add column if not exists location_distance_meters double precision;
+alter table public.tickets add column if not exists location_verified boolean not null default false;
+alter table public.tickets add column if not exists qr_verified boolean not null default false;
+alter table public.tickets add column if not exists absence_count integer not null default 0;
+
 create table if not exists public.calls (
   id uuid primary key default gen_random_uuid(),
   ticket_id uuid not null references public.tickets(id) on delete cascade,
@@ -219,7 +240,7 @@ begin
     new.id,
     coalesce(new.email, ''),
     coalesce(new.raw_user_meta_data->>'name', split_part(coalesce(new.email, ''), '@', 1), 'Usuario'),
-    coalesce((new.raw_user_meta_data->>'role')::public.user_role, 'customer')
+    'customer'
   )
   on conflict (id) do nothing;
   return new;
@@ -289,3 +310,217 @@ create policy "tickets_customer_read"
 on public.tickets for select
 to authenticated
 using (customer_id = auth.uid());
+
+create or replace function public.issue_ticket(
+  p_customer_id uuid,
+  p_device_id text,
+  p_sector_id text,
+  p_priority boolean,
+  p_priority_reason text,
+  p_auto_call_delay_seconds integer default 30,
+  p_max_active_tickets integer default 3
+)
+returns public.tickets
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_sector public.sectors;
+  v_existing public.tickets;
+  v_counter public.ticket_counters;
+  v_number integer;
+  v_order integer;
+  v_ticket public.tickets;
+  v_today date := (now() at time zone 'America/Sao_Paulo')::date;
+  v_active_statuses public.ticket_status[] := array['aguardando', 'proximo', 'chamado', 'em_atendimento', 'espera_inteligente', 'standby']::public.ticket_status[];
+begin
+  perform 1 from public.profiles where id = p_customer_id and status = 'active' for update;
+  if not found then
+    raise exception 'customer_not_active';
+  end if;
+
+  select * into v_sector
+  from public.sectors
+  where id = p_sector_id
+  for update;
+
+  if not found or v_sector.status <> 'open' then
+    raise exception 'sector_unavailable';
+  end if;
+
+  select * into v_existing
+  from public.tickets
+  where customer_id = p_customer_id
+    and sector_id = p_sector_id
+    and status = any(v_active_statuses)
+  order by created_at desc
+  limit 1;
+
+  if found then
+    return v_existing;
+  end if;
+
+  if (
+    select count(*)
+    from public.tickets
+    where customer_id = p_customer_id
+      and status = any(v_active_statuses)
+  ) >= p_max_active_tickets then
+    raise exception 'active_ticket_limit';
+  end if;
+
+  insert into public.ticket_counters (sector_id, business_date, last_number, updated_at)
+  values (p_sector_id, v_today, -1, now())
+  on conflict (sector_id) do nothing;
+
+  select * into v_counter
+  from public.ticket_counters
+  where sector_id = p_sector_id
+  for update;
+
+  if v_counter.business_date <> v_today or v_counter.last_number >= 999 then
+    v_number := 0;
+  else
+    v_number := v_counter.last_number + 1;
+  end if;
+
+  update public.ticket_counters
+  set business_date = v_today,
+      last_number = v_number,
+      updated_at = now()
+  where sector_id = p_sector_id;
+
+  select coalesce(max(queue_order), 0) + 1 into v_order
+  from public.tickets
+  where sector_id = p_sector_id;
+
+  insert into public.tickets (
+    customer_id,
+    device_id,
+    sector_id,
+    number,
+    code,
+    status,
+    queue_order,
+    eligible_at,
+    priority,
+    priority_reason,
+    location_verified,
+    qr_verified,
+    created_at,
+    updated_at
+  )
+  values (
+    p_customer_id,
+    p_device_id,
+    p_sector_id,
+    v_number,
+    v_sector.prefix || lpad(v_number::text, 3, '0'),
+    'aguardando',
+    v_order,
+    now() + make_interval(secs => p_auto_call_delay_seconds),
+    coalesce(p_priority, false),
+    p_priority_reason,
+    false,
+    true,
+    now(),
+    now()
+  )
+  returning * into v_ticket;
+
+  return v_ticket;
+end;
+$$;
+
+create or replace function public.call_next_ticket(
+  p_sector_id text,
+  p_require_eligible boolean default false,
+  p_prefer_standby boolean default false
+)
+returns public.tickets
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_sector public.sectors;
+  v_active public.tickets;
+  v_candidate public.tickets;
+  v_conflict public.tickets;
+  v_called public.tickets;
+  v_statuses public.ticket_status[] := case
+    when p_prefer_standby then array['aguardando', 'proximo', 'standby']::public.ticket_status[]
+    else array['aguardando', 'proximo']::public.ticket_status[]
+  end;
+begin
+  select * into v_sector
+  from public.sectors
+  where id = p_sector_id
+  for update;
+
+  if not found or v_sector.status <> 'open' then
+    raise exception 'sector_unavailable';
+  end if;
+
+  select * into v_active
+  from public.tickets
+  where sector_id = p_sector_id
+    and status in ('chamado', 'em_atendimento')
+  limit 1
+  for update;
+
+  if found then
+    raise exception 'active_ticket_exists';
+  end if;
+
+  for v_candidate in
+    select *
+    from public.tickets
+    where sector_id = p_sector_id
+      and status = any(v_statuses)
+      and (not p_require_eligible or coalesce(eligible_at, created_at) <= now())
+    order by
+      case when p_prefer_standby and status = 'standby' then 0 else 1 end,
+      priority desc,
+      queue_order asc
+    for update skip locked
+  loop
+    select * into v_conflict
+    from public.tickets
+    where id <> v_candidate.id
+      and (customer_id = v_candidate.customer_id or device_id = v_candidate.device_id)
+      and status in ('chamado', 'em_atendimento')
+    order by updated_at desc
+    limit 1
+    for update;
+
+    if found then
+      update public.tickets
+      set status = 'espera_inteligente',
+          smart_wait_reason = 'Cliente ja possui a senha ' || v_conflict.code || ' em atendimento ou chamada.',
+          blocked_by_ticket_id = v_conflict.id,
+          smart_wait_since = now(),
+          updated_at = now()
+      where id = v_candidate.id;
+      continue;
+    end if;
+
+    update public.tickets
+    set status = 'chamado',
+        called_at = now(),
+        standby_started_at = null,
+        standby_expires_at = null,
+        updated_at = now()
+    where id = v_candidate.id
+    returning * into v_called;
+
+    insert into public.calls (ticket_id, sector_id, action, created_at)
+    values (v_called.id, p_sector_id, 'senha_chamada', now());
+
+    return v_called;
+  end loop;
+
+  return null;
+end;
+$$;
