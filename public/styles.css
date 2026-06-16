@@ -3103,6 +3103,439 @@ textarea:focus {
   }
 }
 
+/* Fila Zero premium login */
+.fz-login-stage {
+  min-height: 100svh;
+  background: #f0f2f5;
+  color: #101828;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.fz-login-stage *,
+.fz-login-stage *::before,
+.fz-login-stage *::after {
+  box-sizing: border-box;
+}
+
+.fz-login-shell {
+  display: grid;
+  width: min(100%, 430px);
+  min-height: 100svh;
+  margin: 0 auto;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(13, 43, 94, 0.18);
+}
+
+.fz-login-hero {
+  display: grid;
+  min-height: 50svh;
+  padding: max(28px, env(safe-area-inset-top)) 24px 22px;
+  border-bottom: 1px solid rgba(240, 242, 245, 0.28);
+  background: #0d2b5e;
+  color: #ffffff;
+}
+
+.fz-login-hero-content {
+  display: grid;
+  align-content: center;
+  gap: 22px;
+  text-align: center;
+}
+
+.fz-login-brand {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+}
+
+.fz-login-kicker {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+}
+
+.fz-login-logo {
+  display: grid;
+  width: 72px;
+  height: 72px;
+  place-items: center;
+  border-radius: 16px;
+  background: #f5c518;
+  color: #0d2b5e;
+  font-size: 24px;
+  font-weight: 1000;
+  letter-spacing: 0;
+  box-shadow: 0 16px 36px rgba(245, 197, 24, 0.22);
+}
+
+.fz-login-title {
+  display: grid;
+  gap: 4px;
+}
+
+.fz-login-title strong {
+  color: #ffffff;
+  font-size: 28px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1;
+}
+
+.fz-login-title span {
+  color: #f5c518;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.fz-market-logo {
+  display: block;
+  width: 62px;
+  height: 62px;
+  object-fit: cover;
+  border: 2px solid rgba(245, 197, 24, 0.72);
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
+}
+
+.fz-login-tagline {
+  max-width: 290px;
+  margin: 0 auto;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.42;
+}
+
+.fz-login-features {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.fz-login-chip {
+  display: inline-flex;
+  min-height: 40px;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 6px;
+  border: 1px solid rgba(245, 197, 24, 0.64);
+  border-radius: 24px;
+  color: #f5c518;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.fz-login-panel {
+  min-height: 50svh;
+  padding: 22px 24px max(24px, env(safe-area-inset-bottom));
+  border-top: 1px solid #d9dee8;
+  background: #f0f2f5;
+}
+
+.fz-login-form {
+  display: grid;
+  gap: 16px;
+  width: 100%;
+}
+
+.fz-login-secure {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  padding: 7px 12px;
+  border: 1px solid #d9dee8;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #0d2b5e;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.fz-login-heading {
+  display: grid;
+  gap: 6px;
+}
+
+.fz-login-heading h1 {
+  margin: 0;
+  color: #0d2b5e;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1.12;
+}
+
+.fz-login-heading p,
+.fz-login-note {
+  margin: 0;
+  color: #60708a;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.fz-login-note {
+  margin-top: -4px;
+  font-size: 12px;
+}
+
+.fz-login-tabs.login-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid #d9dee8;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.fz-login-tabs.login-tabs button {
+  position: relative;
+  min-height: 42px;
+  padding: 0 4px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #60708a;
+  font-size: 12px;
+  font-weight: 800;
+  box-shadow: none;
+}
+
+.fz-login-tabs.login-tabs button::after {
+  content: "";
+  position: absolute;
+  right: 14px;
+  bottom: -1px;
+  left: 14px;
+  height: 3px;
+  border-radius: 999px 999px 0 0;
+  background: transparent;
+}
+
+.fz-login-tabs.login-tabs button.active {
+  background: transparent;
+  color: #0d2b5e;
+  box-shadow: none;
+}
+
+.fz-login-tabs.login-tabs button.active::after {
+  background: #f5c518;
+}
+
+.fz-login-stage .login-panel {
+  display: none;
+  gap: 12px;
+}
+
+.fz-login-stage .login-panel.active {
+  display: grid;
+}
+
+.fz-login-stage .login-panel label {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  color: #0d2b5e;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.fz-login-stage .login-panel input {
+  width: 100%;
+  height: 48px;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid #d9dee8;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #101828;
+  font-size: 15px;
+  outline: 0;
+  box-shadow: none;
+}
+
+.fz-login-stage .login-panel input:focus {
+  border-color: #0d2b5e;
+  box-shadow: 0 0 0 3px rgba(13, 43, 94, 0.12);
+}
+
+.fz-login-stage .password-field input {
+  padding-right: 56px;
+}
+
+.fz-login-stage .password-toggle {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  display: grid;
+  width: 44px;
+  height: 38px;
+  min-height: 38px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #0d2b5e;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.fz-login-stage .yellow-action {
+  width: 100%;
+  height: 48px;
+  min-height: 48px;
+  margin-top: 2px;
+  border: 0;
+  border-radius: 12px;
+  background: #f5c518;
+  color: #0d2b5e;
+  font-size: 15px;
+  font-weight: 900;
+  box-shadow: none;
+}
+
+.fz-login-stage .yellow-action:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.fz-login-helper {
+  min-height: 32px;
+  margin: -2px 0 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(13, 43, 94, 0.74);
+  font-size: 13px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.fz-login-stage .login-error {
+  min-height: 18px;
+  margin: 0;
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.fz-login-stage .login-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  left: 18px;
+  z-index: 20;
+  max-width: 390px;
+  margin: 0 auto;
+  padding: 14px 16px;
+  border: 1px solid rgba(13, 43, 94, 0.14);
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0d2b5e;
+  box-shadow: 0 18px 50px rgba(13, 43, 94, 0.2);
+  font-size: 14px;
+  font-weight: 800;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(14px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.fz-login-stage .login-toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (min-width: 760px) {
+  .fz-login-stage {
+    display: grid;
+    place-items: center;
+    padding: 50px 20px;
+    background: #0d2b5e;
+  }
+
+  .fz-login-shell {
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 430px);
+    width: min(100%, 848px);
+    min-height: 576px;
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.52);
+    border-radius: 12px;
+  }
+
+  .fz-login-hero,
+  .fz-login-panel {
+    min-height: 576px;
+  }
+}
+
+@media (max-height: 760px) {
+  .fz-login-shell {
+    min-height: 100%;
+  }
+
+  .fz-login-hero,
+  .fz-login-panel {
+    min-height: auto;
+  }
+
+  .fz-login-hero {
+    padding-top: max(22px, env(safe-area-inset-top));
+    padding-bottom: 18px;
+  }
+
+  .fz-login-logo {
+    width: 60px;
+    height: 60px;
+    border-radius: 14px;
+    font-size: 21px;
+  }
+
+  .fz-market-logo {
+    width: 54px;
+    height: 54px;
+    border-radius: 14px;
+  }
+
+  .fz-login-title strong {
+    font-size: 24px;
+  }
+
+  .fz-login-tagline {
+    font-size: 16px;
+  }
+}
+
+@media (max-width: 360px) {
+  .fz-login-hero,
+  .fz-login-panel {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .fz-login-features {
+    gap: 6px;
+  }
+
+  .fz-login-chip {
+    font-size: 10px;
+  }
+}
+
 @media (max-width: 360px) {
   .screen {
     padding-right: 12px;
@@ -3123,5 +3556,452 @@ textarea:focus {
 
   .tabbar span {
     font-size: 10px;
+  }
+}
+
+/* Fila Zero auth redesign */
+.fz-auth-stage {
+  min-height: 100svh;
+  overflow-y: auto;
+  background: #0d2b5e;
+  color: #101828;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.fz-auth-stage *,
+.fz-auth-stage *::before,
+.fz-auth-stage *::after {
+  box-sizing: border-box;
+}
+
+.fz-auth-hero {
+  position: relative;
+  display: grid;
+  min-height: 48svh;
+  align-content: space-between;
+  gap: 14px;
+  padding: max(26px, env(safe-area-inset-top)) 24px 24px;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(13, 43, 94, 0.72), rgba(13, 43, 94, 0.94)),
+    url("/assets/supermercado-atendimento.png") center/cover;
+  color: #ffffff;
+}
+
+.fz-auth-hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.fz-auth-brand {
+  display: grid;
+  grid-template-columns: 74px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.fz-auth-market-logo {
+  width: 74px;
+  height: 74px;
+  object-fit: cover;
+  border: 2px solid rgba(245, 197, 24, 0.72);
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.18);
+}
+
+.fz-auth-title {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.fz-auth-title span {
+  color: #f5c518;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.fz-auth-title strong {
+  color: #ffffff;
+  font-size: 23px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.fz-auth-copy {
+  display: grid;
+  gap: 8px;
+  max-width: 342px;
+}
+
+.fz-auth-copy p {
+  width: fit-content;
+  margin: 0;
+  padding: 7px 12px;
+  border: 1px solid rgba(245, 197, 24, 0.56);
+  border-radius: 24px;
+  color: #f5c518;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.fz-auth-copy h1 {
+  margin: 0;
+  color: #ffffff;
+  font-size: clamp(25px, 7.2vw, 34px);
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1.12;
+}
+
+.fz-auth-copy span {
+  display: block;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.55;
+}
+
+.fz-auth-features {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: -8px;
+}
+
+.fz-auth-features span {
+  display: grid;
+  min-height: 42px;
+  place-items: center;
+  padding: 8px 6px;
+  border: 1px solid rgba(245, 197, 24, 0.62);
+  border-radius: 24px;
+  color: #f5c518;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.fz-auth-panel {
+  display: grid;
+  gap: 14px;
+  min-height: 52svh;
+  padding: 20px 18px max(24px, env(safe-area-inset-bottom));
+  border-top: 1px solid #f0f2f5;
+  border-radius: 28px 28px 0 0;
+  background: #f0f2f5;
+}
+
+.fz-auth-card {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+  border: 1px solid rgba(217, 222, 232, 0.96);
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 18px 48px rgba(13, 43, 94, 0.13);
+}
+
+.fz-auth-secure {
+  width: fit-content;
+  margin: 0;
+  padding: 7px 12px;
+  border: 1px solid #d9dee8;
+  border-radius: 24px;
+  background: #ffffff;
+  color: #0d2b5e;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.fz-auth-secure::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 7px;
+  border-radius: 99px;
+  background: #f5c518;
+  vertical-align: 1px;
+}
+
+.fz-auth-heading {
+  display: grid;
+  gap: 5px;
+}
+
+.fz-auth-heading h2 {
+  margin: 0;
+  color: #0d2b5e;
+  font-size: 25px;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 1.1;
+}
+
+.fz-auth-heading p {
+  margin: 0;
+  color: #60708a;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.fz-auth-tabs.login-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid #d9dee8;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.fz-auth-tabs.login-tabs button {
+  position: relative;
+  min-height: 42px;
+  padding: 0 4px 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #60708a;
+  font-size: 12px;
+  font-weight: 850;
+  box-shadow: none;
+}
+
+.fz-auth-tabs.login-tabs button::after {
+  content: "";
+  position: absolute;
+  right: 13px;
+  bottom: -1px;
+  left: 13px;
+  height: 3px;
+  border-radius: 99px 99px 0 0;
+  background: transparent;
+}
+
+.fz-auth-tabs.login-tabs button.active {
+  background: transparent;
+  color: #0d2b5e;
+  box-shadow: none;
+}
+
+.fz-auth-tabs.login-tabs button.active::after {
+  background: #f5c518;
+}
+
+.fz-auth-stage .login-panel {
+  display: none;
+  gap: 12px;
+}
+
+.fz-auth-stage .login-panel.active {
+  display: grid;
+}
+
+.fz-auth-stage .login-panel label {
+  position: relative;
+  display: grid;
+  gap: 7px;
+  color: #0d2b5e;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.fz-auth-stage .login-panel input {
+  width: 100%;
+  height: 48px;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid #d9dee8;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #101828;
+  font-size: 15px;
+  outline: 0;
+  box-shadow: none;
+}
+
+.fz-auth-stage .login-panel input:focus {
+  border-color: #0d2b5e;
+  box-shadow: 0 0 0 3px rgba(13, 43, 94, 0.12);
+}
+
+.fz-auth-stage .password-field input {
+  padding-right: 58px;
+}
+
+.fz-auth-stage .password-toggle {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  display: grid;
+  width: 46px;
+  height: 38px;
+  min-height: 38px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: #f0f2f5;
+  color: #0d2b5e;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.fz-auth-stage .yellow-action {
+  width: 100%;
+  height: 48px;
+  min-height: 48px;
+  margin-top: 2px;
+  border: 0;
+  border-radius: 12px;
+  background: #f5c518;
+  color: #0d2b5e;
+  font-size: 15px;
+  font-weight: 950;
+  box-shadow: none;
+}
+
+.fz-auth-stage .yellow-action:hover {
+  background: #f5c518;
+  box-shadow: none;
+}
+
+.fz-auth-stage .yellow-action:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
+.fz-auth-link {
+  min-height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(13, 43, 94, 0.74);
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.fz-auth-stage .login-error {
+  min-height: 18px;
+  margin: 0;
+  color: #b42318;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.fz-auth-footnote {
+  margin: 0;
+  padding: 0 4px;
+  color: #60708a;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.fz-auth-stage .login-toast {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  left: 18px;
+  z-index: 20;
+  max-width: 390px;
+  margin: 0 auto;
+  padding: 14px 16px;
+  border: 1px solid rgba(13, 43, 94, 0.14);
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0d2b5e;
+  box-shadow: 0 18px 50px rgba(13, 43, 94, 0.2);
+  font-size: 14px;
+  font-weight: 850;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(14px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.fz-auth-stage .login-toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (min-width: 760px) {
+  .fz-auth-stage {
+    display: grid;
+    grid-template-columns: minmax(360px, 480px) minmax(360px, 430px);
+    justify-content: center;
+    align-content: center;
+    gap: 0;
+    padding: 48px 20px;
+  }
+
+  .fz-auth-hero {
+    min-height: 640px;
+    border: 1px solid rgba(255, 255, 255, 0.34);
+    border-right: 0;
+    border-radius: 18px 0 0 18px;
+  }
+
+  .fz-auth-panel {
+    min-height: 640px;
+    align-content: center;
+    border-radius: 0 18px 18px 0;
+  }
+}
+
+@media (max-height: 760px) {
+  .fz-auth-hero {
+    min-height: auto;
+  }
+
+  .fz-auth-copy h1 {
+    font-size: clamp(24px, 7vw, 32px);
+  }
+
+  .fz-auth-market-logo {
+    width: 48px;
+    height: 48px;
+    border-radius: 14px;
+  }
+
+}
+
+@media (max-width: 370px) {
+  .fz-auth-hero {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
+  .fz-auth-brand {
+    grid-template-columns: 58px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .fz-auth-market-logo {
+    width: 58px;
+    height: 58px;
+    border-radius: 13px;
+  }
+
+  .fz-auth-title strong {
+    font-size: 20px;
+  }
+
+  .fz-auth-panel {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .fz-auth-card {
+    padding: 16px;
   }
 }

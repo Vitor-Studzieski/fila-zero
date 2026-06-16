@@ -2,7 +2,7 @@ document.querySelector("#loginForm").addEventListener("submit", async (event) =>
   event.preventDefault();
   const form = event.currentTarget;
   const error = document.querySelector("#loginError");
-  const submit = form.querySelector("button");
+  const submit = form.querySelector(".yellow-action");
   error.textContent = "";
   setSubmitting(submit, true);
 
@@ -25,7 +25,7 @@ document.querySelector("#passwordForm").addEventListener("submit", async (event)
   event.preventDefault();
   const form = event.currentTarget;
   const error = document.querySelector("#passwordError");
-  const submit = form.querySelector("button");
+  const submit = form.querySelector(".yellow-action");
   error.textContent = "";
   setSubmitting(submit, true);
 
@@ -49,7 +49,7 @@ document.querySelector("#registerForm").addEventListener("submit", async (event)
   event.preventDefault();
   const form = event.currentTarget;
   const error = document.querySelector("#registerError");
-  const submit = form.querySelector("button");
+  const submit = form.querySelector(".yellow-action");
   const data = Object.fromEntries(new FormData(form).entries());
   error.textContent = "";
 
@@ -82,6 +82,17 @@ document.querySelector("#registerForm").addEventListener("submit", async (event)
 
 document.querySelectorAll("[data-login-panel]").forEach((button) => {
   button.addEventListener("click", () => activatePanel(button.dataset.loginPanel));
+});
+
+document.querySelectorAll("[data-toggle-password]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const input = button.parentElement?.querySelector("input");
+    if (!input) return;
+    const visible = input.type === "text";
+    input.type = visible ? "password" : "text";
+    button.textContent = visible ? "Ver" : "Ocultar";
+    button.setAttribute("aria-label", visible ? "Mostrar senha" : "Ocultar senha");
+  });
 });
 
 function activatePanel(panel) {
