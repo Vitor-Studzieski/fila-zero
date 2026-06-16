@@ -532,9 +532,29 @@ async function getCustomerState(customerId) {
 async function getStaffState(user) {
   await expireStaleActiveTickets();
   const sectors = (await getSectors()).filter((sector) => canAccessSectorSync(user, sector.id));
-  const data = await mapAsync(sectors, async (sector) => {
-    const tickets = await select("tickets", `sector_id=eq.${encodeURIComponent(sector.id)}&status=in.(${ACTIVE_STATUSES.join(",")})&order=priority.desc,queue_order.asc`);
-    return { ...(await sectorDto(sector)), tickets: await mapAsync(tickets, ticketDto), recentCalls: await recentSectorCalls(sector.id) };
+  if (!sectors.length) return { serverTime: isoNow(), sectors: [] };
+
+  const sectorIds = sectors.map((sector) => sector.id);
+  const encodedSectorIds = sectorIds.map(encodeURIComponent).join(",");
+  const [tickets, counters, recentStats, recentCallsBySector] = await Promise.all([
+    select("tickets", `sector_id=in.(${encodedSectorIds})&status=in.(${ACTIVE_STATUSES.join(",")})&order=priority.desc,queue_order.asc`),
+    select("ticket_counters", `sector_id=in.(${encodedSectorIds})`),
+    staffAverageStats(sectorIds),
+    staffRecentCalls(sectorIds)
+  ]);
+  const ticketsBySector = groupBy(tickets, "sector_id");
+  const countersBySector = new Map(counters.map((counter) => [counter.sector_id, counter]));
+  const data = sectors.map((sector) => {
+    const sectorTickets = ticketsBySector.get(sector.id) || [];
+    const stats = recentStats.get(sector.id) || { seconds: sector.average_service_seconds, samples: 0 };
+    const active = sectorTickets.find((ticket) => CALL_BLOCKING_STATUSES.includes(ticket.status));
+    const current = active?.code || currentCodeFromCounter(sector, countersBySector.get(sector.id));
+    const activeDelay = active ? activeServiceDelayFromTicket(active, stats.seconds) : 0;
+    return {
+      ...sectorDtoFromStats(sector, stats, current),
+      tickets: sectorTickets.map((ticket) => staffTicketDto(ticket, sector, stats, current, sectorTickets, activeDelay)),
+      recentCalls: recentCallsBySector.get(sector.id) || []
+    };
   });
   return { serverTime: isoNow(), sectors: data };
 }
@@ -561,6 +581,135 @@ async function getMetrics() {
     };
   });
   return { sectors, satisfaction: satisfactionSummary(await select("ratings", "select=score")), generatedAt: isoNow() };
+}
+
+async function staffAverageStats(sectorIds) {
+  const map = new Map();
+  await Promise.all(sectorIds.map(async (sectorId) => {
+    const rows = await select("tickets", `sector_id=eq.${encodeURIComponent(sectorId)}&service_started_at=not.is.null&finished_at=not.is.null&select=service_started_at,finished_at&order=finished_at.desc&limit=20`);
+    const durations = rows.map((row) => secondsBetween(row.service_started_at, row.finished_at)).filter((seconds) => Number.isFinite(seconds) && seconds > 0);
+    map.set(sectorId, { seconds: average(durations), samples: durations.length });
+  }));
+  return map;
+}
+
+async function staffRecentCalls(sectorIds) {
+  const map = new Map(sectorIds.map((sectorId) => [sectorId, []]));
+  const callsBySector = await Promise.all(sectorIds.map(async (sectorId) => {
+    const calls = await select("calls", `sector_id=eq.${encodeURIComponent(sectorId)}&select=action,created_at,ticket_id&order=created_at.desc&limit=6`);
+    return [sectorId, calls];
+  }));
+  const ticketIds = [...new Set(callsBySector.flatMap(([, calls]) => calls.map((call) => call.ticket_id).filter(Boolean)))];
+  const tickets = ticketIds.length
+    ? await select("tickets", `id=in.(${ticketIds.map(encodeURIComponent).join(",")})&select=id,code,status,priority`)
+    : [];
+  const ticketsById = new Map(tickets.map((ticket) => [ticket.id, ticket]));
+  callsBySector.forEach(([sectorId, calls]) => {
+    map.set(sectorId, calls.map((call) => {
+      const ticket = ticketsById.get(call.ticket_id);
+      return {
+        action: call.action,
+        ticket: ticket?.code || "--",
+        status: ticket?.status || "",
+        priority: Boolean(ticket?.priority),
+        createdAt: call.created_at
+      };
+    }));
+  });
+  return map;
+}
+
+function sectorDtoFromStats(row, stats, current) {
+  return {
+    id: row.id,
+    name: row.name,
+    prefix: row.prefix,
+    counterLabel: row.counter_label,
+    serviceLabel: row.service_label,
+    queueSize: row.queue_size,
+    averageServiceSeconds: stats.seconds || row.average_service_seconds,
+    averageServiceSamples: stats.samples || 0,
+    estimateBasedOnRecentServices: Number(stats.samples || 0) > 0,
+    capacity: row.capacity,
+    status: row.status,
+    current
+  };
+}
+
+function staffTicketDto(row, sector, stats, current, sectorTickets, activeDelay) {
+  const isWaiting = CALL_ELIGIBLE_STATUSES.includes(row.status);
+  const ahead = isWaiting ? countAheadInRows(row, sectorTickets) : 0;
+  const position = isWaiting ? ahead + 1 : 1;
+  const averageSeconds = stats.seconds || sector.average_service_seconds;
+  const eligibleDelay = isWaiting ? secondsUntil(row.eligible_at || row.created_at) : 0;
+  const secondsToCall = isWaiting ? Math.max(eligibleDelay, activeDelay + ahead * averageSeconds) : 0;
+  const estimatedCallAt = isWaiting ? new Date(Date.now() + secondsToCall * 1000).toISOString() : null;
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    deviceId: row.device_id,
+    sectorId: row.sector_id,
+    sector: sector.name,
+    ticket: row.code,
+    current,
+    counterLabel: sector.counter_label,
+    serviceLabel: sector.service_label,
+    status: row.status,
+    priority: Boolean(row.priority),
+    priorityReason: row.priority_reason,
+    position,
+    ahead,
+    secondsToCall,
+    averageServiceSeconds: averageSeconds,
+    averageServiceSamples: stats.samples || 0,
+    estimateBasedOnRecentServices: Number(stats.samples || 0) > 0,
+    countdownTotalSeconds: isWaiting ? Math.max(secondsToCall, secondsBetween(row.created_at, estimatedCallAt)) : 0,
+    estimatedCallAt,
+    progress: progressFor(row.status, position),
+    smartWaitReason: row.smart_wait_reason,
+    locationVerified: Boolean(row.location_verified),
+    qrVerified: Boolean(row.qr_verified),
+    locationDistanceMeters: row.location_distance_meters,
+    absenceCount: row.absence_count || 0,
+    calledAt: row.called_at,
+    eligibleAt: row.eligible_at,
+    standbyStartedAt: row.standby_started_at,
+    standbyExpiresAt: row.standby_expires_at,
+    standbySecondsRemaining: row.standby_expires_at ? secondsUntil(row.standby_expires_at) : 0,
+    serviceStartedAt: row.service_started_at,
+    finishedAt: row.finished_at,
+    createdAt: row.created_at
+  };
+}
+
+function countAheadInRows(ticket, rows) {
+  return rows.filter((row) => CALL_ELIGIBLE_STATUSES.includes(row.status) && (
+    Number(row.priority || 0) > Number(ticket.priority || 0)
+    || (Number(row.priority || 0) === Number(ticket.priority || 0) && Number(row.queue_order) < Number(ticket.queue_order))
+  )).length;
+}
+
+function activeServiceDelayFromTicket(active, averageSeconds) {
+  const startedAt = active.service_started_at || active.called_at || active.updated_at;
+  const elapsed = secondsBetween(startedAt, isoNow());
+  const limit = active.status === "chamado" ? CALL_ABSENCE_SECONDS : averageSeconds;
+  return Math.max(0, limit - elapsed);
+}
+
+function currentCodeFromCounter(sector, counter) {
+  const currentNumber = counter?.business_date === businessDateFor() ? Number(counter.last_number) : TICKET_MIN_NUMBER;
+  return formatTicket(sector.prefix, currentNumber);
+}
+
+function groupBy(rows, key) {
+  const map = new Map();
+  rows.forEach((row) => {
+    const value = row[key];
+    const group = map.get(value) || [];
+    group.push(row);
+    map.set(value, group);
+  });
+  return map;
 }
 
 async function getCart(customerId) {

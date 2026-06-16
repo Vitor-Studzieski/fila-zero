@@ -8,11 +8,11 @@ initAttendant();
 
 async function initAttendant() {
   currentUser = await requireSession(["attendant", "manager"]);
-  await loadStaffState();
-  connectStaffRealtime();
   document.querySelector("#logoutButton").addEventListener("click", logout);
   document.querySelector("#skipCancel").addEventListener("click", closeSkipModal);
   document.querySelector("#skipForm").addEventListener("submit", submitSkipTicket);
+  await loadStaffState();
+  connectStaffRealtime();
 }
 
 async function loadStaffState() {
@@ -28,14 +28,13 @@ function connectStaffRealtime() {
     renderAttendant();
   });
   staffSource.addEventListener("error", () => startStaffPolling());
-  startStaffPolling();
 }
 
 function startStaffPolling() {
   if (staffPollingTimer) return;
   staffPollingTimer = setInterval(() => {
     loadStaffState().catch(() => {});
-  }, 3000);
+  }, 8000);
 }
 
 function renderAttendant() {

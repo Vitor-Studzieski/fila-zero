@@ -9,12 +9,10 @@ initAdmin();
 
 async function initAdmin() {
   currentUser = await requireSession(["manager"]);
-  await loadAdminState();
-  await loadMetrics();
-  await loadUsers();
-  connectAdminRealtime();
   document.querySelector("#logoutButton").addEventListener("click", logout);
   document.querySelector("#userForm").addEventListener("submit", createUser);
+  await Promise.all([loadAdminState(), loadMetrics(), loadUsers()]);
+  connectAdminRealtime();
 }
 
 async function loadAdminState() {
@@ -43,10 +41,9 @@ function connectAdminRealtime() {
   adminSource.addEventListener("state", async (event) => {
     adminState = JSON.parse(event.data);
     renderAdmin();
-    await loadMetrics();
+    scheduleMetricsRefresh();
   });
   adminSource.addEventListener("error", () => startAdminPolling());
-  startAdminPolling();
 }
 
 function startAdminPolling() {
@@ -56,7 +53,14 @@ function startAdminPolling() {
       await loadAdminState();
       await loadMetrics();
     } catch {}
-  }, 3000);
+  }, 10000);
+}
+
+function scheduleMetricsRefresh() {
+  clearTimeout(scheduleMetricsRefresh.timer);
+  scheduleMetricsRefresh.timer = setTimeout(() => {
+    loadMetrics().catch(() => {});
+  }, 700);
 }
 
 function renderAdmin() {
