@@ -119,6 +119,37 @@ test("bloqueia login apos muitas tentativas invalidas", async () => {
   assert.match(payload.error, /Muitas tentativas/i);
 });
 
+test("permite alterar senha informando senha atual", async () => {
+  const email = `troca-senha-${crypto.randomUUID()}@${TEST_DOMAIN}`;
+  const password = crypto.randomBytes(18).toString("base64url");
+  const nextPassword = crypto.randomBytes(18).toString("base64url");
+  await api("/api/users", {
+    method: "POST",
+    cookie: adminCookie,
+    body: { name: "troca senha", email, password, role: "customer", sectorIds: [] }
+  });
+
+  const changed = await api("/api/auth/change-password", {
+    method: "POST",
+    body: { email, currentPassword: password, newPassword: nextPassword }
+  });
+  assert.equal(changed.ok, true);
+  await login(email, nextPassword);
+});
+
+test("cadastro publico cria apenas conta de cliente", async () => {
+  const email = `cadastro-publico-${crypto.randomUUID()}@${TEST_DOMAIN}`;
+  const password = crypto.randomBytes(18).toString("base64url");
+  const created = await api("/api/auth/register", {
+    method: "POST",
+    body: { name: "Cadastro Publico", email, password, role: "manager", sectorIds: ["acougue"] }
+  });
+
+  assert.equal(created.user.role, "customer");
+  assert.deepEqual(created.user.sectorIds, []);
+  await login(email, password);
+});
+
 test("mantem tempo estimado baseado na posicao real da fila", async () => {
   resetSectorTickets("padaria");
   const firstCustomer = await createCustomer("tempo-primeiro");
@@ -169,6 +200,38 @@ test("setor chama a proxima senha somente depois de finalizar o atendimento atua
 
   const secondState = await api(`/api/state?customer_id=${secondCustomer.identity.customerId}`, { cookie: secondCustomer.cookie });
   assert.equal(secondState.tickets[0].status, "chamado");
+});
+
+test("atendente nao opera senha fora do setor permitido", async () => {
+  resetSectorTickets("acougue");
+  const attendantCookie = await createStaffUser("atendente-padaria", "attendant", ["padaria"]);
+  const customer = await createCustomer("setor-restrito");
+  const created = await api("/api/tickets", {
+    method: "POST",
+    cookie: customer.cookie,
+    body: { ...customer.identity, sectorId: "acougue", qrToken: qrToken("acougue") }
+  });
+
+  await api("/api/sectors/acougue/call-next", { method: "POST", cookie: adminCookie });
+  const blocked = await api(`/api/tickets/${created.ticket.id}/confirm`, { method: "POST", cookie: attendantCookie, ok: false });
+  assert.match(blocked.error, /Acesso negado|Autentica/i);
+});
+
+test("senha em atendimento nao entra em standby automatico", async () => {
+  resetSectorTickets("padaria");
+  const customer = await createCustomer("atendimento-nao-expira");
+  const created = await api("/api/tickets", {
+    method: "POST",
+    cookie: customer.cookie,
+    body: { ...customer.identity, sectorId: "padaria", qrToken: qrToken("padaria") }
+  });
+
+  await api("/api/sectors/padaria/call-next", { method: "POST", cookie: adminCookie });
+  await api(`/api/tickets/${created.ticket.id}/confirm`, { method: "POST", cookie: adminCookie });
+  forceTicketCalledAt(created.ticket.id, new Date(Date.now() - 11 * 60 * 1000).toISOString());
+
+  const state = await api(`/api/state?customer_id=${customer.identity.customerId}`, { cookie: customer.cookie });
+  assert.equal(state.tickets[0].status, "em_atendimento");
 });
 
 test("fila preferencial e chamada antes da fila comum", async () => {
@@ -229,9 +292,7 @@ test("senha ausente entra em standby e volta apos o proximo atendimento", async 
   const second = await api("/api/tickets", { method: "POST", cookie: secondCustomer.cookie, body: { ...secondCustomer.identity, sectorId: "acougue", qrToken: qrToken("acougue") } });
   await api("/api/sectors/acougue/call-next", { method: "POST", cookie: adminCookie });
 
-  const database = new DatabaseSync(path.join(dataDir, "fila-zero.sqlite"));
-  database.prepare("UPDATE tickets SET called_at = ? WHERE id = ?").run(new Date(Date.now() - 11 * 60 * 1000).toISOString(), first.ticket.id);
-  database.close();
+  forceTicketCalledAt(first.ticket.id, new Date(Date.now() - 11 * 60 * 1000).toISOString());
 
   let firstState = await api(`/api/state?customer_id=${firstCustomer.identity.customerId}`, { cookie: firstCustomer.cookie });
   assert.equal(firstState.tickets[0].status, "standby");
@@ -319,6 +380,17 @@ async function createCustomer(slug) {
   };
 }
 
+async function createStaffUser(slug, role, sectorIds) {
+  const email = `${slug}-${crypto.randomUUID()}@${TEST_DOMAIN}`;
+  const password = crypto.randomBytes(18).toString("base64url");
+  await api("/api/users", {
+    method: "POST",
+    cookie: adminCookie,
+    body: { name: slug, email, password, role, sectorIds }
+  });
+  return login(email, password);
+}
+
 function createTestCredentials() {
   const password = () => crypto.randomBytes(18).toString("base64url");
   const manager = {
@@ -358,6 +430,12 @@ function resetSectorTickets(sectorId) {
     SET status = 'expirado', expired_at = ?, updated_at = ?
     WHERE sector_id = ? AND status IN ('aguardando', 'proximo', 'chamado', 'em_atendimento', 'espera_inteligente', 'standby')
   `).run(new Date().toISOString(), new Date().toISOString(), sectorId);
+  database.close();
+}
+
+function forceTicketCalledAt(ticketId, calledAt) {
+  const database = new DatabaseSync(path.join(dataDir, "fila-zero.sqlite"));
+  database.prepare("UPDATE tickets SET called_at = ? WHERE id = ?").run(calledAt, ticketId);
   database.close();
 }
 

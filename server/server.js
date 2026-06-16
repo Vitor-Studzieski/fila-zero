@@ -1,6 +1,5 @@
 const http = require("node:http");
 const fs = require("node:fs");
-const os = require("node:os");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { DatabaseSync } = require("node:sqlite");
@@ -9,13 +8,11 @@ const ROOT = path.resolve(__dirname, "..");
 loadEnvFile(path.join(ROOT, ".env"));
 
 const PORT = Number(process.env.PORT || 3000);
+const dev = process.env.NODE_ENV !== "production";
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
-  : process.env.VERCEL
-    ? path.join(os.tmpdir(), "fila-zero-data")
-    : path.join(ROOT, "data");
+  : resolveDefaultDataDir();
 const DB_PATH = path.join(DATA_DIR, "fila-zero.sqlite");
-const dev = process.env.NODE_ENV !== "production";
 const isStandaloneServer = require.main === module;
 const apiOnly = process.env.API_ONLY === "1";
 let nextHandler = null;
@@ -70,6 +67,13 @@ const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY |
 bootstrap();
 
 if (isStandaloneServer) startStandaloneServer();
+
+function resolveDefaultDataDir() {
+  if (!dev && process.env.VERCEL) {
+    throw new Error("Configure DATA_DIR com um volume persistente ou mova o backend para um servidor persistente. SQLite temporario no Vercel foi desativado.");
+  }
+  return path.join(ROOT, "data");
+}
 
 function startStandaloneServer() {
   if (apiOnly) {
@@ -363,6 +367,20 @@ async function handleApi(req, res, url) {
     }
     setAuthCookies(res, result.sessionId, result.csrfToken);
     sendJson(res, 200, { user: result.user, csrfToken: result.csrfToken });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/auth/change-password") {
+    const body = await readBody(req);
+    const result = await changePassword(body, req);
+    sendApiResult(res, 200, result);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/auth/register") {
+    const body = await readBody(req);
+    const result = await registerCustomer(body, req);
+    sendApiResult(res, 201, result);
     return;
   }
 
@@ -767,6 +785,51 @@ async function loginUser(body, req) {
   return loginLocalUser(body, req);
 }
 
+async function changePassword(body, req) {
+  if (isSupabaseConfigured()) return changeSupabasePassword(body, req);
+  return changeLocalPassword(body, req);
+}
+
+async function registerCustomer(body, req) {
+  if (isSupabaseConfigured()) return registerSupabaseCustomer(body, req);
+  return registerLocalCustomer(body, req);
+}
+
+function validateCustomerRegistration(body) {
+  const email = String(body.email || "").trim().toLowerCase();
+  const name = String(body.name || "").trim();
+  const password = String(body.password || "");
+  if (!name || name.length < 2) return { error: "Informe seu nome completo." };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Informe um e-mail valido." };
+  if (password.length < 8) return { error: "A senha precisa ter ao menos 8 caracteres." };
+  return { email, name, password };
+}
+
+function registerLocalCustomer(body, req) {
+  const data = validateCustomerRegistration(body);
+  if (data.error) return data;
+
+  const attemptKey = `${clientIp(req)}:${data.email}:register`;
+  if (isLoginLocked(attemptKey)) {
+    return { error: "Muitas tentativas. Aguarde alguns minutos e tente novamente." };
+  }
+
+  const result = createUser({
+    name: data.name,
+    email: data.email,
+    password: data.password,
+    role: "customer",
+    sectorIds: []
+  });
+  if (result.error) {
+    registerLoginFailure(attemptKey);
+    return result;
+  }
+
+  clearLoginFailures(attemptKey);
+  return { ...result, message: "Conta de cliente criada com sucesso. Entre usando seu e-mail e senha." };
+}
+
 function loginLocalUser(body, req) {
   const email = String(body.email || "").trim().toLowerCase();
   const password = String(body.password || "");
@@ -795,6 +858,33 @@ function loginLocalUser(body, req) {
   });
   registerEvent("login", "user", user.id, null, null, { email: user.email, role: user.role });
   return { sessionId: sessionToken, csrfToken, user: userDto(user) };
+}
+
+function changeLocalPassword(body, req) {
+  const email = String(body.email || "").trim().toLowerCase();
+  const currentPassword = String(body.currentPassword || "");
+  const newPassword = String(body.newPassword || "");
+  if (!email || !currentPassword || newPassword.length < 8) {
+    return { error: "Informe e-mail, senha atual e nova senha com ao menos 8 caracteres." };
+  }
+
+  const attemptKey = `${clientIp(req)}:${email || "unknown"}:change-password`;
+  if (isLoginLocked(attemptKey)) {
+    return { error: "Muitas tentativas. Aguarde alguns minutos e tente novamente." };
+  }
+
+  const user = db.prepare("SELECT * FROM users WHERE email = ? AND status = ?").get(email, "active");
+  if (!user || !verifyPassword(currentPassword, user.password_salt, user.password_hash)) {
+    registerLoginFailure(attemptKey);
+    return { error: "E-mail ou senha atual invalidos." };
+  }
+
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = hashPassword(newPassword, salt);
+  db.prepare("UPDATE users SET password_hash = ?, password_salt = ?, updated_at = ? WHERE id = ?").run(hash, salt, isoNow(), user.id);
+  clearLoginFailures(attemptKey);
+  registerEvent("senha_alterada", "user", user.id, null, null, { email: user.email });
+  return { ok: true, message: "Senha alterada com sucesso. Entre usando a nova senha." };
 }
 
 async function loginSupabaseUser(body, req) {
@@ -835,6 +925,85 @@ async function loginSupabaseUser(body, req) {
   });
 
   return { sessionId: sessionToken, csrfToken, user: profile };
+}
+
+async function changeSupabasePassword(body, req) {
+  const email = String(body.email || "").trim().toLowerCase();
+  const currentPassword = String(body.currentPassword || "");
+  const newPassword = String(body.newPassword || "");
+  if (!email || !currentPassword || newPassword.length < 8) {
+    return { error: "Informe e-mail, senha atual e nova senha com ao menos 8 caracteres." };
+  }
+
+  const attemptKey = `${clientIp(req)}:${email || "unknown"}:change-password`;
+  if (isLoginLocked(attemptKey)) {
+    return { error: "Muitas tentativas. Aguarde alguns minutos e tente novamente." };
+  }
+
+  const auth = await supabaseFetch("/auth/v1/token?grant_type=password", {
+    method: "POST",
+    apiKey: SUPABASE_ANON_KEY,
+    bearer: SUPABASE_ANON_KEY,
+    body: { email, password: currentPassword }
+  });
+
+  if (auth.error || !auth.user?.id) {
+    registerLoginFailure(attemptKey);
+    return { error: "E-mail ou senha atual invalidos." };
+  }
+
+  const updated = await supabaseFetch(`/auth/v1/admin/users/${encodeURIComponent(auth.user.id)}`, {
+    method: "PUT",
+    body: { password: newPassword }
+  });
+  if (updated.error) return { error: updated.error };
+
+  clearLoginFailures(attemptKey);
+  return { ok: true, message: "Senha alterada com sucesso. Entre usando a nova senha." };
+}
+
+async function registerSupabaseCustomer(body, req) {
+  const data = validateCustomerRegistration(body);
+  if (data.error) return data;
+
+  const attemptKey = `${clientIp(req)}:${data.email}:register`;
+  if (isLoginLocked(attemptKey)) {
+    return { error: "Muitas tentativas. Aguarde alguns minutos e tente novamente." };
+  }
+
+  const auth = await supabaseFetch("/auth/v1/admin/users", {
+    method: "POST",
+    body: {
+      email: data.email,
+      password: data.password,
+      email_confirm: true,
+      user_metadata: { name: data.name, role: "customer" }
+    }
+  });
+  const userId = auth.id || auth.user?.id;
+  if (auth.error || !userId) {
+    registerLoginFailure(attemptKey);
+    return { error: auth.error || "Nao foi possivel criar a conta." };
+  }
+
+  const profile = await supabaseUpsertProfile(userId, data.email, data.name, "customer");
+  if (profile.error) return profile;
+
+  clearLoginFailures(attemptKey);
+  return {
+    user: profile.user,
+    message: "Conta de cliente criada com sucesso. Entre usando seu e-mail e senha."
+  };
+}
+
+async function supabaseUpsertProfile(id, email, name, role) {
+  const profile = await supabaseFetch("/rest/v1/profiles?on_conflict=id&select=*", {
+    method: "POST",
+    headers: { Prefer: "resolution=merge-duplicates,return=representation" },
+    body: { id, email, name, role, status: "active" }
+  });
+  if (profile.error) return { error: profile.error };
+  return { user: userDto({ ...(Array.isArray(profile) ? profile[0] : profile), sectorIds: [] }) };
 }
 
 function logoutUser(req, res) {
@@ -936,9 +1105,8 @@ function base64UrlEncode(value) {
 
 function authSecret() {
   if (process.env.AUTH_SECRET && process.env.AUTH_SECRET.length >= 32) return process.env.AUTH_SECRET;
-  if (dev || process.env.ALLOW_DEMO_USERS === "1") return "fila-zero-demo-auth-secret-change-before-production";
-  console.warn("AUTH_SECRET nao configurado. Defina um segredo com ao menos 32 caracteres em producao.");
-  return crypto.randomBytes(32).toString("hex");
+  if (dev) return "fila-zero-demo-auth-secret-change-before-production";
+  throw new Error("AUTH_SECRET precisa ter ao menos 32 caracteres em producao.");
 }
 
 function isSupabaseConfigured() {
@@ -1085,9 +1253,11 @@ function canAccessSector(user, sectorId) {
 }
 
 function canOperateOnTicket(user, ticketId, customerId) {
-  if (user && hasAnyRole(user, STAFF_ROLES)) return true;
-  if (hasAnyRole(user, CUSTOMER_ROLES)) return canCustomerAccessTicket(ticketId, user.customerId);
-  return canCustomerAccessTicket(ticketId, customerId);
+  const ticket = getTicket(ticketId);
+  if (!ticket) return false;
+  if (user && hasAnyRole(user, STAFF_ROLES)) return canAccessSector(user, ticket.sector_id);
+  if (user && hasAnyRole(user, CUSTOMER_ROLES)) return ticket.customer_id === user.customerId;
+  return Boolean(customerId && ticket.customer_id === customerId);
 }
 
 function canCustomerAccessTicket(ticketId, customerId) {
@@ -1397,7 +1567,10 @@ function autoCallReadyTickets() {
 
 function expireAbsentCalls() {
   const cutoff = new Date(Date.now() - CALL_ABSENCE_SECONDS * 1000).toISOString();
-  const expired = db.prepare("SELECT * FROM tickets WHERE status = ? AND called_at < ?").all("chamado", cutoff);
+  const expired = db.prepare(`
+    SELECT * FROM tickets
+    WHERE status = ? AND service_started_at IS NULL AND finished_at IS NULL AND called_at < ?
+  `).all("chamado", cutoff);
   if (!expired.length) return;
 
   const now = isoNow();

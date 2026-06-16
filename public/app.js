@@ -1059,13 +1059,13 @@ function renderActiveTickets() {
   const entries = Object.entries(activeQueues);
   list.innerHTML = entries.length
     ? entries.map(([sectorId, data]) => `
-        <button class="mini-ticket ${sectorId === currentSector ? "active" : ""} ${data.priority ? "priority-ticket" : ""}" data-view-ticket="${sectorId}">
+        <button class="mini-ticket ${sectorId === currentSector ? "active" : ""} ${data.priority ? "priority-ticket" : ""}" data-view-ticket="${escapeHtml(sectorId)}">
           <div>
-            <strong>${data.sector}</strong>
+            <strong>${escapeHtml(data.sector)}</strong>
             ${data.priority ? priorityBadgeMarkup() : ""}
-            <span>${queueItemLine(data)}</span>
+            <span>${escapeHtml(queueItemLine(data))}</span>
           </div>
-          <b>${data.ticket}</b>
+          <b>${escapeHtml(data.ticket)}</b>
         </button>
       `).join("")
     : `<div class="empty-state">Você ainda não possui senhas ativas.</div>`;
@@ -1091,7 +1091,7 @@ function renderSectorCards() {
     card.querySelector(".sector-head strong").textContent = sector.name;
     card.querySelector(".sector-head span").textContent = sector.serviceLabel;
     card.querySelector(".sector-head b").textContent = sector.counterLabel;
-    card.querySelector(".sector-meta").innerHTML = `<span>Fila base: ${sector.queueSize} pessoas</span><span>${sector.status === "open" ? `${sector.averageServiceSeconds}s por atendimento` : "Setor indisponível"}</span>`;
+    card.querySelector(".sector-meta").innerHTML = `<span>Fila base: ${escapeHtml(sector.queueSize)} pessoas</span><span>${escapeHtml(sector.status === "open" ? `${sector.averageServiceSeconds}s por atendimento` : "Setor indisponível")}</span>`;
     button.disabled = sector.status !== "open" || Boolean(activeJoinSector);
     button.textContent = hasTicket ? `Ver senha ${activeQueues[sectorId].ticket}` : `Solicitar senha - ${sector.name}`;
     if (activeJoinSector === sectorId) button.textContent = "Gerando senha...";
@@ -1113,7 +1113,7 @@ function renderOfferQueueContext() {
   const data = getCurrentQueueData();
   box.classList.toggle("visible", Boolean(data));
   box.innerHTML = data
-    ? `<span>${data.sector}: ${data.ticket}</span><b>${statusText(data)}</b>`
+    ? `<span>${escapeHtml(data.sector)}: ${escapeHtml(data.ticket)}</span><b>${escapeHtml(statusText(data))}</b>`
     : "";
 }
 
@@ -1121,7 +1121,7 @@ function renderCart() {
   const list = document.querySelector("#cartList");
   if (!list) return;
   list.innerHTML = cartItems.length
-    ? cartItems.map((item) => `<div class="cart-item"><span>${item.quantity}x ${item.productName}</span><b>${item.price}</b></div>`).join("")
+    ? cartItems.map((item) => `<div class="cart-item"><span>${escapeHtml(item.quantity)}x ${escapeHtml(item.productName)}</span><b>${escapeHtml(item.price)}</b></div>`).join("")
     : `<div class="empty-state">Nenhum produto adicionado.</div>`;
 }
 
@@ -1269,8 +1269,8 @@ function renderProducts() {
     .map((group, index) => `
         <section class="offer-section ${group.personalized ? "personalized-offers" : ""}">
           <div>
-            <h3>${groupTitle(group, index)}</h3>
-            <span class="offer-section-count">${groupSubtitle(group)}</span>
+            <h3>${escapeHtml(groupTitle(group, index))}</h3>
+            <span class="offer-section-count">${escapeHtml(groupSubtitle(group))}</span>
           </div>
           ${group.items.map((item) => productCard(group.sector, item)).join("")}
         </section>
@@ -1368,14 +1368,14 @@ function productCard(sector, item) {
   const added = shoppingList.has(item.id);
   const displaySector = item.sector || sector;
   return `
-    <button class="product-card ${added ? "added" : ""}" data-product="${item.id}">
-      <span class="sale">${item.sale}</span>
-      <img class="product-img" src="${item.image}" alt="${item.name}" loading="lazy" />
+    <button class="product-card ${added ? "added" : ""}" data-product="${escapeHtml(item.id)}">
+      <span class="sale">${escapeHtml(item.sale)}</span>
+      <img class="product-img" src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}" loading="lazy" />
       <div>
-        <strong>${item.name}</strong>
-        <small>${displaySector}</small>
-        <del>${item.old}</del>
-        <b>${item.price}</b>
+        <strong>${escapeHtml(item.name)}</strong>
+        <small>${escapeHtml(displaySector)}</small>
+        <del>${escapeHtml(item.old)}</del>
+        <b>${escapeHtml(item.price)}</b>
       </div>
       <span class="add-indicator">${added ? "✓" : "+"}</span>
     </button>
@@ -1552,6 +1552,15 @@ function getCookie(name) {
     .map((item) => item.trim())
     .find((item) => item.startsWith(`${name}=`))
     ?.slice(name.length + 1) || "";
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 async function requireSession(roles) {

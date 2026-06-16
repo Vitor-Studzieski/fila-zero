@@ -8,14 +8,92 @@
   </head>
   <body>
     <main class="login-stage">
-      <form class="login-card" id="loginForm">
-        <span>Fila Zero</span>
-        <h1>Acesso ao sistema</h1>
-        <label>E-mail<input name="email" type="email" autocomplete="username" required /></label>
-        <label>Senha<input name="password" type="password" autocomplete="current-password" required /></label>
-        <button class="blue-action">Entrar</button>
-        <p class="login-error" id="loginError"></p>
-      </form>
+      <div class="login-shell">
+        <section class="login-showcase" aria-label="Fila Zero Super Pompeia">
+          <div class="login-showcase-content">
+            <div class="login-brand login-brand-inverted">
+              <div class="login-logo" aria-hidden="true">FZ</div>
+              <div>
+                <span>Fila Zero</span>
+                <strong>Super Pompeia</strong>
+              </div>
+            </div>
+            <div class="login-showcase-copy">
+              <p>Acesso digital ao atendimento</p>
+              <h1>Senhas, ofertas e balcao sincronizados em tempo real.</h1>
+              <span>Uma experiencia simples para clientes e um painel seguro para equipes autorizadas.</span>
+            </div>
+            <div class="login-proof-grid" aria-label="Recursos do sistema">
+              <article>
+                <b>01</b>
+                <span>Fila virtual por setor</span>
+              </article>
+              <article>
+                <b>02</b>
+                <span>Ofertas durante a espera</span>
+              </article>
+              <article>
+                <b>03</b>
+                <span>Paineis para equipe</span>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section class="login-card" aria-label="Acesso Fila Zero">
+          <div class="login-mobile-brand">
+            <div class="login-brand">
+              <div class="login-logo" aria-hidden="true">FZ</div>
+              <div>
+                <span>Fila Zero</span>
+                <strong>Super Pompeia</strong>
+              </div>
+            </div>
+          </div>
+          <div class="login-heading">
+            <p class="login-secure">
+              <svg aria-hidden="true" viewBox="0 0 24 24">
+                <path d="M7 10V8a5 5 0 0 1 10 0v2" />
+                <rect x="5" y="10" width="14" height="10" rx="2" />
+                <path d="M12 14v2" />
+              </svg>
+              Acesso seguro
+            </p>
+            <h2>Acesse sua conta</h2>
+            <p class="login-copy">Entre para acompanhar suas senhas, ofertas e atendimento em tempo real.</p>
+          </div>
+          <p class="login-profile-note">Clientes acessam senhas e ofertas. Funcionarios e gestores acessam seus paineis autorizados.</p>
+          <div class="login-tabs" role="tablist" aria-label="Acesso">
+            <button class="active" type="button" data-login-panel="login">Entrar</button>
+            <button type="button" data-login-panel="register">Criar conta</button>
+            <button type="button" data-login-panel="password">Alterar senha</button>
+          </div>
+
+          <form class="login-panel active" id="loginForm">
+            <label>E-mail<input name="email" type="email" autocomplete="username" required /></label>
+            <label>Senha<input name="password" type="password" autocomplete="current-password" required /></label>
+            <button class="yellow-action">Entrar</button>
+            <p class="login-error" id="loginError"></p>
+          </form>
+
+          <form class="login-panel" id="registerForm">
+            <label>Nome<input name="name" type="text" autocomplete="name" minlength="2" required /></label>
+            <label>E-mail<input name="email" type="email" autocomplete="username" required /></label>
+            <label>Senha<input name="password" type="password" autocomplete="new-password" minlength="8" required /></label>
+            <label>Confirmar senha<input name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required /></label>
+            <button class="yellow-action">Criar conta de cliente</button>
+            <p class="login-error" id="registerError"></p>
+          </form>
+
+          <form class="login-panel" id="passwordForm">
+            <label>E-mail<input name="email" type="email" autocomplete="username" required /></label>
+            <label>Senha atual<input name="currentPassword" type="password" autocomplete="current-password" required /></label>
+            <label>Nova senha<input name="newPassword" type="password" autocomplete="new-password" minlength="8" required /></label>
+            <button class="yellow-action">Salvar nova senha</button>
+            <p class="login-error" id="passwordError"></p>
+          </form>
+        </section>
+      </div>
       <div class="login-toast" id="loginToast" role="alert" aria-live="assertive"></div>
     </main>
     <script src="login.js"></script>

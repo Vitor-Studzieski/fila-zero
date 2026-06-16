@@ -4,7 +4,7 @@ document.querySelector("#loginForm").addEventListener("submit", async (event) =>
   const error = document.querySelector("#loginError");
   const submit = form.querySelector("button");
   error.textContent = "";
-  submit.disabled = true;
+  setSubmitting(submit, true);
 
   try {
     const result = await api("/api/auth/login", {
@@ -17,9 +17,84 @@ document.querySelector("#loginForm").addEventListener("submit", async (event) =>
     error.textContent = exception.message;
     showLoginToast(exception.message);
   } finally {
-    submit.disabled = false;
+    setSubmitting(submit, false);
   }
 });
+
+document.querySelector("#passwordForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const error = document.querySelector("#passwordError");
+  const submit = form.querySelector("button");
+  error.textContent = "";
+  setSubmitting(submit, true);
+
+  try {
+    const result = await api("/api/auth/change-password", {
+      method: "POST",
+      body: Object.fromEntries(new FormData(form).entries())
+    });
+    form.reset();
+    showLoginToast(result.message || "Senha alterada com sucesso.");
+    activatePanel("login");
+  } catch (exception) {
+    error.textContent = exception.message;
+    showLoginToast(exception.message);
+  } finally {
+    setSubmitting(submit, false);
+  }
+});
+
+document.querySelector("#registerForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const error = document.querySelector("#registerError");
+  const submit = form.querySelector("button");
+  const data = Object.fromEntries(new FormData(form).entries());
+  error.textContent = "";
+
+  if (data.password !== data.confirmPassword) {
+    error.textContent = "As senhas precisam ser iguais.";
+    showLoginToast(error.textContent);
+    return;
+  }
+
+  setSubmitting(submit, true);
+  try {
+    const result = await api("/api/auth/register", {
+      method: "POST",
+      body: {
+        name: data.name,
+        email: data.email,
+        password: data.password
+      }
+    });
+    form.reset();
+    showLoginToast(result.message || "Conta criada com sucesso. Entre usando seu e-mail e senha.");
+    activatePanel("login");
+  } catch (exception) {
+    error.textContent = exception.message;
+    showLoginToast(exception.message);
+  } finally {
+    setSubmitting(submit, false);
+  }
+});
+
+document.querySelectorAll("[data-login-panel]").forEach((button) => {
+  button.addEventListener("click", () => activatePanel(button.dataset.loginPanel));
+});
+
+function activatePanel(panel) {
+  document.querySelectorAll("[data-login-panel]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.loginPanel === panel);
+  });
+  document.querySelector("#loginForm").classList.toggle("active", panel === "login");
+  document.querySelector("#registerForm").classList.toggle("active", panel === "register");
+  document.querySelector("#passwordForm").classList.toggle("active", panel === "password");
+  document.querySelector("#loginError").textContent = "";
+  document.querySelector("#registerError").textContent = "";
+  document.querySelector("#passwordError").textContent = "";
+}
 
 function showLoginToast(message) {
   const toast = document.querySelector("#loginToast");
@@ -33,6 +108,12 @@ function showLoginToast(message) {
   showLoginToast.timer = setTimeout(() => {
     toast.classList.remove("visible");
   }, 4200);
+}
+
+function setSubmitting(button, submitting) {
+  if (!button.dataset.defaultText) button.dataset.defaultText = button.textContent;
+  button.disabled = submitting;
+  button.textContent = submitting ? "Aguarde..." : button.dataset.defaultText;
 }
 
 async function api(path, options = {}) {

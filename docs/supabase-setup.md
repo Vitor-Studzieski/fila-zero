@@ -39,6 +39,7 @@ SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
 DATABASE_URL=
 SUPABASE_AUTH_ENABLED=1
+DATA_BACKEND=supabase
 AUTH_SECRET=
 QR_TOKEN_ACOUGUE=
 QR_TOKEN_FRIOS=
@@ -134,8 +135,21 @@ where email = '<email-do-funcionario>';
 
 Troque `acougue` por `frios` ou `padaria` conforme o caso.
 
-## Estado atual do codigo
+## Ativando o backend Supabase
 
-Com `SUPABASE_AUTH_ENABLED=1` e as chaves configuradas, o login do app usa Supabase Auth e busca perfil/permissoes nas tabelas `profiles` e `profile_sector_permissions`.
+Com `DATA_BACKEND=supabase`, a rota `app/api/[...path]/route.js` usa o runtime `server/supabase-runtime.js`.
 
-O restante dos dados operacionais da fila ainda usa SQLite nesta etapa. A proxima etapa da migracao e trocar tickets, carrinho, eventos e metricas para Postgres/Supabase.
+Nesse modo, o app usa Supabase/Postgres para:
+
+- login via Supabase Auth;
+- perfis e permissoes;
+- setores;
+- tickets/senhas;
+- chamadas e atendimentos;
+- carrinho;
+- avaliacoes;
+- eventos;
+- metricas;
+- controle de tentativas de login.
+
+O SQLite permanece apenas como fallback local quando `DATA_BACKEND` nao for `supabase`.

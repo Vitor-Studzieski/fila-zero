@@ -10,7 +10,7 @@
     "dev": "node --no-warnings server/server.js",
     "start": "node --no-warnings server/server.js",
     "build": "next build --webpack",
-    "check": "node --check server/server.js && node --check public/app.js && node --check public/attendant.js && node --check public/admin.js && node --check public/login.js && node --check tests/orchestration.test.js",
+    "check": "node --check server/server.js && node --check server/supabase-runtime.js && node --check public/app.js && node --check public/attendant.js && node --check public/admin.js && node --check public/login.js && node --check tests/orchestration.test.js",
     "test": "node --test tests/orchestration.test.js"
   },
   "dependencies": {

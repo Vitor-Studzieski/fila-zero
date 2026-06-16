@@ -1,10 +1,17 @@
 import { Readable } from "node:stream";
-import backend from "../../../server/server.js";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function route(request) {
+  if (process.env.DATA_BACKEND === "supabase") {
+    const runtime = await import("../../../server/supabase-runtime.js");
+    return runtime.default?.handleRequest
+      ? runtime.default.handleRequest(request)
+      : runtime.handleRequest(request);
+  }
+
+  const backend = await import("../../../server/server.js");
   const body = ["GET", "HEAD"].includes(request.method) ? "" : await request.text();
   const url = new URL(request.url);
   const nodeReq = Readable.from(body ? [body] : []);
@@ -49,7 +56,7 @@ function handleWithNodeResponse(nodeReq, url) {
       }
     };
 
-    Promise.resolve(backend.handleApi(nodeReq, nodeRes, url)).catch((error) => {
+    Promise.resolve((backend.default || backend).handleApi(nodeReq, nodeRes, url)).catch((error) => {
       console.error(error);
       headers.set("content-type", "application/json; charset=utf-8");
       resolve(new Response(JSON.stringify({ error: "Erro interno do servidor." }), { status: 500, headers }));

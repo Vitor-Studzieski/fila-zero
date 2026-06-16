@@ -76,6 +76,7 @@ SUPABASE_URL
 SUPABASE_ANON_KEY
 SUPABASE_SERVICE_ROLE_KEY
 SUPABASE_AUTH_ENABLED
+DATA_BACKEND
 AUTH_SECRET
 BOOTSTRAP_ADMIN_EMAIL
 BOOTSTRAP_ADMIN_PASSWORD
@@ -85,7 +86,7 @@ QR_TOKEN_FRIOS
 QR_TOKEN_PADARIA
 ```
 
-`AUTH_SECRET` precisa ser um segredo fixo com ao menos 32 caracteres. `BOOTSTRAP_ADMIN_PASSWORD` precisa ter ao menos 12 caracteres. Os tokens de QR devem ser longos, aleatorios e diferentes por setor.
+Use `DATA_BACKEND=supabase` para rodar login, filas, carrinho, setores, metricas e usuarios no Supabase/Postgres. `AUTH_SECRET` precisa ser um segredo fixo com ao menos 32 caracteres. `BOOTSTRAP_ADMIN_PASSWORD` precisa ter ao menos 12 caracteres quando o fallback local estiver em uso. Os tokens de QR devem ser longos, aleatorios e diferentes por setor.
 
 ## Banco de dados local
 
@@ -137,7 +138,7 @@ Executa os testes de orquestracao da fila.
 
 ## Observacoes para deploy
 
-O projeto possui adaptacao para Vercel em `app/api/[...path]/route.js`, mas o SQLite em ambiente serverless deve ser tratado como temporario. Para producao real, use um banco persistente como Vercel Postgres, Neon ou Supabase.
+O projeto possui adaptacao para Vercel em `app/api/[...path]/route.js`. Em producao, configure `DATA_BACKEND=supabase` para que a API use Supabase/Postgres em vez de SQLite local.
 
 As acoes autenticadas usam cookie `HttpOnly` e token CSRF. Se o login funcionar, mas acoes como carrinho ou senha falharem com erro de token de seguranca, recarregue a pagina para sincronizar o cookie `fz_csrf`.
 
@@ -155,4 +156,4 @@ A estrutura SQL inicial esta em:
 supabase/migrations/0001_initial_schema.sql
 ```
 
-Depois de criar as tabelas no Supabase e configurar as variaveis na Vercel, a proxima etapa tecnica e trocar o acesso a dados do backend de SQLite para Postgres/Supabase.
+Depois de criar as tabelas no Supabase e configurar `DATA_BACKEND=supabase` na Vercel, o backend passa a usar Supabase/Postgres para os dados operacionais.

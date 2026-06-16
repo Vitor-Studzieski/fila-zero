@@ -50,26 +50,26 @@ function renderAttendant() {
       <article class="ops-card">
         <div class="ops-card-head">
           <div>
-            <strong>${sector.name}</strong>
-            <span>${sector.counterLabel}</span>
+            <strong>${escapeHtml(sector.name)}</strong>
+            <span>${escapeHtml(sector.counterLabel)}</span>
           </div>
-          <b class="status-pill ${sector.status}">${statusLabel(sector.status)}</b>
+          <b class="status-pill ${escapeHtml(sector.status)}">${escapeHtml(statusLabel(sector.status))}</b>
         </div>
         <div class="ops-metric ${currentTicket?.priority ? "priority-current" : ""}">
           <span>Senha atual</span>
-          <strong>${sector.current}</strong>
-          <small>${currentTicket ? `${ticketStatusLabel(currentTicket.status)} - ${currentTicket.ticket}` : "Nenhuma senha chamada"}</small>
+          <strong>${escapeHtml(sector.current)}</strong>
+          <small>${escapeHtml(currentTicket ? `${ticketStatusLabel(currentTicket.status)} - ${currentTicket.ticket}` : "Nenhuma senha chamada")}</small>
           ${currentTicket?.priority ? priorityBadgeMarkup("priority-large") : ""}
         </div>
         <div class="ops-sync-line">
           <span>App e balcao sincronizados</span>
-          <b>${staffState.serverTime ? formatClock(staffState.serverTime) : "--"}</b>
+          <b>${escapeHtml(staffState.serverTime ? formatClock(staffState.serverTime) : "--")}</b>
         </div>
         <div class="ops-estimate-line">
           <span>Tempo medio do setor</span>
-          <b>${formatAverageService(sector)}</b>
+          <b>${escapeHtml(formatAverageService(sector))}</b>
         </div>
-        <button class="blue-action compact-action" data-call-next="${sector.id}" ${canCallNext ? "" : "disabled"}>${hasActiveService ? "Aguardando finalizacao" : "Chamar proxima senha"}</button>
+        <button class="blue-action compact-action" data-call-next="${escapeHtml(sector.id)}" ${canCallNext ? "" : "disabled"}>${hasActiveService ? "Aguardando finalizacao" : "Chamar proxima senha"}</button>
         ${ticketSection("Chamadas", called)}
         ${ticketSection("Em atendimento", inService)}
         ${ticketSection("Fila", waiting)}
@@ -105,10 +105,10 @@ function ticketRow(ticket) {
   return `
     <div class="ops-ticket-row ${ticket.priority ? "priority-ticket" : ""}">
       <div>
-        <strong>${ticket.ticket}</strong>
+        <strong>${escapeHtml(ticket.ticket)}</strong>
         ${ticket.priority ? priorityBadgeMarkup() : ""}
-        <span>${ticket.sector} - ${ticketStatusLabel(ticket.status)}</span>
-        <small>${ticketDetailLine(ticket)}</small>
+        <span>${escapeHtml(ticket.sector)} - ${escapeHtml(ticketStatusLabel(ticket.status))}</span>
+        <small>${escapeHtml(ticketDetailLine(ticket))}</small>
       </div>
       ${ticketActions(ticket)}
     </div>
@@ -117,10 +117,10 @@ function ticketRow(ticket) {
 
 function ticketActions(ticket) {
   if (ticket.status === "chamado") {
-    return `<div class="ops-ticket-actions"><button data-start-ticket="${ticket.id}">Iniciar</button><button class="danger-action" data-skip-ticket="${ticket.id}">Pular</button></div>`;
+    return `<div class="ops-ticket-actions"><button data-start-ticket="${escapeHtml(ticket.id)}">Iniciar</button><button class="danger-action" data-skip-ticket="${escapeHtml(ticket.id)}">Pular</button></div>`;
   }
-  if (ticket.status === "em_atendimento") return `<button data-finish-ticket="${ticket.id}">Finalizar</button>`;
-  return `<div class="ops-ticket-actions"><small>${ticket.position}º</small><button class="danger-action" data-skip-ticket="${ticket.id}">Pular</button></div>`;
+  if (ticket.status === "em_atendimento") return `<button data-finish-ticket="${escapeHtml(ticket.id)}">Finalizar</button>`;
+  return `<div class="ops-ticket-actions"><small>${escapeHtml(`${ticket.position}º`)}</small><button class="danger-action" data-skip-ticket="${escapeHtml(ticket.id)}">Pular</button></div>`;
 }
 
 function ticketDetailLine(ticket) {
@@ -157,8 +157,8 @@ function callHistory(items) {
       <h2>Ultimas chamadas</h2>
       ${items.length ? items.map((item) => `
         <div class="history-row">
-          <span>${item.ticket} - ${callActionLabel(item.action)}</span>
-          <b>${formatClock(item.createdAt)}</b>
+          <span>${escapeHtml(item.ticket)} - ${escapeHtml(callActionLabel(item.action))}</span>
+          <b>${escapeHtml(formatClock(item.createdAt))}</b>
         </div>
       `).join("") : `<p class="ops-empty">Nenhum registro recente.</p>`}
     </section>
@@ -295,6 +295,15 @@ function getCookie(name) {
     .map((item) => item.trim())
     .find((item) => item.startsWith(`${name}=`))
     ?.slice(name.length + 1) || "";
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 async function requireSession(roles) {

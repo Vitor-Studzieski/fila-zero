@@ -63,32 +63,32 @@ function renderAdmin() {
   document.querySelector("#adminSectors").innerHTML = adminState.sectors.map((sector) => {
     const called = sector.tickets.filter((ticket) => ticket.status === "chamado");
     const inService = sector.tickets.filter((ticket) => ticket.status === "em_atendimento");
-    const waiting = sector.tickets.filter((ticket) => ["aguardando", "proximo", "espera_inteligente"].includes(ticket.status));
+    const waiting = sector.tickets.filter((ticket) => ["aguardando", "proximo", "espera_inteligente", "standby"].includes(ticket.status));
     const currentTicket = inService[0] || called[0] || null;
     return `
-      <form class="ops-card admin-form" data-sector-form="${sector.id}">
+      <form class="ops-card admin-form" data-sector-form="${escapeHtml(sector.id)}">
         <div class="ops-card-head">
           <div>
-            <strong>${sector.name}</strong>
-            <span>${sector.id}</span>
+            <strong>${escapeHtml(sector.name)}</strong>
+            <span>${escapeHtml(sector.id)}</span>
           </div>
-          <b class="status-pill ${sector.status}">${statusLabel(sector.status)}</b>
+          <b class="status-pill ${escapeHtml(sector.status)}">${escapeHtml(statusLabel(sector.status))}</b>
         </div>
         <div class="ops-metric ${currentTicket?.priority ? "priority-current" : ""}">
           <span>Senha atual</span>
-          <strong>${sector.current}</strong>
+          <strong>${escapeHtml(sector.current)}</strong>
           ${currentTicket?.priority ? priorityBadgeMarkup("priority-large") : ""}
         </div>
         ${ticketSection("Chamadas", called)}
         ${ticketSection("Em atendimento", inService)}
         ${ticketSection("Fila", waiting)}
-        <label>Nome do setor<input name="name" value="${sector.name}" /></label>
-        <label>Balcão<input name="counterLabel" value="${sector.counterLabel}" /></label>
-        <label>Descrição<input name="serviceLabel" value="${sector.serviceLabel}" /></label>
+        <label>Nome do setor<input name="name" value="${escapeHtml(sector.name)}" /></label>
+        <label>Balcão<input name="counterLabel" value="${escapeHtml(sector.counterLabel)}" /></label>
+        <label>Descrição<input name="serviceLabel" value="${escapeHtml(sector.serviceLabel)}" /></label>
         <div class="form-grid">
-          <label>Fila base<input type="number" name="queueSize" min="1" value="${sector.queueSize}" /></label>
-          <label>Tempo médio<input type="number" name="averageServiceSeconds" min="1" value="${sector.averageServiceSeconds}" /></label>
-          <label>Capacidade<input type="number" name="capacity" min="1" value="${sector.capacity}" /></label>
+          <label>Fila base<input type="number" name="queueSize" min="1" value="${escapeHtml(sector.queueSize)}" /></label>
+          <label>Tempo médio<input type="number" name="averageServiceSeconds" min="1" value="${escapeHtml(sector.averageServiceSeconds)}" /></label>
+          <label>Capacidade<input type="number" name="capacity" min="1" value="${escapeHtml(sector.capacity)}" /></label>
         </div>
         <label>Status
           <select name="status">
@@ -120,11 +120,11 @@ function ticketRow(ticket) {
   return `
     <div class="ops-ticket-row ${ticket.priority ? "priority-ticket" : ""}">
       <div>
-        <strong>${ticket.ticket}</strong>
+        <strong>${escapeHtml(ticket.ticket)}</strong>
         ${ticket.priority ? priorityBadgeMarkup() : ""}
-        <span>${ticket.sector} - ${ticketStatus(ticket)}</span>
+        <span>${escapeHtml(ticket.sector)} - ${escapeHtml(ticketStatus(ticket))}</span>
       </div>
-      <small>${ticket.status === "em_atendimento" ? "Agora" : `${ticket.position}º`}</small>
+      <small>${escapeHtml(ticket.status === "em_atendimento" ? "Agora" : `${ticket.position}º`)}</small>
     </div>
   `;
 }
@@ -150,18 +150,18 @@ function renderMetrics() {
       <article class="ops-card">
         <div class="ops-card-head">
           <div>
-            <strong>${sector.name}</strong>
-            <span>${sector.finished} atendimentos finalizados</span>
+            <strong>${escapeHtml(sector.name)}</strong>
+            <span>${escapeHtml(sector.finished)} atendimentos finalizados</span>
           </div>
         </div>
-        <div class="ops-metric"><span>Tempo médio</span><strong>${sector.avgServiceSeconds}s</strong></div>
-        <div class="ops-metric"><span>Espera inteligente</span><strong>${sector.avgSmartWaitSeconds}s</strong></div>
-        <p class="ops-empty">Abandono: ${sector.abandoned}</p>
+        <div class="ops-metric"><span>Tempo médio</span><strong>${escapeHtml(sector.avgServiceSeconds)}s</strong></div>
+        <div class="ops-metric"><span>Espera inteligente</span><strong>${escapeHtml(sector.avgSmartWaitSeconds)}s</strong></div>
+        <p class="ops-empty">Abandono: ${escapeHtml(sector.abandoned)}</p>
       </article>
     `),
     `<article class="ops-card">
-      <div class="ops-card-head"><div><strong>Satisfação</strong><span>${adminMetrics.satisfaction.count} avaliações</span></div></div>
-      <div class="ops-metric"><span>Média</span><strong>${adminMetrics.satisfaction.average}</strong></div>
+      <div class="ops-card-head"><div><strong>Satisfação</strong><span>${escapeHtml(adminMetrics.satisfaction.count)} avaliações</span></div></div>
+      <div class="ops-metric"><span>Média</span><strong>${escapeHtml(adminMetrics.satisfaction.average)}</strong></div>
     </article>`
   ].join("");
 }
@@ -171,12 +171,12 @@ function renderUsers() {
     <article class="ops-card">
       <div class="ops-card-head">
         <div>
-          <strong>${user.name}</strong>
-          <span>${user.email}</span>
+          <strong>${escapeHtml(user.name)}</strong>
+          <span>${escapeHtml(user.email)}</span>
         </div>
-        <b class="status-pill">${roleLabel(user.role)}</b>
+        <b class="status-pill">${escapeHtml(roleLabel(user.role))}</b>
       </div>
-      <p class="ops-empty">${user.sectorIds.length ? `Setores: ${user.sectorIds.join(", ")}` : "Acesso global ou sem setor específico."}</p>
+      <p class="ops-empty">${user.sectorIds.length ? `Setores: ${escapeHtml(user.sectorIds.join(", "))}` : "Acesso global ou sem setor específico."}</p>
     </article>
   `).join("");
 }
@@ -252,6 +252,15 @@ function getCookie(name) {
     .map((item) => item.trim())
     .find((item) => item.startsWith(`${name}=`))
     ?.slice(name.length + 1) || "";
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
 }
 
 async function requireSession(roles) {
