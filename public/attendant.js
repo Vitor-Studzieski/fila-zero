@@ -278,9 +278,19 @@ async function api(path, options = {}) {
     },
     body: options.body ? JSON.stringify(options.body) : undefined
   });
-  const payload = await response.json().catch(() => ({ error: "Backend indisponivel." }));
+  const payload = await parseApiPayload(response);
   if (!response.ok || payload.error) throw new Error(payload.error || "Falha na API.");
   return payload;
+}
+
+async function parseApiPayload(response) {
+  const text = await response.text();
+  if (!text.trim()) return response.ok ? { ok: true } : { error: "Falha na API." };
+  try {
+    return JSON.parse(text);
+  } catch {
+    return response.ok ? { ok: true, message: text } : { error: text || "Backend indisponivel." };
+  }
 }
 
 function csrfHeader() {

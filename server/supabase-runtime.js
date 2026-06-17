@@ -522,7 +522,8 @@ async function updateSector(sectorId, body) {
 
 async function getCustomerState(customerId) {
   await expireStaleActiveTickets();
-  const sectors = await Promise.all((await getSectors()).map(sectorDto));
+  const sectorRows = await getSectors();
+  const sectors = await customerSectorDtos(sectorRows);
   const tickets = customerId
     ? await select("tickets", `customer_id=eq.${encodeURIComponent(customerId)}&status=in.(${ACTIVE_STATUSES.join(",")})&order=created_at.asc`)
     : [];
@@ -581,6 +582,20 @@ async function getMetrics() {
     };
   });
   return { sectors, satisfaction: satisfactionSummary(await select("ratings", "select=score")), generatedAt: isoNow() };
+}
+
+async function customerSectorDtos(sectors) {
+  if (!sectors.length) return [];
+  const sectorIds = sectors.map((sector) => sector.id);
+  const [counters, recentStats] = await Promise.all([
+    select("ticket_counters", `sector_id=in.(${sectorIds.map(encodeURIComponent).join(",")})`),
+    staffAverageStats(sectorIds)
+  ]);
+  const countersBySector = new Map(counters.map((counter) => [counter.sector_id, counter]));
+  return sectors.map((sector) => {
+    const stats = recentStats.get(sector.id) || { seconds: sector.average_service_seconds, samples: 0 };
+    return sectorDtoFromStats(sector, stats, currentCodeFromCounter(sector, countersBySector.get(sector.id)));
+  });
 }
 
 async function staffAverageStats(sectorIds) {

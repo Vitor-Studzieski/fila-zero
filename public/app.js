@@ -45,6 +45,7 @@ let countdownTimer = null;
 let activeJoinSector = null;
 let queueAlertHistory = new Set();
 let visibleQueueAlert = null;
+let productsRendered = false;
 let locationState = {
   status: "idle",
   value: null,
@@ -292,23 +293,20 @@ init();
 async function init() {
   syncMobileViewport();
   simplifyStatusDetails();
-  renderProducts();
   bindEvents();
   syncPriorityControls();
   syncAlertControls();
   syncPresenceStatus();
+  navigate("home");
   currentUser = await requireSession(["customer", "manager", "admin"]);
   syncAccessArea();
   renderClub();
   renderAccount();
   identity.customerId = currentUser.customerId;
   localStorage.setItem("filaZeroIdentity", JSON.stringify(identity));
-  await syncSession();
-  await loadCart();
-  await loadState();
+  await Promise.all([syncSession(), loadCart(), loadState()]);
   connectRealtime();
   startCountdownTimer();
-  navigate("home");
   if (PRESENCE_CHECK_ENABLED) warmupLocation();
 }
 
@@ -374,6 +372,7 @@ async function loadCart() {
   cartItems.forEach((item) => shoppingList.add(item.productId));
   renderCart();
   renderClub();
+  if (productsRendered) renderProducts();
 }
 
 function connectRealtime() {
@@ -381,7 +380,6 @@ function connectRealtime() {
   stateSource = new EventSource("/api/events");
   stateSource.addEventListener("state", (event) => applyState(JSON.parse(event.data)));
   stateSource.addEventListener("error", () => startStatePolling());
-  startStatePolling();
 }
 
 function startStatePolling() {
@@ -621,7 +619,7 @@ async function joinQueue(sectorId) {
     currentSector = result.ticket.sectorId;
     activeQueues[result.ticket.sectorId] = withLiveCountdown(result.ticket);
     syncQueue();
-    navigate("ticket");
+    navigate("status");
   } catch (exception) {
     alert(exception.message);
   } finally {
@@ -1316,6 +1314,7 @@ function requestLocation() {
 }
 
 function renderProducts() {
+  productsRendered = true;
   const groups = personalizedProductGroups();
   document.querySelector("#productList").innerHTML = groups
     .map((group, index) => `
@@ -1597,13 +1596,23 @@ async function api(path, options = {}) {
     },
     body: options.body ? JSON.stringify(options.body) : undefined
   });
-  const payload = await response.json().catch(() => ({ error: "Backend indisponivel." }));
+  const payload = await parseApiPayload(response);
   if (response.status === 401) {
     location.href = `/login?next=${encodeURIComponent(location.pathname)}`;
     throw new Error("Login necessÃ¡rio.");
   }
   if (!response.ok || payload.error) throw new Error(payload.error || "Falha na API.");
   return payload;
+}
+
+async function parseApiPayload(response) {
+  const text = await response.text();
+  if (!text.trim()) return response.ok ? { ok: true } : { error: "Falha na API." };
+  try {
+    return JSON.parse(text);
+  } catch {
+    return response.ok ? { ok: true, message: text } : { error: text || "Backend indisponivel." };
+  }
 }
 
 function csrfHeader() {
