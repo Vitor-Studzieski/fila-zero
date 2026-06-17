@@ -34,6 +34,12 @@ const PRIORITY_CATEGORIES = new Set([
 const LOGIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_ATTEMPT_LIMIT = 5;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
+const SCHEDULED_JOBS_MIN_INTERVAL_MS = 2500;
+const PROFILE_CACHE_TTL_MS = 10 * 1000;
+
+const profileCache = new Map();
+let scheduledJobsLastRun = 0;
+let scheduledJobsPromise = null;
 
 async function handleRequest(request) {
   const url = new URL(request.url);
@@ -41,7 +47,9 @@ async function handleRequest(request) {
     if (!isSupabaseReady()) {
       return json({ error: "Supabase nao configurado." }, 500);
     }
-    await runScheduledJobs();
+    await maybeRunScheduledJobs({
+      wait: url.pathname === "/api/state" || url.pathname === "/api/staff/state" || url.pathname === "/api/events"
+    });
 
     if (request.method === "POST" && url.pathname === "/api/auth/login") return login(request);
     if (request.method === "POST" && url.pathname === "/api/auth/change-password") return changePassword(request);
@@ -521,7 +529,6 @@ async function updateSector(sectorId, body) {
 }
 
 async function getCustomerState(customerId) {
-  await expireStaleActiveTickets();
   const sectorRows = await getSectors();
   const sectors = await customerSectorDtos(sectorRows);
   const tickets = customerId
@@ -531,7 +538,6 @@ async function getCustomerState(customerId) {
 }
 
 async function getStaffState(user) {
-  await expireStaleActiveTickets();
   const sectors = (await getSectors()).filter((sector) => canAccessSectorSync(user, sector.id));
   if (!sectors.length) return { serverTime: isoNow(), sectors: [] };
 
@@ -912,6 +918,22 @@ async function runScheduledJobs() {
   await autoCallReadyTickets();
 }
 
+async function maybeRunScheduledJobs(options = {}) {
+  const now = Date.now();
+  if (scheduledJobsPromise) {
+    if (options.wait) await scheduledJobsPromise;
+    return;
+  }
+  if (now - scheduledJobsLastRun < SCHEDULED_JOBS_MIN_INTERVAL_MS) return;
+  scheduledJobsLastRun = now;
+  scheduledJobsPromise = runScheduledJobs()
+    .catch((error) => console.error("scheduled_jobs_failed", error))
+    .finally(() => {
+      scheduledJobsPromise = null;
+    });
+  if (options.wait) await scheduledJobsPromise;
+}
+
 async function autoCallReadyTickets() {
   for (const sector of await getSectors()) {
     if (sector.status !== "open") continue;
@@ -1091,10 +1113,16 @@ async function removePermission(profileId, sectorId) {
 }
 
 async function getProfile(userId, fallbackEmail = "") {
+  const cached = profileCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return { ...cached.profile, email: cached.profile.email || fallbackEmail };
+  }
   const profile = (await select("profiles", `id=eq.${encodeURIComponent(userId)}&limit=1`))[0];
   if (!profile) return null;
   const permissions = await select("profile_sector_permissions", `profile_id=eq.${encodeURIComponent(userId)}&select=sector_id`);
-  return userDto({ ...profile, email: profile.email || fallbackEmail, sectorIds: permissions.map((item) => item.sector_id) });
+  const dto = userDto({ ...profile, email: profile.email || fallbackEmail, sectorIds: permissions.map((item) => item.sector_id) });
+  profileCache.set(userId, { profile: dto, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS });
+  return dto;
 }
 
 async function getAuthUser(request) {
