@@ -1126,11 +1126,24 @@ async function supabaseFetch(pathname, options = {}) {
     body: options.body ? JSON.stringify(options.body) : undefined
   });
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  const payload = parseSupabasePayload(text);
   if (!response.ok) {
-    return { error: payload?.error_description || payload?.message || response.statusText, status: response.status };
+    return { error: supabaseErrorMessage(payload, response), status: response.status };
   }
   return payload;
+}
+
+function parseSupabasePayload(text) {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: String(text).slice(0, 240) };
+  }
+}
+
+function supabaseErrorMessage(payload, response) {
+  return payload?.error_description || payload?.message || payload?.hint || response.statusText || "Falha ao comunicar com o Supabase.";
 }
 
 async function getSupabaseProfile(userId, fallbackEmail = "") {

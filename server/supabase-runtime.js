@@ -368,7 +368,7 @@ async function createTicket(body) {
   const active = await select("tickets", `customer_id=eq.${encodeURIComponent(session.customerId)}&status=in.(${ACTIVE_STATUSES.join(",")})`);
   if (active.length >= MAX_ACTIVE_TICKETS_PER_CUSTOMER) return fail(`Limite de ${MAX_ACTIVE_TICKETS_PER_CUSTOMER} senhas ativas por cliente atingido.`);
   const existing = active.find((ticket) => ticket.sector_id === sector.id);
-  if (existing) return { ticket: await ticketDto(existing), alreadyExists: true };
+  if (existing) return { ticket: await safeTicketDto(existing), alreadyExists: true };
   const priority = normalizePriority(body);
   const row = await rpc("issue_ticket", {
     p_customer_id: session.customerId,
@@ -381,7 +381,7 @@ async function createTicket(body) {
   });
   if (!row || row.error) return fail("Nao foi possivel emitir a senha agora.");
   await registerEvent("senha_emitida", "ticket", row.id, row.customer_id, row.sector_id, { code: row.code, priority });
-  return { ticket: await ticketDto(row), alreadyExists: false };
+  return { ticket: await safeTicketDto(row), alreadyExists: false };
 }
 
 async function callNextTicket(sectorId, options = {}) {
@@ -393,7 +393,7 @@ async function callNextTicket(sectorId, options = {}) {
   if (called.error) return fail("Finalize a senha atual antes de chamar a proxima.");
   if (called?.id) {
     await registerEvent("senha_chamada", "ticket", called.id, called.customer_id, called.sector_id, { code: called.code });
-    return { ticket: await ticketDto(called) };
+    return { ticket: await safeTicketDto(called) };
   }
   return { ticket: null, message: "Nenhuma senha elegivel para chamada." };
 }
@@ -408,7 +408,7 @@ async function confirmTicket(ticketId) {
   const updated = await update("tickets", ticket.id, { status: "em_atendimento", service_started_at: now, updated_at: now });
   await insert("services", { ticket_id: ticket.id, sector_id: ticket.sector_id, customer_id: ticket.customer_id, started_at: now });
   await registerEvent("atendimento_iniciado", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { code: ticket.code });
-  return { ticket: await ticketDto(updated) };
+  return { ticket: await safeTicketDto(updated) };
 }
 
 async function finishTicket(ticketId) {
@@ -425,8 +425,8 @@ async function finishTicket(ticketId) {
   const released = await releaseSmartWaitTicket(ticket.customer_id);
   const nextInSector = await callNextTicket(ticket.sector_id, { preferStandby: true });
   return {
-    finishedTicket: await ticketDto(await getTicket(ticket.id)),
-    releasedTicket: released ? await ticketDto(released) : null,
+    finishedTicket: await safeTicketDto(await getTicket(ticket.id)),
+    releasedTicket: released ? await safeTicketDto(released) : null,
     nextTicket: nextInSector?.ticket || null
   };
 }
@@ -469,7 +469,7 @@ async function skipTicket(ticketId, body = {}) {
   await insert("calls", { ticket_id: ticket.id, sector_id: ticket.sector_id, action: `senha_pulada:${reason}`, created_at: now });
   await registerEvent("senha_pulada_pelo_atendente", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { code: ticket.code, previousStatus: ticket.status, reason });
   const nextInSector = CALL_BLOCKING_STATUSES.includes(ticket.status) ? await callNextTicket(ticket.sector_id) : null;
-  return { skippedTicket: await ticketDto(skipped), nextTicket: nextInSector?.ticket || null };
+  return { skippedTicket: await safeTicketDto(skipped), nextTicket: nextInSector?.ticket || null };
 }
 
 async function cancelTicket(ticketId, customerId) {
@@ -488,7 +488,7 @@ async function cancelTicket(ticketId, customerId) {
   });
   await registerEvent("senha_cancelada_pelo_cliente", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { code: ticket.code, previousStatus: ticket.status });
   const released = CALL_BLOCKING_STATUSES.includes(ticket.status) ? await releaseSmartWaitTicket(ticket.customer_id) : null;
-  return { canceledTicket: await ticketDto(canceled), releasedTicket: released ? await ticketDto(released) : null };
+  return { canceledTicket: await safeTicketDto(canceled), releasedTicket: released ? await safeTicketDto(released) : null };
 }
 
 async function releaseSmartWaitTicket(customerId) {
@@ -859,6 +859,57 @@ async function ticketDto(row) {
   };
 }
 
+async function safeTicketDto(row) {
+  try {
+    return await ticketDto(row);
+  } catch (error) {
+    console.error("ticket_dto_failed", error);
+    const sector = row?.sector_id ? await getSector(row.sector_id).catch(() => null) : null;
+    return fallbackTicketDto(row, sector);
+  }
+}
+
+function fallbackTicketDto(row, sector) {
+  if (!row) return null;
+  const waiting = CALL_ELIGIBLE_STATUSES.includes(row.status);
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    deviceId: row.device_id,
+    sectorId: row.sector_id,
+    sector: sector?.name || row.sector_id,
+    ticket: row.code,
+    current: row.code,
+    counterLabel: sector?.counter_label || "",
+    serviceLabel: sector?.service_label || "",
+    status: row.status,
+    priority: Boolean(row.priority),
+    priorityReason: row.priority_reason,
+    position: 1,
+    ahead: 0,
+    secondsToCall: 0,
+    averageServiceSeconds: Number(sector?.average_service_seconds || 60),
+    averageServiceSamples: 0,
+    estimateBasedOnRecentServices: false,
+    countdownTotalSeconds: 0,
+    estimatedCallAt: null,
+    progress: progressFor(row.status, 1),
+    smartWaitReason: row.smart_wait_reason,
+    locationVerified: Boolean(row.location_verified),
+    qrVerified: Boolean(row.qr_verified),
+    locationDistanceMeters: row.location_distance_meters,
+    absenceCount: row.absence_count || 0,
+    calledAt: row.called_at,
+    eligibleAt: row.eligible_at,
+    standbyStartedAt: row.standby_started_at,
+    standbyExpiresAt: row.standby_expires_at,
+    standbySecondsRemaining: row.standby_expires_at ? secondsUntil(row.standby_expires_at) : 0,
+    serviceStartedAt: row.service_started_at,
+    finishedAt: row.finished_at,
+    createdAt: row.created_at
+  };
+}
+
 async function sectorDto(row) {
   const stats = await averageServiceStats(row);
   return {
@@ -1168,7 +1219,11 @@ async function clearLoginFailures(key) {
 }
 
 async function registerEvent(type, entityType, entityId, customerId, sectorId, payload = {}) {
-  await insert("events", { type, entity_type: entityType, entity_id: String(entityId), customer_id: customerId, sector_id: sectorId, payload, created_at: isoNow() }, false);
+  try {
+    await insert("events", { type, entity_type: entityType, entity_id: String(entityId), customer_id: customerId, sector_id: sectorId, payload, created_at: isoNow() }, false);
+  } catch (error) {
+    console.error("event_register_failed", error);
+  }
 }
 
 async function select(table, query = "") {
@@ -1238,12 +1293,25 @@ async function supabaseFetch(pathname, options = {}) {
     body: options.body ? JSON.stringify(options.body) : undefined
   });
   const text = await response.text();
-  const payload = text ? JSON.parse(text) : null;
+  const payload = parseSupabasePayload(text);
   if (options.raw) {
     return { payload, count: response.headers.get("content-range")?.split("/")?.[1] };
   }
-  if (!response.ok) return { error: payload?.error_description || payload?.message || response.statusText, status: response.status };
+  if (!response.ok) return { error: supabaseErrorMessage(payload, response), status: response.status };
   return payload;
+}
+
+function parseSupabasePayload(text) {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return { message: String(text).slice(0, 240) };
+  }
+}
+
+function supabaseErrorMessage(payload, response) {
+  return payload?.error_description || payload?.message || payload?.hint || response.statusText || "Falha ao comunicar com o Supabase.";
 }
 
 function isSupabaseReady() {

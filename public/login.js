@@ -147,8 +147,14 @@ async function parseApiPayload(response) {
   try {
     return JSON.parse(text);
   } catch {
-    return response.ok ? { ok: true, message: text } : { error: text || "Backend indisponivel." };
+    return response.ok ? { ok: true, message: text } : { error: apiTextError(response, text) };
   }
+}
+
+function apiTextError(response, text) {
+  const clean = String(text || "").replace(/\s+/g, " ").trim();
+  if (clean && clean.length < 180 && !clean.startsWith("<")) return clean;
+  return `Falha na comunicacao com a API (${response.status || "sem status"}). Tente novamente.`;
 }
 
 function csrfHeader() {
