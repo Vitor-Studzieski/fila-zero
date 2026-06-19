@@ -257,7 +257,7 @@ async function createTicketRoute(request) {
   const user = await requireUser(request, CUSTOMER_ROLES);
   if (user.response) return user.response;
   if (!(await verifyCsrf(request, user))) return json({ error: "Token de seguranca invalido. Recarregue a pagina e tente novamente." }, 403);
-  const result = await createTicket({ ...(await readJson(request)), customerId: user.customerId });
+  const result = await createTicket({ ...(await readJson(request)), customerId: user.customerId, customerName: user.name });
   return json(result, result.error ? 400 : 201);
 }
 
@@ -534,7 +534,8 @@ async function getCustomerState(customerId) {
   const tickets = customerId
     ? await select("tickets", `customer_id=eq.${encodeURIComponent(customerId)}&status=in.(${ACTIVE_STATUSES.join(",")})&order=created_at.asc`)
     : [];
-  return { serverTime: isoNow(), sectors, tickets: await mapAsync(tickets, ticketDto) };
+  const profile = customerId ? await getProfile(customerId).catch(() => null) : null;
+  return { serverTime: isoNow(), sectors, tickets: await mapAsync(hydrateTicketNames(tickets, new Map(profile ? [[profile.id, profile.name]] : [])), ticketDto) };
 }
 
 async function getStaffState(user) {
@@ -549,16 +550,19 @@ async function getStaffState(user) {
     staffAverageStats(sectorIds),
     staffRecentCalls(sectorIds)
   ]);
-  const ticketsBySector = groupBy(tickets, "sector_id");
+  const profilesById = await profilesByTicketCustomer(tickets);
+  const namedTickets = hydrateTicketNames(tickets, profilesById);
+  const ticketsBySector = groupBy(namedTickets, "sector_id");
   const countersBySector = new Map(counters.map((counter) => [counter.sector_id, counter]));
   const data = sectors.map((sector) => {
     const sectorTickets = ticketsBySector.get(sector.id) || [];
     const stats = recentStats.get(sector.id) || { seconds: sector.average_service_seconds, samples: 0 };
     const active = sectorTickets.find((ticket) => CALL_BLOCKING_STATUSES.includes(ticket.status));
     const current = active?.code || currentCodeFromCounter(sector, countersBySector.get(sector.id));
+    const currentCustomerName = active ? ticketName(active) : "";
     const activeDelay = active ? activeServiceDelayFromTicket(active, stats.seconds) : 0;
     return {
-      ...sectorDtoFromStats(sector, stats, current),
+      ...sectorDtoFromStats(sector, stats, current, currentCustomerName),
       tickets: sectorTickets.map((ticket) => staffTicketDto(ticket, sector, stats, current, sectorTickets, activeDelay)),
       recentCalls: recentCallsBySector.get(sector.id) || []
     };
@@ -622,14 +626,17 @@ async function staffRecentCalls(sectorIds) {
   }));
   const ticketIds = [...new Set(callsBySector.flatMap(([, calls]) => calls.map((call) => call.ticket_id).filter(Boolean)))];
   const tickets = ticketIds.length
-    ? await select("tickets", `id=in.(${ticketIds.map(encodeURIComponent).join(",")})&select=id,code,status,priority`)
+    ? await select("tickets", `id=in.(${ticketIds.map(encodeURIComponent).join(",")})`)
     : [];
-  const ticketsById = new Map(tickets.map((ticket) => [ticket.id, ticket]));
+  const namedTickets = hydrateTicketNames(tickets, await profilesByTicketCustomer(tickets));
+  const ticketsById = new Map(namedTickets.map((ticket) => [ticket.id, ticket]));
   callsBySector.forEach(([sectorId, calls]) => {
     map.set(sectorId, calls.map((call) => {
       const ticket = ticketsById.get(call.ticket_id);
       return {
         action: call.action,
+        customerName: ticketName(ticket),
+        ticketNumber: ticket?.number,
         ticket: ticket?.code || "--",
         status: ticket?.status || "",
         priority: Boolean(ticket?.priority),
@@ -640,7 +647,33 @@ async function staffRecentCalls(sectorIds) {
   return map;
 }
 
-function sectorDtoFromStats(row, stats, current) {
+async function profilesByTicketCustomer(tickets) {
+  const ids = [...new Set(tickets.map((ticket) => ticket.customer_id).filter(Boolean))];
+  if (!ids.length) return new Map();
+  const profiles = await select("profiles", `id=in.(${ids.map(encodeURIComponent).join(",")})&select=id,name`);
+  return new Map(profiles.map((profile) => [profile.id, profile.name]));
+}
+
+function hydrateTicketNames(tickets, profilesById) {
+  return tickets.map((ticket) => ({
+    ...ticket,
+    customer_name: ticketName(ticket, profilesById.get(ticket.customer_id))
+  }));
+}
+
+function ticketName(ticket, fallback = "") {
+  const name = String(ticket?.customer_name || fallback || "").trim();
+  return name || "Cliente";
+}
+
+async function customerNameForTicket(ticket) {
+  if (!ticket) return "Cliente";
+  if (String(ticket.customer_name || "").trim()) return ticketName(ticket);
+  const profile = ticket.customer_id ? await getProfile(ticket.customer_id).catch(() => null) : null;
+  return profile?.name || "Cliente";
+}
+
+function sectorDtoFromStats(row, stats, current, currentCustomerName = "") {
   return {
     id: row.id,
     name: row.name,
@@ -653,7 +686,8 @@ function sectorDtoFromStats(row, stats, current) {
     estimateBasedOnRecentServices: Number(stats.samples || 0) > 0,
     capacity: row.capacity,
     status: row.status,
-    current
+    current,
+    currentCustomerName
   };
 }
 
@@ -668,6 +702,8 @@ function staffTicketDto(row, sector, stats, current, sectorTickets, activeDelay)
   return {
     id: row.id,
     customerId: row.customer_id,
+    customerName: ticketName(row),
+    ticketNumber: row.number,
     deviceId: row.device_id,
     sectorId: row.sector_id,
     sector: sector.name,
@@ -812,6 +848,9 @@ async function createUser(body) {
 async function ticketDto(row) {
   if (!row) return null;
   const sector = await getSector(row.sector_id);
+  const customerName = await customerNameForTicket(row);
+  const currentTicket = await getActiveSectorTicket(sector.id);
+  const currentCustomerName = currentTicket ? await customerNameForTicket(currentTicket) : "";
   const ahead = await countAhead(row);
   const isWaiting = CALL_ELIGIBLE_STATUSES.includes(row.status);
   const position = isWaiting ? ahead + 1 : 1;
@@ -824,11 +863,14 @@ async function ticketDto(row) {
   return {
     id: row.id,
     customerId: row.customer_id,
+    customerName,
+    ticketNumber: row.number,
     deviceId: row.device_id,
     sectorId: row.sector_id,
     sector: sector.name,
     ticket: row.code,
-    current: await currentCode(sector),
+    current: currentTicket?.code || await currentCode(sector),
+    currentCustomerName,
     counterLabel: sector.counter_label,
     serviceLabel: sector.service_label,
     status: row.status,
@@ -875,11 +917,14 @@ function fallbackTicketDto(row, sector) {
   return {
     id: row.id,
     customerId: row.customer_id,
+    customerName: ticketName(row),
+    ticketNumber: row.number,
     deviceId: row.device_id,
     sectorId: row.sector_id,
     sector: sector?.name || row.sector_id,
     ticket: row.code,
     current: row.code,
+    currentCustomerName: ticketName(row),
     counterLabel: sector?.counter_label || "",
     serviceLabel: sector?.service_label || "",
     status: row.status,

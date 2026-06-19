@@ -177,6 +177,7 @@ function bootstrap() {
       customer_id TEXT NOT NULL,
       device_id TEXT NOT NULL,
       sector_id TEXT NOT NULL,
+      customer_name TEXT NOT NULL DEFAULT 'Cliente',
       number INTEGER NOT NULL,
       code TEXT NOT NULL,
       status TEXT NOT NULL,
@@ -331,6 +332,7 @@ function migrateSchema() {
   const columns = db.prepare("PRAGMA table_info(tickets)").all().map((column) => column.name);
   const migrations = [
     ["expired_at", "ALTER TABLE tickets ADD COLUMN expired_at TEXT"],
+    ["customer_name", "ALTER TABLE tickets ADD COLUMN customer_name TEXT NOT NULL DEFAULT 'Cliente'"],
     ["location_lat", "ALTER TABLE tickets ADD COLUMN location_lat REAL"],
     ["location_lng", "ALTER TABLE tickets ADD COLUMN location_lng REAL"],
     ["location_accuracy", "ALTER TABLE tickets ADD COLUMN location_accuracy REAL"],
@@ -462,7 +464,7 @@ async function handleApi(req, res, url) {
     if (!user) return;
     if (!verifyCsrf(req, res, user)) return;
     const body = await readBody(req);
-    const result = createTicket({ ...body, customerId: user.customerId });
+    const result = createTicket({ ...body, customerId: user.customerId, customerName: user.name });
     broadcast();
     sendApiResult(res, 201, result);
     return;
@@ -1441,6 +1443,7 @@ function createTicket(body) {
   const presence = validatePresence(body, sector.id);
   if (!presence.ok) return fail(presence.error);
   const priority = normalizePriority(body);
+  const customerName = cleanCustomerName(body.customerName);
 
   const ticket = runInTransaction(() => {
     const now = isoNow();
@@ -1451,6 +1454,7 @@ function createTicket(body) {
       customerId: session.customerId,
       deviceId: session.deviceId,
       sectorId: sector.id,
+      customerName,
       number: nextNumber,
       code: formatTicket(sector.prefix, nextNumber),
       status: "aguardando",
@@ -1463,17 +1467,18 @@ function createTicket(body) {
 
     db.prepare(`
       INSERT INTO tickets (
-        id, customer_id, device_id, sector_id, number, code, status, queue_order,
+        id, customer_id, device_id, sector_id, customer_name, number, code, status, queue_order,
         eligible_at, priority, priority_reason,
         location_lat, location_lng, location_accuracy, location_distance_meters, location_verified, qr_verified,
         created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       nextTicket.id,
       nextTicket.customerId,
       nextTicket.deviceId,
       nextTicket.sectorId,
+      nextTicket.customerName,
       nextTicket.number,
       nextTicket.code,
       nextTicket.status,
@@ -1928,7 +1933,8 @@ function getStaffState(user = null) {
       WHERE sector_id = ? AND status IN (${placeholders(ACTIVE_STATUSES)})
       ORDER BY priority DESC, queue_order ASC
     `).all(sector.id, ...ACTIVE_STATUSES).map(ticketDto);
-    return { ...sectorDto(sector), tickets, recentCalls: recentSectorCalls(sector.id) };
+    const active = tickets.find((ticket) => CALL_BLOCKING_STATUSES.includes(ticket.status));
+    return { ...sectorDto(sector), currentCustomerName: active?.customerName || "", tickets, recentCalls: recentSectorCalls(sector.id) };
   });
 
   return { serverTime: isoNow(), sectors };
@@ -1936,7 +1942,7 @@ function getStaffState(user = null) {
 
 function recentSectorCalls(sectorId) {
   return db.prepare(`
-    SELECT calls.action, calls.created_at, tickets.code, tickets.status, tickets.priority
+    SELECT calls.action, calls.created_at, tickets.customer_name, tickets.number, tickets.code, tickets.status, tickets.priority
     FROM calls
     JOIN tickets ON tickets.id = calls.ticket_id
     WHERE calls.sector_id = ?
@@ -1944,6 +1950,8 @@ function recentSectorCalls(sectorId) {
     LIMIT 6
   `).all(sectorId).map((row) => ({
     action: row.action,
+    customerName: ticketName(row),
+    ticketNumber: row.number,
     ticket: row.code,
     status: row.status,
     priority: Boolean(row.priority),
@@ -1954,6 +1962,7 @@ function recentSectorCalls(sectorId) {
 function ticketDto(row) {
   if (!row) return null;
   const sector = getSector(row.sector_id);
+  const currentTicket = currentTicketForSector(sector.id);
   const ahead = countAhead(row);
   const isWaiting = CALL_ELIGIBLE_STATUSES.includes(row.status);
   const position = isWaiting ? ahead + 1 : 1;
@@ -1972,11 +1981,14 @@ function ticketDto(row) {
   return {
     id: row.id,
     customerId: row.customer_id,
+    customerName: ticketName(row),
+    ticketNumber: row.number,
     deviceId: row.device_id,
     sectorId: row.sector_id,
     sector: sector.name,
     ticket: row.code,
-    current: currentCode(sector),
+    current: currentTicket?.code || currentCode(sector),
+    currentCustomerName: currentTicket ? ticketName(currentTicket) : "",
     counterLabel: sector.counter_label,
     serviceLabel: sector.service_label,
     status: row.status,
@@ -2119,15 +2131,19 @@ function averageServiceStats(sector) {
 }
 
 function currentCode(sector) {
-  const active = db.prepare(`
-    SELECT code FROM tickets
-    WHERE sector_id = ? AND status IN ('em_atendimento', 'chamado')
-    ORDER BY COALESCE(service_started_at, called_at, updated_at) DESC
-    LIMIT 1
-  `).get(sector.id);
+  const active = currentTicketForSector(sector.id);
   const counter = db.prepare("SELECT * FROM ticket_counters WHERE sector_id = ?").get(sector.id);
   const currentNumber = counter?.business_date === businessDateFor() ? Number(counter.last_number) : TICKET_MIN_NUMBER;
   return active?.code || formatTicket(sector.prefix, currentNumber);
+}
+
+function currentTicketForSector(sectorId) {
+  return db.prepare(`
+    SELECT * FROM tickets
+    WHERE sector_id = ? AND status IN ('em_atendimento', 'chamado')
+    ORDER BY COALESCE(service_started_at, called_at, updated_at) DESC
+    LIMIT 1
+  `).get(sectorId) || null;
 }
 
 function progressFor(status, position) {
@@ -2180,6 +2196,14 @@ function runInTransaction(work) {
 
 function cleanId(value) {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function cleanCustomerName(value) {
+  return String(value || "Cliente").replace(/\s+/g, " ").trim().slice(0, 120) || "Cliente";
+}
+
+function ticketName(ticket) {
+  return cleanCustomerName(ticket?.customer_name);
 }
 
 function toPositiveInt(value, fallback) {

@@ -130,11 +130,11 @@
               <strong>Senha solicitada com sucesso!</strong>
               <span id="ticketSuccessText">Voce sera avisado quando estiver proximo.</span>
             </section>
-            <div class="ticket-circle"><span id="ticketNumber">--</span></div>
+            <div class="ticket-circle"><span id="ticketNumber">--</span><small id="ticketSupportCode">Código --</small></div>
             <div id="ticketPriorityBadge" class="priority-badge priority-large" hidden></div>
             <h3 class="center" id="ticketSector">Nenhuma senha ativa</h3>
             <p class="muted center" id="ticketSub">Solicite uma senha para acompanhar o atendimento.</p>
-            <div class="row-card"><span>Senha em atendimento</span><strong id="currentQueue">--</strong></div>
+            <div class="row-card"><span>Chamada no balcão</span><strong id="currentQueue">--</strong></div>
             <div class="active-ticket-list" id="activeTicketList"></div>
             <div class="quick-add-ticket">
               <strong>Adicionar outra senha</strong>
@@ -159,7 +159,7 @@
             <button class="soft-yellow" id="estimatedTime">Sem atendimento em andamento</button>
             <div class="queue-alert" id="queueAlert" hidden>
               <strong id="queueAlertTitle">Atenção</strong>
-              <span id="queueAlertText">Sua senha será chamada em breve.</span>
+              <span id="queueAlertText">Sua chamada será realizada em breve.</span>
             </div>
             <div class="alert-settings" aria-label="Preferências de alerta">
               <label><input id="soundAlertToggle" type="checkbox" /> Som</label>
@@ -171,8 +171,8 @@
                 <span id="syncUpdatedAt">Atualizando...</span>
               </div>
               <div class="sync-grid">
-                <div><span>Senha no balcao</span><b id="syncCounterTicket">--</b></div>
-                <div><span>Sua senha</span><b id="syncCustomerTicket">--</b></div>
+                <div><span>Chamada no balcao</span><b id="syncCounterTicket">--</b></div>
+                <div><span>Seu atendimento</span><b id="syncCustomerTicket">--</b></div>
                 <div><span>Setor</span><b id="syncSector">--</b></div>
                 <div><span>Status</span><b id="syncStatus">--</b></div>
                 <div><span>Pessoas na frente</span><b id="syncAhead">--</b></div>
@@ -217,7 +217,7 @@
             <h2 id="serviceTitle">Atendimento</h2>
             <p class="muted center" id="serviceMessage">Acompanhe o pedido em andamento.</p>
             <div class="service-flow-card">
-              <strong id="serviceCurrent">Senha atual: --</strong>
+              <strong id="serviceCurrent">Atendimento atual: --</strong>
               <span id="serviceNext">Nenhuma senha protegida.</span>
             </div>
             <button class="yellow-action" id="completeServiceButton">Informar fim do pedido</button>

@@ -80,6 +80,7 @@ create table if not exists public.tickets (
   customer_id uuid not null references public.profiles(id) on delete cascade,
   device_id text references public.devices(id) on delete set null,
   sector_id text not null references public.sectors(id),
+  customer_name text not null default 'Cliente',
   number integer not null,
   code text not null,
   status public.ticket_status not null,
@@ -107,6 +108,7 @@ create table if not exists public.tickets (
 );
 
 alter table public.tickets add column if not exists smart_wait_reason text;
+alter table public.tickets add column if not exists customer_name text not null default 'Cliente';
 alter table public.tickets add column if not exists blocked_by_ticket_id uuid references public.tickets(id) on delete set null;
 alter table public.tickets add column if not exists smart_wait_since timestamptz;
 alter table public.tickets add column if not exists called_at timestamptz;
@@ -126,6 +128,12 @@ alter table public.tickets add column if not exists location_distance_meters dou
 alter table public.tickets add column if not exists location_verified boolean not null default false;
 alter table public.tickets add column if not exists qr_verified boolean not null default false;
 alter table public.tickets add column if not exists absence_count integer not null default 0;
+
+update public.tickets t
+set customer_name = coalesce(nullif(trim(p.name), ''), 'Cliente')
+from public.profiles p
+where t.customer_id = p.id
+  and (t.customer_name is null or t.customer_name = '' or t.customer_name = 'Cliente');
 
 create table if not exists public.calls (
   id uuid primary key default gen_random_uuid(),
@@ -332,10 +340,15 @@ declare
   v_number integer;
   v_order integer;
   v_ticket public.tickets;
+  v_customer_name text;
   v_today date := (now() at time zone 'America/Sao_Paulo')::date;
   v_active_statuses public.ticket_status[] := array['aguardando', 'proximo', 'chamado', 'em_atendimento', 'espera_inteligente', 'standby']::public.ticket_status[];
 begin
-  perform 1 from public.profiles where id = p_customer_id and status = 'active' for update;
+  select name into v_customer_name
+  from public.profiles
+  where id = p_customer_id and status = 'active'
+  for update;
+
   if not found then
     raise exception 'customer_not_active';
   end if;
@@ -399,6 +412,7 @@ begin
     customer_id,
     device_id,
     sector_id,
+    customer_name,
     number,
     code,
     status,
@@ -415,6 +429,7 @@ begin
     p_customer_id,
     p_device_id,
     p_sector_id,
+    coalesce(nullif(trim(v_customer_name), ''), 'Cliente'),
     v_number,
     v_sector.prefix || lpad(v_number::text, 3, '0'),
     'aguardando',

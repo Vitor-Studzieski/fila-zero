@@ -667,17 +667,18 @@ function syncQueue() {
   const hasQueue = Boolean(data);
 
   document.querySelector("#queueBanner").classList.toggle("visible", hasQueue);
-  document.querySelector("#bannerTicket").textContent = hasQueue ? data.ticket : "";
+  document.querySelector("#bannerTicket").textContent = hasQueue ? displayCustomerName(data) : "";
   document.querySelector("#bannerText").textContent = hasQueue ? bannerText(data, activeCount) : "";
   document.querySelector("#bannerProgress").style.width = hasQueue ? `${data.progress}%` : "0%";
 
-  document.querySelector("#ticketNumber").textContent = hasQueue ? data.ticket : "--";
+  document.querySelector("#ticketNumber").textContent = hasQueue ? displayCustomerName(data) : "--";
+  document.querySelector("#ticketSupportCode").textContent = hasQueue ? supportCode(data) : "Código --";
   document.querySelector("#ticketSector").textContent = hasQueue ? data.sector : "Nenhuma senha ativa";
   document.querySelector("#ticketSub").textContent = hasQueue ? ticketSubText(data) : "Solicite uma senha em um setor para acompanhar.";
-  document.querySelector("#currentQueue").textContent = hasQueue ? data.current : "--";
+  document.querySelector("#currentQueue").textContent = hasQueue ? currentCallText(data) : "--";
   document.querySelector("#ticketSuccessCard").classList.toggle("visible", hasQueue);
   document.querySelector("#ticketSuccessText").textContent = hasQueue
-    ? `Setor: ${data.sector}. Sua senha: ${data.ticket}. Voce sera avisado quando estiver proximo.`
+    ? `Nome: ${displayCustomerName(data)}. ${supportCode(data)}. Setor: ${data.sector}. Voce sera avisado quando estiver proximo.`
     : "Voce sera avisado quando estiver proximo.";
   renderPriorityBadge(document.querySelector("#ticketPriorityBadge"), data);
 
@@ -700,9 +701,9 @@ function syncQueue() {
     : "Informar fim do pedido";
 
   document.querySelector("#callText").textContent = hasQueue
-    ? `Dirija-se ao ${data.counterLabel} de ${data.sector}. Sua senha ${data.ticket} foi chamada.`
+    ? `Dirija-se ao ${data.counterLabel} de ${data.sector}. ${displayCustomerName(data)} foi chamado. ${supportCode(data)}.`
     : "";
-  document.querySelector("#floatingTicket").textContent = hasQueue ? data.ticket : "";
+  document.querySelector("#floatingTicket").textContent = hasQueue ? displayCustomerName(data) : "";
   document.querySelector("#floatingTime").textContent = hasQueue ? floatingTimeText(data) : "";
   document.querySelector("#ticketCancelButton").classList.toggle("visible", canCancelTicket(data));
   document.querySelector("#statusCancelButton").classList.toggle("visible", canCancelTicket(data));
@@ -747,7 +748,7 @@ async function cancelCurrentTicket(ticketId = null) {
     ? Object.values(activeQueues).find((ticket) => ticket.id === ticketId)
     : getCurrentQueueData();
   if (!canCancelTicket(data)) return;
-  if (!confirm(`Cancelar a senha ${data.ticket} de ${data.sector}?`)) return;
+  if (!confirm(`Cancelar ${displayCustomerName(data)} (${supportCode(data)}) de ${data.sector}?`)) return;
 
   try {
     await api(`/api/tickets/${encodeURIComponent(data.id)}/cancel`, { method: "POST", body: identity });
@@ -804,7 +805,7 @@ function renderServiceScreen() {
   if (!current) {
     document.querySelector("#serviceTitle").textContent = "Atendimento finalizado";
     document.querySelector("#serviceMessage").textContent = "Não há pedido em atendimento neste momento.";
-    document.querySelector("#serviceCurrent").textContent = "Senha atual: --";
+    document.querySelector("#serviceCurrent").textContent = "Atendimento atual: --";
     document.querySelector("#serviceNext").textContent = hasActiveQueues() ? "Você ainda possui senhas ativas." : "Nenhuma senha ativa.";
     document.querySelector("#completeServiceButton").textContent = hasActiveQueues() ? "Voltar para minhas senhas" : "Ir para avaliação";
     return;
@@ -813,9 +814,9 @@ function renderServiceScreen() {
   document.querySelector("#serviceTitle").textContent = "Pedido em atendimento";
   document.querySelector("#serviceMessage").textContent =
     "Quando o pedido terminar, informe no app para liberar a próxima senha protegida.";
-  document.querySelector("#serviceCurrent").textContent = `Senha atual: ${current.ticket} - ${current.sector}`;
+  document.querySelector("#serviceCurrent").textContent = `Atendimento atual: ${displayCustomerName(current)} - ${supportCode(current)} - ${current.sector}`;
   document.querySelector("#serviceNext").textContent = smartWait
-    ? `Próxima protegida: ${smartWait.ticket} - ${smartWait.sector}.`
+    ? `Próxima protegida: ${displayCustomerName(smartWait)} - ${supportCode(smartWait)} - ${smartWait.sector}.`
     : waitingCount > 1
       ? `${waitingCount} senhas estão protegidas para chamada em sequência.`
       : "Nenhuma senha protegida no momento.";
@@ -859,10 +860,10 @@ function timeInfoText(data) {
 }
 
 function estimateNoteText(data) {
-  if (data.status === "chamado") return `Sua senha foi chamada no ${data.counterLabel}.`;
+  if (data.status === "chamado") return `${displayCustomerName(data)} foi chamado no ${data.counterLabel}. ${supportCode(data)}.`;
   if (data.status === "em_atendimento") return "Atendimento em andamento. O tempo da fila sera atualizado ao finalizar.";
-  if (data.status === SMART_WAIT_STATUS) return "Sua senha esta protegida e sera recalculada quando o atendimento atual terminar.";
-  if (data.status === "standby") return `Sua senha foi chamada, mas você não compareceu. Ela ficará em standby por 10 minutos. Aguarde nova chamada. Tempo restante: ${formatStandbyTime(data)}.`;
+  if (data.status === SMART_WAIT_STATUS) return "Seu atendimento esta protegido e sera recalculado quando o atendimento atual terminar.";
+  if (data.status === "standby") return `${displayCustomerName(data)} foi chamado, mas não compareceu. A chamada ficará em standby por 10 minutos. Aguarde nova chamada. Tempo restante: ${formatStandbyTime(data)}. ${supportCode(data)}.`;
   if (!Number.isFinite(Number(data.secondsToCall))) return "Tempo estimado indisponivel.";
 
   const estimate = formatEstimateMinutes(data.secondsToCall);
@@ -899,8 +900,8 @@ function updateSyncPanel(data) {
   const panel = document.querySelector(".sync-panel");
   if (!panel) return;
   panel.classList.toggle("live", Boolean(data));
-  document.querySelector("#syncCounterTicket").textContent = data?.current || "--";
-  document.querySelector("#syncCustomerTicket").textContent = data?.ticket || "--";
+  document.querySelector("#syncCounterTicket").textContent = data ? currentCallText(data) : "--";
+  document.querySelector("#syncCustomerTicket").textContent = data ? nameAndCode(data) : "--";
   document.querySelector("#syncSector").textContent = data ? `${data.sector} - ${data.counterLabel}` : "--";
   document.querySelector("#syncStatus").textContent = data ? ticketStatusLabel(data.status) : "--";
   document.querySelector("#syncAhead").textContent = data ? syncAheadText(data) : "--";
@@ -966,7 +967,7 @@ function queueAlertFor(data) {
   return {
     ahead: Number(data.ahead),
     title,
-    message: `Sua senha será chamada em breve. Fique próximo ao setor ${data.sector}.`
+    message: `${displayCustomerName(data)} será chamado em breve. Fique próximo ao setor ${data.sector}. ${supportCode(data)}.`
   };
 }
 
@@ -1051,10 +1052,10 @@ function ticketSubText(data) {
   if (priority && ["aguardando", "proximo"].includes(data.status)) return `${priority}. ${data.position} na fila preferencial.`;
   if (data.status === "em_atendimento") return `Pedido em atendimento no ${data.counterLabel}.`;
   if (data.status === SMART_WAIT_STATUS) return "Protegida até o pedido atual terminar.";
-  if (data.status === "standby") return `Sua senha foi chamada, mas você não compareceu. Ela ficará em standby por 10 minutos. Aguarde nova chamada.`;
-  if (data.status === "chamado") return `Apresente-se no ${data.counterLabel}.`;
+  if (data.status === "standby") return `${displayCustomerName(data)} foi chamado, mas não compareceu. A chamada ficará em standby por 10 minutos. Aguarde nova chamada.`;
+  if (data.status === "chamado") return `Apresente-se no ${data.counterLabel}. ${supportCode(data)}.`;
   if (data.status === "proximo") return "Você será chamado em instantes.";
-  if (hasLiveCountdown(data)) return `Sua senha será chamada em ${formatTimer(data.secondsToCall)}.`;
+  if (hasLiveCountdown(data)) return `${displayCustomerName(data)} será chamado em ${formatTimer(data.secondsToCall)}.`;
   if (data.position === 1) return "Você é o próximo da fila.";
   return `${data.ahead} pessoas à frente`;
 }
@@ -1064,7 +1065,7 @@ function queueItemLine(data) {
   if (data.status === SMART_WAIT_STATUS) return "Protegida até o pedido atual terminar";
   if (data.status === "standby") return `Standby - ${formatStandbyTime(data)} restantes`;
   if (data.status === "em_atendimento") return "Atendimento em andamento";
-  if (data.status === "chamado") return `${data.counterLabel} - senha chamada`;
+  if (data.status === "chamado") return `${data.counterLabel} - chamado - ${supportCode(data)}`;
   if (data.status === "proximo") return "Próxima chamada";
   if (hasLiveCountdown(data)) return `${priority ? `${priority} - ` : ""}Chamada em ${formatTimer(data.secondsToCall)}`;
   if (data.position === 1) return "Próxima da fila";
@@ -1073,6 +1074,31 @@ function queueItemLine(data) {
 
 function priorityText(data) {
   return data?.priority ? `Preferencial${data.priorityReason && PRIORITY_LABELS[data.priorityReason] ? ` - ${PRIORITY_LABELS[data.priorityReason]}` : ""}` : "";
+}
+
+function displayCustomerName(data) {
+  return String(data?.customerName || currentUser?.name || "Cliente").trim() || "Cliente";
+}
+
+function supportCode(data) {
+  return `Código de apoio: Senha ${supportNumber(data)}`;
+}
+
+function nameAndCode(data) {
+  return `${displayCustomerName(data)} · Senha ${supportNumber(data)}`;
+}
+
+function currentCallText(data) {
+  if (!data?.current || data.current === "--") return "--";
+  return data.currentCustomerName
+    ? `${data.currentCustomerName} · Senha ${supportNumber({ ticket: data.current, ticketNumber: data.currentNumber })}`
+    : `Senha ${data.current}`;
+}
+
+function supportNumber(data) {
+  if (Number.isFinite(Number(data?.ticketNumber))) return String(Number(data.ticketNumber)).padStart(3, "0");
+  const match = String(data?.ticket || "").match(/(\d{3})$/);
+  return match ? match[1] : data?.ticket || "--";
 }
 
 function priorityIcon() {
@@ -1113,9 +1139,9 @@ function renderActiveTickets() {
           <div>
             <strong>${escapeHtml(data.sector)}</strong>
             ${data.priority ? priorityBadgeMarkup() : ""}
-            <span>${escapeHtml(queueItemLine(data))}</span>
+            <span>${escapeHtml(`${displayCustomerName(data)} - ${queueItemLine(data)}`)}</span>
           </div>
-          <b>${escapeHtml(data.ticket)}</b>
+          <b>${escapeHtml(supportCode(data).replace("Código de apoio: ", ""))}</b>
         </button>
       `).join("")
     : `<div class="empty-state">Você ainda não possui senhas ativas.</div>`;
@@ -1143,7 +1169,7 @@ function renderSectorCards() {
     card.querySelector(".sector-head b").textContent = sector.counterLabel;
     card.querySelector(".sector-meta").innerHTML = `<span>Fila base: ${escapeHtml(sector.queueSize)} pessoas</span><span>${escapeHtml(sector.status === "open" ? `${sector.averageServiceSeconds}s por atendimento` : "Setor indisponível")}</span>`;
     button.disabled = sector.status !== "open" || Boolean(activeJoinSector);
-    button.textContent = hasTicket ? `Ver senha ${activeQueues[sectorId].ticket}` : `Solicitar senha - ${sector.name}`;
+    button.textContent = hasTicket ? `Ver ${displayCustomerName(activeQueues[sectorId])}` : `Solicitar senha - ${sector.name}`;
     if (activeJoinSector === sectorId) button.textContent = "Gerando senha...";
   });
 
@@ -1154,7 +1180,7 @@ function renderSectorCards() {
     const hasTicket = Boolean(activeQueues[sectorId]);
     button.disabled = sector.status !== "open" || Boolean(activeJoinSector);
     button.classList.toggle("has-ticket", hasTicket);
-    button.textContent = activeJoinSector === sectorId ? "..." : hasTicket ? activeQueues[sectorId].ticket : sector.name;
+    button.textContent = activeJoinSector === sectorId ? "..." : hasTicket ? displayCustomerName(activeQueues[sectorId]) : sector.name;
   });
 }
 
@@ -1163,7 +1189,7 @@ function renderOfferQueueContext() {
   const data = getCurrentQueueData();
   box.classList.toggle("visible", Boolean(data));
   box.innerHTML = data
-    ? `<span>${escapeHtml(data.sector)}: ${escapeHtml(data.ticket)}</span><b>${escapeHtml(statusText(data))}</b>`
+    ? `<span>${escapeHtml(data.sector)}: ${escapeHtml(nameAndCode(data))}</span><b>${escapeHtml(statusText(data))}</b>`
     : "";
 }
 
@@ -1489,8 +1515,8 @@ function updateProductCard(productId) {
 
 function notifyTicketCalled(ticket) {
   if ("Notification" in window && Notification.permission === "granted") {
-    new Notification(`Senha ${ticket.ticket} chamada`, {
-      body: `${ticket.sector} - ${ticket.counterLabel}`,
+    new Notification(`${displayCustomerName(ticket)} chamado`, {
+      body: `${ticket.sector} - ${ticket.counterLabel} - ${supportCode(ticket)}`,
       tag: ticket.id
     });
   }

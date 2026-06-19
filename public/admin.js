@@ -79,8 +79,9 @@ function renderAdmin() {
           <b class="status-pill ${escapeHtml(sector.status)}">${escapeHtml(statusLabel(sector.status))}</b>
         </div>
         <div class="ops-metric ${currentTicket?.priority ? "priority-current" : ""}">
-          <span>Senha atual</span>
-          <strong>${escapeHtml(sector.current)}</strong>
+          <span>Cliente atual</span>
+          <strong>${escapeHtml(currentTicket ? displayCustomerName(currentTicket) : "--")}</strong>
+          <small>${escapeHtml(currentTicket ? supportCode(currentTicket) : "Nenhuma chamada ativa")}</small>
           ${currentTicket?.priority ? priorityBadgeMarkup("priority-large") : ""}
         </div>
         ${ticketSection("Chamadas", called)}
@@ -124,13 +125,23 @@ function ticketRow(ticket) {
   return `
     <div class="ops-ticket-row ${ticket.priority ? "priority-ticket" : ""}">
       <div>
-        <strong>${escapeHtml(ticket.ticket)}</strong>
+        <strong>${escapeHtml(displayCustomerName(ticket))}</strong>
         ${ticket.priority ? priorityBadgeMarkup() : ""}
-        <span>${escapeHtml(ticket.sector)} - ${escapeHtml(ticketStatus(ticket))}</span>
+        <span>${escapeHtml(ticket.sector)} - ${escapeHtml(ticketStatus(ticket))} - ${escapeHtml(supportCode(ticket))}</span>
       </div>
       <small>${escapeHtml(ticket.status === "em_atendimento" ? "Agora" : `${ticket.position}º`)}</small>
     </div>
   `;
+}
+
+function displayCustomerName(ticket) {
+  return String(ticket?.customerName || "Cliente").trim() || "Cliente";
+}
+
+function supportCode(ticket) {
+  if (Number.isFinite(Number(ticket?.ticketNumber))) return `Senha ${String(Number(ticket.ticketNumber)).padStart(3, "0")}`;
+  const match = String(ticket?.ticket || "").match(/(\d{3})$/);
+  return `Senha ${match ? match[1] : ticket?.ticket || "--"}`;
 }
 
 function priorityIcon() {
