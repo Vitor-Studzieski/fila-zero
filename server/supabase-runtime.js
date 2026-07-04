@@ -34,12 +34,14 @@ const PRIORITY_CATEGORIES = new Set([
 const LOGIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_ATTEMPT_LIMIT = 5;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
-const SCHEDULED_JOBS_MIN_INTERVAL_MS = 2500;
+const SCHEDULED_JOBS_MIN_INTERVAL_MS = 15000;
 const PROFILE_CACHE_TTL_MS = 10 * 1000;
+const METRICS_CACHE_TTL_MS = 60 * 1000;
 
 const profileCache = new Map();
 let scheduledJobsLastRun = 0;
 let scheduledJobsPromise = null;
+let metricsCache = null;
 
 async function handleRequest(request) {
   const url = new URL(request.url);
@@ -250,7 +252,10 @@ async function staffState(request) {
 async function metrics(request) {
   const user = await requireUser(request, ADMIN_ROLES);
   if (user.response) return user.response;
-  return json(await getMetrics());
+  if (metricsCache && metricsCache.expiresAt > Date.now()) return json(metricsCache.value);
+  const value = await getMetrics();
+  metricsCache = { value, expiresAt: Date.now() + METRICS_CACHE_TTL_MS };
+  return json(value);
 }
 
 async function createTicketRoute(request) {
@@ -1031,8 +1036,13 @@ async function maybeRunScheduledJobs(options = {}) {
 }
 
 async function autoCallReadyTickets() {
-  for (const sector of await getSectors()) {
-    if (sector.status !== "open") continue;
+  const [sectors, eligibleTickets] = await Promise.all([
+    getSectors(),
+    select("tickets", `status=in.(${CALL_ELIGIBLE_STATUSES.join(",")})&or=(eligible_at.lte.${encodeURIComponent(isoNow())},eligible_at.is.null)&select=sector_id`)
+  ]);
+  const eligibleSectorIds = new Set(eligibleTickets.map((ticket) => ticket.sector_id));
+  for (const sector of sectors) {
+    if (sector.status !== "open" || !eligibleSectorIds.has(sector.id)) continue;
     const active = await getActiveSectorTicket(sector.id);
     if (active) continue;
     await callNextTicket(sector.id, { requireEligible: true });

@@ -16,6 +16,7 @@ const DB_PATH = path.join(DATA_DIR, "fila-zero.sqlite");
 const isStandaloneServer = require.main === module;
 const apiOnly = process.env.API_ONLY === "1";
 let nextHandler = null;
+let nextUpgradeHandler = null;
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 
@@ -58,11 +59,13 @@ const LOGIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_ATTEMPT_LIMIT = 5;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
+const SCHEDULED_JOBS_MIN_INTERVAL_MS = 1000;
 const CSRF_EXEMPT_PATHS = new Set(["/api/auth/login"]);
 const AUTH_SECRET = authSecret();
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || "");
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
+let scheduledJobsLastRun = 0;
 
 bootstrap();
 
@@ -83,9 +86,10 @@ function startStandaloneServer() {
   }
 
   const next = require("next");
-  const nextApp = next({ dev, dir: ROOT });
+  const nextApp = next({ dev, dir: ROOT, webpack: dev });
   nextHandler = nextApp.getRequestHandler();
   nextApp.prepare().then(() => {
+    nextUpgradeHandler = nextApp.getUpgradeHandler();
     listen(createHttpServer());
   });
 
@@ -93,7 +97,7 @@ function startStandaloneServer() {
 }
 
 function createHttpServer() {
-  return http.createServer(async (req, res) => {
+  const server = http.createServer(async (req, res) => {
     try {
       applySecurityHeaders(req, res);
       const url = new URL(req.url, `http://${req.headers.host}`);
@@ -107,6 +111,15 @@ function createHttpServer() {
       sendJson(res, 500, { error: "Erro interno do servidor." });
     }
   });
+  if (nextUpgradeHandler) {
+    server.on("upgrade", (req, socket, head) => {
+      nextUpgradeHandler(req, socket, head).catch((error) => {
+        console.error(error);
+        socket.destroy();
+      });
+    });
+  }
+  return server;
 }
 
 function listen(server) {
@@ -133,10 +146,15 @@ function runScheduledJobs() {
   autoCallReadyTickets();
 }
 
-function syncQueueState() {
+function maybeRunScheduledJobs(options = {}) {
+  const now = Date.now();
+  if (!options.force && now - scheduledJobsLastRun < SCHEDULED_JOBS_MIN_INTERVAL_MS) return;
+  scheduledJobsLastRun = now;
   runScheduledJobs();
-  expireAbsentCalls();
-  expireExpiredStandbyTickets();
+}
+
+function syncQueueState() {
+  maybeRunScheduledJobs({ force: true });
 }
 
 function bootstrap() {
@@ -358,7 +376,7 @@ function migrateSchema() {
 }
 
 async function handleApi(req, res, url) {
-  runScheduledJobs();
+  maybeRunScheduledJobs();
 
   if (req.method === "POST" && url.pathname === "/api/auth/login") {
     const body = await readBody(req);
@@ -1025,6 +1043,9 @@ function getSessionForRequest(req) {
   if (!sessionId) return null;
   const statelessSession = verifySessionToken(sessionId);
   if (statelessSession) {
+    if (statelessSession.provider === "supabase" && statelessSession.user) {
+      return { ...userDto(statelessSession.user), csrf_token: statelessSession.csrfToken };
+    }
     const user = statelessSession.user?.id
       ? db.prepare("SELECT * FROM users WHERE id = ? AND status = ?").get(statelessSession.user.id, "active")
       : db.prepare("SELECT * FROM users WHERE email = ? AND status = ?").get(statelessSession.email, "active");

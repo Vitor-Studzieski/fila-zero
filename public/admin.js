@@ -4,6 +4,9 @@ let adminMetrics = { sectors: [], satisfaction: { count: 0, average: 0 } };
 let adminSource = null;
 let currentUser = null;
 let adminPollingTimer = null;
+let adminMetricsTimer = null;
+const ADMIN_STATE_POLL_INTERVAL_MS = 15000;
+const ADMIN_METRICS_POLL_INTERVAL_MS = 60000;
 
 initAdmin();
 
@@ -37,23 +40,31 @@ async function loadMetrics() {
 
 function connectAdminRealtime() {
   adminSource?.close();
-  adminSource = new EventSource("/api/events?scope=staff");
-  adminSource.addEventListener("state", async (event) => {
-    adminState = JSON.parse(event.data);
-    renderAdmin();
-    scheduleMetricsRefresh();
+  adminSource = null;
+  startAdminPolling();
+  startMetricsPolling();
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      loadAdminState().catch(() => {});
+      loadMetrics().catch(() => {});
+    }
   });
-  adminSource.addEventListener("error", () => startAdminPolling());
 }
 
 function startAdminPolling() {
   if (adminPollingTimer) return;
-  adminPollingTimer = setInterval(async () => {
-    try {
-      await loadAdminState();
-      await loadMetrics();
-    } catch {}
-  }, 10000);
+  adminPollingTimer = setInterval(() => {
+    if (document.hidden) return;
+    loadAdminState().catch(() => {});
+  }, ADMIN_STATE_POLL_INTERVAL_MS);
+}
+
+function startMetricsPolling() {
+  if (adminMetricsTimer) return;
+  adminMetricsTimer = setInterval(() => {
+    if (document.hidden) return;
+    loadMetrics().catch(() => {});
+  }, ADMIN_METRICS_POLL_INTERVAL_MS);
 }
 
 function scheduleMetricsRefresh() {

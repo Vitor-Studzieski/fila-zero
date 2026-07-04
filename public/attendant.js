@@ -3,6 +3,7 @@ let staffSource = null;
 let currentUser = null;
 let staffPollingTimer = null;
 let pendingSkipTicketId = null;
+const STAFF_POLL_INTERVAL_MS = 12000;
 
 initAttendant();
 
@@ -22,19 +23,19 @@ async function loadStaffState() {
 
 function connectStaffRealtime() {
   staffSource?.close();
-  staffSource = new EventSource("/api/events?scope=staff");
-  staffSource.addEventListener("state", (event) => {
-    staffState = JSON.parse(event.data);
-    renderAttendant();
+  staffSource = null;
+  startStaffPolling();
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) loadStaffState().catch(() => {});
   });
-  staffSource.addEventListener("error", () => startStaffPolling());
 }
 
 function startStaffPolling() {
   if (staffPollingTimer) return;
   staffPollingTimer = setInterval(() => {
+    if (document.hidden) return;
     loadStaffState().catch(() => {});
-  }, 8000);
+  }, STAFF_POLL_INTERVAL_MS);
 }
 
 function renderAttendant() {

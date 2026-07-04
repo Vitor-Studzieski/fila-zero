@@ -7,7 +7,7 @@ const pageRoles = {
   "/admin": ["manager", "admin"]
 };
 
-export async function middleware(request) {
+export async function proxy(request) {
   const { pathname } = request.nextUrl;
   if (!protectedPages.has(pathname)) return NextResponse.next();
 
@@ -36,8 +36,8 @@ async function verifySessionToken(token) {
 }
 
 async function signValue(value) {
-  const secret = process.env.AUTH_SECRET || "";
-  if (secret.length < 32) return "";
+  const secret = authSecret();
+  if (!secret) return "";
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
@@ -47,6 +47,13 @@ async function signValue(value) {
   );
   const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(value));
   return bytesToBase64Url(new Uint8Array(signature));
+}
+
+function authSecret() {
+  const secret = process.env.AUTH_SECRET || "";
+  if (secret.length >= 32) return secret;
+  if (process.env.NODE_ENV !== "production") return "fila-zero-demo-auth-secret-change-before-production";
+  return "";
 }
 
 function safeEqual(left, right) {

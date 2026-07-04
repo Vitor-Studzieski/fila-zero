@@ -29,7 +29,7 @@ const shoppingList = new Set();
 let cartItems = [];
 const identity = getOrCreateIdentity();
 let currentUser = null;
-let presenceCheckins = JSON.parse(localStorage.getItem("filaZeroPresenceCheckins") || "{}");
+let presenceCheckins = safeJsonParse(localStorage.getItem("filaZeroPresenceCheckins"), {});
 let alertPreferences = loadAlertPreferences();
 let queueTutorialSeen = localStorage.getItem("filaZeroQueueTutorialSeen") === "1";
 
@@ -43,6 +43,7 @@ let previousTicketStatuses = new Map();
 let lastStateUpdatedAt = null;
 let countdownTimer = null;
 let activeJoinSector = null;
+const STATE_POLL_INTERVAL_MS = 12000;
 let queueAlertHistory = new Set();
 let visibleQueueAlert = null;
 let productsRendered = false;
@@ -341,7 +342,7 @@ function syncMobileViewport() {
 function getOrCreateIdentity() {
   const params = new URLSearchParams(location.search);
   const sharedCustomerId = params.get("cliente") || params.get("customer_id");
-  const stored = JSON.parse(localStorage.getItem("filaZeroIdentity") || "{}");
+  const stored = safeJsonParse(localStorage.getItem("filaZeroIdentity"), {});
   const identity = {
     customerId: sharedCustomerId || stored.customerId || `cliente-${crypto.randomUUID()}`,
     deviceId: stored.deviceId || `device-${crypto.randomUUID()}`
@@ -377,16 +378,19 @@ async function loadCart() {
 
 function connectRealtime() {
   stateSource?.close();
-  stateSource = new EventSource("/api/events");
-  stateSource.addEventListener("state", (event) => applyState(JSON.parse(event.data)));
-  stateSource.addEventListener("error", () => startStatePolling());
+  stateSource = null;
+  startStatePolling();
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) loadState().catch(() => {});
+  });
 }
 
 function startStatePolling() {
   if (pollingTimer) return;
   pollingTimer = setInterval(() => {
+    if (document.hidden) return;
     loadState().catch(() => {});
-  }, 3000);
+  }, STATE_POLL_INTERVAL_MS);
 }
 
 function applyState(state) {
@@ -985,11 +989,20 @@ function pruneQueueAlertHistory(tickets) {
 }
 
 function loadAlertPreferences() {
-  const stored = JSON.parse(localStorage.getItem("filaZeroAlertPreferences") || "{}");
+  const stored = safeJsonParse(localStorage.getItem("filaZeroAlertPreferences"), {});
   return {
     sound: stored.sound !== false,
     vibration: stored.vibration !== false
   };
+}
+
+function safeJsonParse(value, fallback) {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
 }
 
 function saveAlertPreferences() {
