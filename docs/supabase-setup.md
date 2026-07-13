@@ -40,7 +40,7 @@ SUPABASE_SERVICE_ROLE_KEY=
 DATABASE_URL=
 SUPABASE_AUTH_ENABLED=1
 DATA_BACKEND=supabase
-SUPABASE_AUTO_CONFIRM_CUSTOMERS=1
+SUPABASE_AUTO_CONFIRM_CUSTOMERS=0
 AUTH_SECRET=
 QR_TOKEN_ACOUGUE=
 QR_TOKEN_FRIOS=
@@ -49,7 +49,7 @@ QR_TOKEN_PADARIA=
 
 `AUTH_SECRET` voce cria. Use um valor fixo, aleatorio e com 32 ou mais caracteres.
 
-Os `QR_TOKEN_*` voce tambem cria. Use valores longos e diferentes por setor.
+Os `QR_TOKEN_*` voce tambem cria. Use valores longos e diferentes por setor. Em producao, mantenha `SUPABASE_AUTO_CONFIRM_CUSTOMERS=0` para exigir a confirmacao de e-mail.
 
 ## Como criar as tabelas
 

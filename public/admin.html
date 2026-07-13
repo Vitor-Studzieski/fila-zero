@@ -3,64 +3,252 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Admin - Fila Zero</title>
+    <title>Gestor - Fila Zero</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body>
-    <main class="ops-stage">
-      <section class="ops-shell">
-        <header class="ops-header">
+  <body class="manager-page">
+    <div class="manager-shell">
+      <aside class="manager-sidebar">
+        <div class="manager-brand">
+          <div class="manager-brand-mark">FZ</div>
           <div>
-            <span>Fila Zero</span>
-            <h1>Painel administrativo</h1>
+            <strong>Fila Zero</strong>
+            <span>Painel do gestor</span>
           </div>
-          <nav>
-            <a href="/">Cliente</a>
-            <a href="/attendant">Atendente</a>
-            <a href="/admin">Gestor</a>
-            <button id="logoutButton">Sair</button>
-          </nav>
+        </div>
+        <nav class="manager-nav" aria-label="Navegação do gestor">
+          <a class="active" href="#visao">Visão executiva <span>01</span></a>
+          <a href="#tempo-real">Tempo real <span>02</span></a>
+          <a href="#iccf">ICCF <span>03</span></a>
+          <a href="#setores">Setores <span>04</span></a>
+          <a href="#usuarios">Usuários <span>05</span></a>
+        </nav>
+        <div class="manager-sidebar-note">
+          Dados conectados ao banco em tempo real: filas, métricas, permissões e inteligência de ofertas.
+        </div>
+      </aside>
+
+      <main class="manager-main">
+        <header class="manager-topbar">
+          <div>
+            <p class="manager-eyebrow">Operação em tempo real</p>
+            <h1>Dashboard do gestor</h1>
+            <p>Controle filas, setores, chamados, usuários e oportunidades de oferta em uma única visão.</p>
+          </div>
+          <div class="manager-actions">
+            <a class="manager-button secondary" href="/">Cliente</a>
+            <a class="manager-button secondary" href="/attendant">Atendente</a>
+            <a class="manager-button" href="/admin">Gestor</a>
+            <button class="manager-button warning" id="logoutButton" type="button">Sair</button>
+          </div>
         </header>
-        <section class="ops-users">
-          <div class="ops-card-head">
+
+        <section class="manager-hero" id="visao">
+          <div class="manager-hero-panel">
             <div>
-              <strong>Métricas operacionais</strong>
-              <span>Tempo médio, abandono, espera inteligente e satisfação.</span>
+              <p class="manager-eyebrow">Visão executiva</p>
+              <h2>Operação sob controle com filas visíveis e decisões orientadas por comportamento.</h2>
+              <p>O painel combina atendimento, espera inteligente, satisfação e ICCF para revelar gargalos e oportunidades comerciais.</p>
+            </div>
+            <div class="manager-hero-strip">
+              <span>Setores abertos: <strong id="heroOpenSectors">0</strong></span>
+              <span>Fila total: <strong id="heroQueueTotal">0</strong></span>
+              <span>Status: <strong id="heroStatus">carregando</strong></span>
             </div>
           </div>
-          <div class="ops-grid" id="adminMetrics"></div>
+
+          <aside class="manager-health-card">
+            <div class="manager-health-head">
+              <div>
+                <strong>Saúde da operação</strong>
+                <span>Atualização automática ativa</span>
+              </div>
+              <span class="manager-status-dot" id="healthDot"></span>
+            </div>
+            <div class="manager-health-list">
+              <div><span>Tempo médio geral</span><strong id="heroAverageTime">0 min 0 s</strong></div>
+              <div><span>Clientes em espera</span><strong id="heroWaitingCustomers">0</strong></div>
+              <div><span>Última sincronização</span><strong id="heroSyncTime">agora</strong></div>
+            </div>
+            <button class="manager-button secondary" id="refreshDashboardButton" type="button">Atualizar painel</button>
+          </aside>
         </section>
-        <div class="ops-grid" id="adminSectors"></div>
-        <section class="ops-users">
-          <div class="ops-card-head">
-            <div>
-              <strong>Usuários e permissões</strong>
-              <span>Crie contas para clientes, funcionários e gestores.</span>
-            </div>
+
+        <section class="manager-kpis" id="dashboardKpis" aria-label="Indicadores principais"></section>
+
+        <section class="manager-section-title" id="tempo-real">
+          <div>
+            <h2>Tempo real</h2>
+            <p>Fila atual, chamadas ativas e setores com risco operacional.</p>
           </div>
-          <form class="ops-card admin-form" id="userForm">
-            <label>Nome<input name="name" required /></label>
-            <label>E-mail<input type="email" name="email" required /></label>
-            <label>Senha<input type="password" name="password" minlength="12" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{12,}" title="Use ao menos 12 caracteres com letras maiusculas, minusculas e numeros." required /></label>
-            <label>Perfil
-              <select name="role">
-                <option value="customer">Cliente</option>
-                <option value="attendant">Funcionário</option>
-                <option value="manager">Gestor</option>
+          <div class="manager-toolbar">
+            <label>Setor
+              <select id="sectorFilter">
+                <option value="">Todos os setores</option>
               </select>
             </label>
-            <fieldset class="sector-permissions">
-              <legend>Setores do atendente</legend>
-              <label><input type="checkbox" name="sectorIds" value="acougue" /> Açougue</label>
-              <label><input type="checkbox" name="sectorIds" value="frios" /> Frios</label>
-              <label><input type="checkbox" name="sectorIds" value="padaria" /> Padaria</label>
-            </fieldset>
-            <button class="blue-action compact-action">Criar usuário</button>
-          </form>
-          <div class="ops-grid" id="adminUsers"></div>
+            <label>Status
+              <select id="statusFilter">
+                <option value="">Todos os status</option>
+                <option value="aguardando">Aguardando</option>
+                <option value="proximo">Próximo</option>
+                <option value="chamado">Chamado</option>
+                <option value="em_atendimento">Em atendimento</option>
+                <option value="standby">Standby</option>
+                <option value="espera_inteligente">Espera inteligente</option>
+              </select>
+            </label>
+          </div>
         </section>
-      </section>
-    </main>
+
+        <section class="manager-content-grid">
+          <article class="manager-panel">
+            <div class="manager-panel-header">
+              <div>
+                <h3>Fila operacional</h3>
+                <p>Chamada por nome, com código numérico como apoio.</p>
+              </div>
+              <span class="manager-badge neutral" id="queueCount">0 registros</span>
+            </div>
+            <div class="manager-table-wrap">
+              <table class="manager-table">
+                <thead>
+                  <tr>
+                    <th>Cliente</th>
+                    <th>Setor</th>
+                    <th>Código</th>
+                    <th>Status</th>
+                    <th>Prioridade</th>
+                    <th>Posição</th>
+                  </tr>
+                </thead>
+                <tbody id="queueTable"></tbody>
+              </table>
+            </div>
+          </article>
+
+          <article class="manager-panel">
+            <div class="manager-panel-header">
+              <div>
+                <h3>Resumo operacional</h3>
+                <p>Tempo médio, abandono e satisfação.</p>
+              </div>
+            </div>
+            <div class="manager-panel-body" id="dashboardOperations"></div>
+          </article>
+        </section>
+
+        <section class="manager-section-title" id="iccf">
+          <div>
+            <h2>ICCF - Inteligência de ofertas</h2>
+            <p>Clusterização por perfil, setor, horário e seleção de produtos.</p>
+          </div>
+          <div class="manager-toolbar">
+            <label>Período
+              <select id="offerInsightPeriod">
+                <option value="7">7 dias</option>
+                <option value="30" selected>30 dias</option>
+                <option value="60">60 dias</option>
+                <option value="90">90 dias</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section class="manager-content-grid">
+          <article class="manager-panel">
+            <div class="manager-panel-header">
+              <div>
+                <h3>Clusters de comportamento</h3>
+                <p>Principais grupos detectados pelo ICCF.</p>
+              </div>
+              <span class="manager-badge warn" id="iccfConfidence">Baixa</span>
+            </div>
+            <div class="manager-panel-body">
+              <div class="manager-insight-summary" id="offerInsightSummary"></div>
+              <div class="manager-insight-list" id="offerClusters"></div>
+            </div>
+          </article>
+
+          <article class="manager-panel">
+            <div class="manager-panel-header">
+              <div>
+                <h3>Ações e produtos</h3>
+                <p>Produtos mais selecionados, padrões e recomendações.</p>
+              </div>
+            </div>
+            <div class="manager-panel-body">
+              <div class="manager-insight-list" id="dashboardIntel"></div>
+              <h4 class="manager-subtitle">Produtos mais selecionados</h4>
+              <div class="manager-insight-list" id="offerProducts"></div>
+              <h4 class="manager-subtitle">Padrões por horário e setor</h4>
+              <div class="manager-insight-list" id="offerPatterns"></div>
+              <h4 class="manager-subtitle">Ações recomendadas</h4>
+              <div class="manager-insight-list" id="offerSuggestions"></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="manager-section-title" id="setores">
+          <div>
+            <h2>Gestão dos setores</h2>
+            <p>Configure balcão, capacidade, tempo médio e status de cada área.</p>
+          </div>
+        </section>
+        <section class="manager-sector-grid" id="adminSectors"></section>
+
+        <section class="manager-section-title" id="usuarios">
+          <div>
+            <h2>Usuários e permissões</h2>
+            <p>Crie acessos para clientes, atendentes e gestores com escopo por setor.</p>
+          </div>
+        </section>
+
+        <section class="manager-management-grid">
+          <article class="manager-panel">
+            <div class="manager-panel-header">
+              <div>
+                <h3>Novo usuário</h3>
+                <p>Cadastro rápido com perfil e permissões.</p>
+              </div>
+            </div>
+            <div class="manager-panel-body">
+              <form class="manager-form" id="userForm">
+                <label>Nome<input name="name" required /></label>
+                <label>E-mail<input type="email" name="email" required /></label>
+                <label>Senha<input type="password" name="password" minlength="12" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{12,}" title="Use ao menos 12 caracteres com letras maiusculas, minusculas e numeros." required /></label>
+                <label>Perfil
+                  <select name="role">
+                    <option value="customer">Cliente</option>
+                    <option value="attendant">Funcionário</option>
+                    <option value="manager">Gestor</option>
+                  </select>
+                </label>
+                <fieldset class="manager-checks">
+                  <legend>Setores do atendente</legend>
+                  <label><input type="checkbox" name="sectorIds" value="acougue" /> Açougue</label>
+                  <label><input type="checkbox" name="sectorIds" value="frios" /> Frios</label>
+                  <label><input type="checkbox" name="sectorIds" value="padaria" /> Padaria</label>
+                </fieldset>
+                <button class="manager-button" type="submit">Criar usuário</button>
+              </form>
+            </div>
+          </article>
+
+          <article class="manager-panel">
+            <div class="manager-panel-header">
+              <div>
+                <h3>Usuários cadastrados</h3>
+                <p>Perfis ativos e permissões por setor.</p>
+              </div>
+            </div>
+            <div class="manager-panel-body">
+              <div class="manager-user-list" id="adminUsers"></div>
+            </div>
+          </article>
+        </section>
+      </main>
+    </div>
     <script src="admin.js"></script>
   </body>
 </html>

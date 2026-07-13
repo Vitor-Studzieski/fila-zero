@@ -4,8 +4,8 @@ const screens = {
   sectors: "Fila virtual",
   ticket: "Minha senha",
   status: "Acompanhamento",
-  offers: "Ofertas",
-  detail: "Detalhe da promoção",
+  offers: "Lista de compras",
+  detail: "Detalhe do item",
   done: "Atendimento",
   club: "Clube",
   account: "Conta",
@@ -55,151 +55,14 @@ let locationState = {
   error: ""
 };
 
-const productPhotoQueries = {
-  picanha: "raw picanha steak butcher counter",
-  "contra-file": "raw striploin steak butcher paper",
-  alcatra: "fresh raw beef cuts market",
-  "frango-file": "raw chicken breast supermarket tray",
-  mussarela: "sliced mozzarella cheese deli counter",
-  presunto: "sliced cooked ham deli counter",
-  requeijao: "cream cheese spread supermarket",
-  "queijo-prato": "sliced yellow cheese deli",
-  "pao-frances": "fresh french bread bakery",
-  croissant: "buttery croissant bakery display",
-  "bolo-cenoura": "carrot cake chocolate glaze",
-  "pao-forma": "sliced sandwich bread package",
-  banana: "banana bunch supermarket",
-  maca: "fuji apples supermarket display",
-  tomate: "fresh italian tomatoes market",
-  alface: "fresh green lettuce produce",
-  arroz: "rice bag supermarket shelf",
-  feijao: "beans bag supermarket shelf",
-  cafe: "ground coffee package supermarket",
-  macarrao: "spaghetti pasta package shelf",
-  "agua-mineral": "mineral water bottle supermarket",
-  "refrigerante-cola": "cola soda bottle supermarket",
-  "suco-uva": "grape juice bottle supermarket",
-  "cerveja-lata": "beer cans supermarket shelf",
-  detergente: "dish soap bottle supermarket",
-  "sabao-po": "laundry detergent box supermarket",
-  amaciante: "fabric softener bottle shelf",
-  desinfetante: "disinfectant cleaner bottle shelf",
-  "papel-higienico": "toilet paper package supermarket",
-  sabonete: "bar soap package supermarket",
-  shampoo: "shampoo bottle bathroom product",
-  condicionador: "conditioner bottle bathroom product",
-  lasanha: "frozen lasagna package",
-  pizza: "frozen pizza box supermarket",
-  "batata-congelada": "frozen french fries package",
-  nuggets: "chicken nuggets package",
-  pilhas: "alkaline batteries package",
-  "lampada-led": "led light bulb package",
-  "vela-aniversario": "birthday candles package",
-  guardanapo: "paper napkins package"
-};
-
-const productGroups = [
-  group("Açougue", [
-    product("picanha", "Picanha Bovina", "R$ 69,90", "R$ 59,90", "-14%", "Corte selecionado para churrasco, disponível no balcão do açougue.", "picanha steak"),
-    product("contra-file", "Contra-filé", "R$ 44,90", "R$ 36,90", "-18%", "Peça fresca para grelha, chapa ou preparo do dia.", "beef steak"),
-    product("alcatra", "Alcatra", "R$ 49,90", "R$ 41,90", "-16%", "Corte macio para bifes, assados e receitas rápidas.", "raw beef"),
-    product("frango-file", "Filé de Frango", "R$ 24,90", "R$ 19,90", "-20%", "Filé resfriado para preparo rápido no dia a dia.", "chicken breast"),
-    product("linguica-toscana", "Linguiça Toscana", "R$ 27,90", "R$ 22,90", "-18%", "Linguiça fresca para churrasco ou forno.", "sausage"),
-    product("costela-bovina", "Costela Bovina", "R$ 39,90", "R$ 32,90", "-18%", "Costela para assar lentamente e servir em família.", "beef ribs"),
-    product("patinho-moido", "Patinho Moído", "R$ 42,90", "R$ 35,90", "-16%", "Moído na hora para molhos, hambúrgueres e recheios.", "ground beef"),
-    product("carne-panela", "Carne para Panela", "R$ 38,90", "R$ 31,90", "-18%", "Corte ideal para cozidos e receitas de conforto.", "stew beef")
-  ]),
-  group("Frios e Laticínios", [
-    product("mussarela", "Queijo Mussarela", "R$ 34,90", "R$ 27,90", "-20%", "Fatiado na hora no setor de frios.", "mozzarella cheese"),
-    product("presunto", "Presunto Cozido", "R$ 29,90", "R$ 23,90", "-20%", "Presunto fatiado para lanches e café da manhã.", "sliced ham"),
-    product("requeijao", "Requeijão Cremoso", "R$ 12,90", "R$ 9,90", "-23%", "Oferta válida para unidade tradicional.", "cream cheese"),
-    product("queijo-prato", "Queijo Prato", "R$ 36,90", "R$ 29,90", "-19%", "Queijo fatiado para sanduíches e lanches rápidos.", "sliced cheese"),
-    product("mortadela", "Mortadela Defumada", "R$ 24,90", "R$ 18,90", "-24%", "Fatiada fina para pão francês e tábuas de frios.", "mortadella"),
-    product("iogurte-natural", "Iogurte Natural", "R$ 8,99", "R$ 6,99", "-22%", "Unidade natural para café da manhã ou receitas.", "natural yogurt"),
-    product("manteiga", "Manteiga com Sal", "R$ 19,90", "R$ 15,90", "-20%", "Tablete tradicional para pães, bolos e preparo.", "butter"),
-    product("leite-integral", "Leite Integral", "R$ 5,99", "R$ 4,79", "-20%", "Caixa 1 litro para abastecer a semana.", "milk carton")
-  ]),
-  group("Padaria", [
-    product("pao-frances", "Pão Francês", "R$ 16,90", "R$ 12,90", "-24%", "Pão francês produzido na padaria Pompeia.", "fresh bread"),
-    product("croissant", "Croissant", "R$ 8,90", "R$ 6,90", "-22%", "Croissant folhado para consumo imediato.", "croissant"),
-    product("bolo-cenoura", "Bolo de Cenoura", "R$ 24,90", "R$ 19,90", "-20%", "Bolo com cobertura de chocolate.", "carrot cake"),
-    product("pao-forma", "Pão de Forma", "R$ 11,90", "R$ 8,90", "-25%", "Pacote macio para café da manhã e lanches.", "sandwich bread"),
-    product("sonho-creme", "Sonho de Creme", "R$ 7,90", "R$ 5,90", "-25%", "Doce recheado produzido na padaria.", "cream donut"),
-    product("pao-queijo", "Pão de Queijo", "R$ 34,90", "R$ 27,90", "-20%", "Porção para assar ou consumir no balcão.", "cheese bread"),
-    product("torta-frango", "Torta de Frango", "R$ 39,90", "R$ 31,90", "-20%", "Torta salgada para refeição rápida.", "chicken pie"),
-    product("baguete", "Baguete Artesanal", "R$ 13,90", "R$ 10,90", "-22%", "Baguete fresca para frios, patês e entradas.", "baguette")
-  ]),
-  group("Hortifruti", [
-    product("banana", "Banana Nanica", "R$ 6,99", "R$ 4,99", "-29%", "Fruta selecionada no hortifruti.", "banana"),
-    product("maca", "Maçã Fuji", "R$ 12,99", "R$ 9,99", "-23%", "Maçã fresca e crocante.", "apple fruit"),
-    product("tomate", "Tomate Italiano", "R$ 10,99", "R$ 7,99", "-27%", "Ideal para saladas e molhos.", "tomatoes"),
-    product("alface", "Alface Crespa", "R$ 4,99", "R$ 3,49", "-30%", "Folhas frescas para saladas e lanches.", "lettuce"),
-    product("batata", "Batata Inglesa", "R$ 7,99", "R$ 5,99", "-25%", "Selecionada para purês, assados e frituras.", "potatoes"),
-    product("cebola", "Cebola Nacional", "R$ 6,99", "R$ 4,99", "-29%", "Base para temperos e refogados.", "onion"),
-    product("laranja", "Laranja Pera", "R$ 5,99", "R$ 4,49", "-25%", "Boa para sucos e consumo diário.", "oranges"),
-    product("uva", "Uva Thompson", "R$ 18,90", "R$ 14,90", "-21%", "Bandeja de uvas doces e sem sementes.", "green grapes")
-  ]),
-  group("Mercearia", [
-    product("arroz", "Arroz Tipo 1", "R$ 29,90", "R$ 24,90", "-17%", "Pacote 5 kg.", "rice bag"),
-    product("feijao", "Feijão Carioca", "R$ 9,90", "R$ 7,90", "-20%", "Pacote 1 kg.", "beans"),
-    product("cafe", "Café Torrado", "R$ 18,90", "R$ 15,90", "-16%", "Café torrado e moído.", "coffee bag"),
-    product("macarrao", "Macarrão Espaguete", "R$ 5,99", "R$ 4,49", "-25%", "Pacote 500 g para refeições rápidas.", "spaghetti pasta"),
-    product("molho-tomate", "Molho de Tomate", "R$ 4,99", "R$ 3,79", "-24%", "Molho pronto para massas e carnes.", "tomato sauce"),
-    product("oleo-soja", "Óleo de Soja", "R$ 8,99", "R$ 6,99", "-22%", "Garrafa 900 ml para preparo diário.", "cooking oil"),
-    product("acucar", "Açúcar Refinado", "R$ 5,99", "R$ 4,59", "-23%", "Pacote 1 kg para café e receitas.", "sugar bag"),
-    product("farinha-trigo", "Farinha de Trigo", "R$ 6,99", "R$ 5,29", "-24%", "Pacote 1 kg para bolos, pães e massas.", "flour bag")
-  ]),
-  group("Bebidas", [
-    product("agua-mineral", "Água Mineral", "R$ 2,99", "R$ 1,99", "-33%", "Garrafa 500 ml para levar durante as compras.", "water bottle"),
-    product("refrigerante-cola", "Refrigerante Cola", "R$ 9,99", "R$ 7,49", "-25%", "Garrafa 2 litros para almoço e churrasco.", "cola soda"),
-    product("suco-uva", "Suco de Uva Integral", "R$ 18,90", "R$ 14,90", "-21%", "Suco integral sem adição de açúcar.", "grape juice"),
-    product("cerveja-lata", "Cerveja Lata", "R$ 4,99", "R$ 3,79", "-24%", "Lata gelada para consumo responsável.", "beer can"),
-    product("energetico", "Energético", "R$ 8,99", "R$ 6,99", "-22%", "Lata para quem precisa de energia extra.", "energy drink"),
-    product("cha-gelado", "Chá Gelado", "R$ 6,99", "R$ 4,99", "-29%", "Bebida leve para acompanhar lanches.", "iced tea"),
-    product("agua-coco", "Água de Coco", "R$ 7,99", "R$ 5,99", "-25%", "Caixinha refrescante para hidratação.", "coconut water"),
-    product("vinho-tinto", "Vinho Tinto", "R$ 39,90", "R$ 29,90", "-25%", "Rótulo selecionado para jantar e massas.", "red wine bottle")
-  ]),
-  group("Limpeza", [
-    product("detergente", "Detergente Neutro", "R$ 2,99", "R$ 1,99", "-33%", "Unidade para limpeza diária da cozinha.", "dish soap"),
-    product("sabao-po", "Sabão em Pó", "R$ 18,90", "R$ 14,90", "-21%", "Pacote para roupas do dia a dia.", "laundry detergent"),
-    product("amaciante", "Amaciante", "R$ 16,90", "R$ 12,90", "-24%", "Frasco com perfume suave para roupas.", "fabric softener"),
-    product("desinfetante", "Desinfetante", "R$ 9,90", "R$ 7,49", "-24%", "Perfume de limpeza para pisos e banheiros.", "cleaning bottle"),
-    product("agua-sanitaria", "Água Sanitária", "R$ 6,99", "R$ 4,99", "-29%", "Produto multiuso para limpeza pesada.", "bleach bottle"),
-    product("papel-toalha", "Papel Toalha", "R$ 8,99", "R$ 6,99", "-22%", "Rolo duplo para cozinha e pequenos acidentes.", "paper towel"),
-    product("esponja", "Esponja Multiuso", "R$ 4,99", "R$ 3,49", "-30%", "Pacote com esponjas para louças.", "cleaning sponge"),
-    product("limpa-vidros", "Limpa Vidros", "R$ 12,90", "R$ 9,90", "-23%", "Spray para janelas, espelhos e vitrines.", "glass cleaner")
-  ]),
-  group("Higiene", [
-    product("papel-higienico", "Papel Higiênico", "R$ 24,90", "R$ 18,90", "-24%", "Pacote econômico para abastecer a casa.", "toilet paper"),
-    product("sabonete", "Sabonete", "R$ 3,99", "R$ 2,79", "-30%", "Unidade perfumada para banho diário.", "soap bar"),
-    product("shampoo", "Shampoo", "R$ 18,90", "R$ 14,90", "-21%", "Frasco para cuidado diário dos cabelos.", "shampoo bottle"),
-    product("condicionador", "Condicionador", "R$ 19,90", "R$ 15,90", "-20%", "Condicionador para maciez e brilho.", "conditioner bottle"),
-    product("creme-dental", "Creme Dental", "R$ 7,99", "R$ 5,99", "-25%", "Tubo para proteção diária dos dentes.", "toothpaste"),
-    product("escova-dental", "Escova Dental", "R$ 9,99", "R$ 7,49", "-25%", "Escova macia para uso diário.", "toothbrush"),
-    product("desodorante", "Desodorante Aerosol", "R$ 15,90", "R$ 11,90", "-25%", "Proteção prolongada para rotina corrida.", "deodorant"),
-    product("absorvente", "Absorvente", "R$ 12,90", "R$ 9,90", "-23%", "Pacote regular para cuidado pessoal.", "sanitary pads")
-  ]),
-  group("Congelados", [
-    product("lasanha", "Lasanha Congelada", "R$ 19,90", "R$ 15,90", "-20%", "Refeição prática para forno ou micro-ondas.", "frozen lasagna"),
-    product("pizza", "Pizza Congelada", "R$ 24,90", "R$ 18,90", "-24%", "Pizza família para jantar rápido.", "frozen pizza"),
-    product("batata-congelada", "Batata Pré-Frita", "R$ 18,90", "R$ 13,90", "-26%", "Pacote para air fryer ou forno.", "frozen fries"),
-    product("nuggets", "Nuggets de Frango", "R$ 17,90", "R$ 13,90", "-22%", "Porção prática para crianças e lanches.", "chicken nuggets"),
-    product("sorvete", "Sorvete", "R$ 29,90", "R$ 22,90", "-23%", "Pote familiar de sobremesa gelada.", "ice cream tub"),
-    product("polpa-fruta", "Polpa de Fruta", "R$ 12,90", "R$ 9,90", "-23%", "Pacote para sucos naturais em minutos.", "frozen fruit"),
-    product("hamburguer", "Hambúrguer Bovino", "R$ 21,90", "R$ 16,90", "-23%", "Caixa com hambúrgueres para lanche.", "frozen burger"),
-    product("legumes-congelados", "Legumes Congelados", "R$ 14,90", "R$ 10,90", "-27%", "Mix de legumes para refeições rápidas.", "frozen vegetables")
-  ]),
-  group("Bazar", [
-    product("pilhas", "Pilhas Alcalinas", "R$ 18,90", "R$ 13,90", "-26%", "Cartela com pilhas para controles e brinquedos.", "batteries"),
-    product("lampada-led", "Lâmpada LED", "R$ 12,90", "R$ 8,90", "-31%", "Lâmpada econômica para casa.", "led light bulb"),
-    product("vela-aniversario", "Vela de Aniversário", "R$ 7,99", "R$ 5,99", "-25%", "Kit para bolos e comemorações.", "birthday candle"),
-    product("guardanapo", "Guardanapo", "R$ 6,99", "R$ 4,99", "-29%", "Pacote para mesa e festas.", "napkins"),
-    product("copo-descartavel", "Copo Descartável", "R$ 9,90", "R$ 7,49", "-24%", "Pacote para eventos e uso prático.", "plastic cups"),
-    product("papel-aluminio", "Papel Alumínio", "R$ 8,99", "R$ 6,79", "-24%", "Rolo para assados e conservação.", "aluminum foil"),
-    product("filme-pvc", "Filme PVC", "R$ 7,99", "R$ 5,99", "-25%", "Rolo para proteger alimentos.", "plastic wrap"),
-    product("carvao", "Carvão Vegetal", "R$ 24,90", "R$ 18,90", "-24%", "Saco para churrasco e grelha.", "charcoal bag")
-  ])
-];
+const productPhotoQueries = {};
+const productCatalog = [];
+const productGroups = [];
+let productSearchTerm = "";
+let shoppingRecommendationMode = "auto";
+let shoppingSectorFilter = "all";
+let shoppingAgentProfile = emptyShoppingAgentProfile();
+let productSearchSignalTimer = null;
 
 const offerPriorityBySector = {
   acougue: ["Açougue", "Bebidas", "Padaria", "Mercearia", "Bazar"],
@@ -289,6 +152,16 @@ const offerProfilesBySector = {
   }
 };
 
+const shoppingSectorFilters = {
+  all: [],
+  acougue: ["Açougue"],
+  frios: ["Frios e Laticínios"],
+  padaria: ["Padaria"],
+  mercearia: ["Mercearia"],
+  bebidas: ["Bebidas"],
+  hortifruti: ["Hortifruti"]
+};
+
 init();
 
 async function init() {
@@ -305,7 +178,8 @@ async function init() {
   renderAccount();
   identity.customerId = currentUser.customerId;
   localStorage.setItem("filaZeroIdentity", JSON.stringify(identity));
-  await Promise.all([syncSession(), loadCart(), loadState()]);
+  await loadProductCatalog();
+  await Promise.all([syncSession(), loadCart(), loadState(), loadShoppingAgent()]);
   connectRealtime();
   startCountdownTimer();
   if (PRESENCE_CHECK_ENABLED) warmupLocation();
@@ -374,6 +248,54 @@ async function loadCart() {
   renderCart();
   renderClub();
   if (productsRendered) renderProducts();
+}
+
+async function loadProductCatalog() {
+  const response = await fetch("/data/products.json");
+  if (!response.ok) throw new Error("Nao foi possivel carregar a base de produtos.");
+  const payload = await response.json();
+  const products = Array.isArray(payload.products) ? payload.products : [];
+  productCatalog.splice(0, productCatalog.length, ...products.map(catalogProduct));
+  productGroups.splice(0, productGroups.length, ...groupProductsBySector(productCatalog));
+}
+
+async function loadShoppingAgent() {
+  try {
+    shoppingAgentProfile = await api("/api/shopping-agent");
+  } catch (exception) {
+    console.warn(exception);
+    shoppingAgentProfile = emptyShoppingAgentProfile();
+  }
+}
+
+function catalogProduct(item) {
+  const imageQuery = [item.baseName, item.brand, item.category].filter(Boolean).join(" ");
+  return {
+    ...item,
+    image: productImage(item.id, item.name, imageQuery),
+    description: item.description || `${item.name} para adicionar à sua lista de compras.`
+  };
+}
+
+function groupProductsBySector(products) {
+  const groups = new Map();
+  products.forEach((item) => {
+    const sector = item.sector || item.category || "Mercado";
+    if (!groups.has(sector)) groups.set(sector, []);
+    groups.get(sector).push(item);
+  });
+  return [...groups.entries()].map(([sector, items]) => group(sector, items));
+}
+
+function emptyShoppingAgentProfile() {
+  return {
+    favoriteSectors: [],
+    favoriteProducts: [],
+    recentSearches: [],
+    clusterSuggestions: [],
+    preferredHourBucket: "",
+    generatedAt: null
+  };
 }
 
 function connectRealtime() {
@@ -1210,8 +1132,29 @@ function renderCart() {
   const list = document.querySelector("#cartList");
   if (!list) return;
   list.innerHTML = cartItems.length
-    ? cartItems.map((item) => `<div class="cart-item"><span>${escapeHtml(item.quantity)}x ${escapeHtml(item.productName)}</span><b>${escapeHtml(item.price)}</b></div>`).join("")
+    ? cartItems.map((item) => `
+        <div class="cart-item" data-cart-item="${escapeHtml(item.id)}">
+          <div class="cart-item-main">
+            <span>${escapeHtml(item.productName)}</span>
+            <small>${escapeHtml(item.sectorName || "Lista")}</small>
+          </div>
+          <div class="cart-item-controls" aria-label="Editar ${escapeHtml(item.productName)}">
+            <button type="button" data-cart-decrease="${escapeHtml(item.id)}" aria-label="Diminuir quantidade">−</button>
+            <b>${escapeHtml(item.quantity)}</b>
+            <button type="button" data-cart-increase="${escapeHtml(item.id)}" aria-label="Aumentar quantidade">+</button>
+            <button class="remove" type="button" data-cart-remove="${escapeHtml(item.id)}" aria-label="Remover item">×</button>
+          </div>
+          <strong>${escapeHtml(item.price)}</strong>
+        </div>
+      `).join("")
     : `<div class="empty-state">Nenhum produto adicionado.</div>`;
+  bindCartItemActions();
+}
+
+function bindCartItemActions() {
+  document.querySelectorAll("[data-cart-increase]").forEach((button) => button.addEventListener("click", () => changeCartItemQuantity(button.dataset.cartIncrease, 1)));
+  document.querySelectorAll("[data-cart-decrease]").forEach((button) => button.addEventListener("click", () => changeCartItemQuantity(button.dataset.cartDecrease, -1)));
+  document.querySelectorAll("[data-cart-remove]").forEach((button) => button.addEventListener("click", () => removeCartItemFromList(button.dataset.cartRemove)));
 }
 
 async function getPresencePayload(sectorId) {
@@ -1355,7 +1298,8 @@ function requestLocation() {
 function renderProducts() {
   productsRendered = true;
   const groups = personalizedProductGroups();
-  document.querySelector("#productList").innerHTML = groups
+  syncShoppingPreferenceControls();
+  document.querySelector("#productList").innerHTML = groups.length ? groups
     .map((group, index) => `
         <section class="offer-section ${group.personalized ? "personalized-offers" : ""}">
           <div>
@@ -1365,73 +1309,122 @@ function renderProducts() {
           ${group.items.map((item) => productCard(group.sector, item)).join("")}
         </section>
       `)
-    .join("");
+    .join("") : `<div class="empty-state">Nenhum item encontrado para sua busca.</div>`;
 
   document.querySelectorAll("[data-product]").forEach((button) => button.addEventListener("click", () => openProduct(button.dataset.product)));
 }
 
 function personalizedProductGroups() {
   const currentTicket = getCurrentQueueData();
-  const priority = offerPriorityBySector[currentTicket?.sectorId] || [];
-  const profile = offerProfilesBySector[currentTicket?.sectorId];
-  const addedSectors = new Set(
-    productGroups
-      .filter((group) => group.items.some((item) => shoppingList.has(item.id)))
-      .map((group) => group.sector)
-  );
+  const favoriteProducts = new Map((shoppingAgentProfile.favoriteProducts || []).map((item) => [item.productId, Number(item.quantity || 1)]));
+  const terms = normalizedTerms(productSearchTerm);
 
-  const featuredIds = new Set(profile?.featuredProductIds || []);
-  const relatedIds = new Set(profile?.relatedProductIds || []);
-  const rankedGroups = productGroups
-    .map((group, index) => ({
-      ...group,
-      items: orderItemsByRelevance(group.items, featuredIds, relatedIds),
-      score: personalizedGroupScore(group, index, priority, addedSectors, featuredIds, relatedIds)
-    }))
-    .sort((first, second) => second.score - first.score || productGroups.findIndex((group) => group.sector === first.sector) - productGroups.findIndex((group) => group.sector === second.sector));
+  if (terms.length) return searchedProductGroups(terms, favoriteProducts);
 
-  if (!profile) return rankedGroups;
+  const used = new Set();
+  const groups = [];
+  const addGroup = (sector, subtitle, items, options = {}) => {
+    const uniqueItems = applyShoppingSectorFilter(uniqueProducts(items))
+      .filter((item) => !used.has(item.id))
+      .slice(0, options.limit || 8);
+    if (!uniqueItems.length) return;
+    uniqueItems.forEach((item) => used.add(item.id));
+    groups.push({ sector, subtitle, personalized: true, items: uniqueItems });
+  };
 
-  const highlighted = profile.featuredProductIds
-    .map((id) => findProduct(id))
-    .filter(Boolean);
-  const highlightedIds = new Set(highlighted.map((item) => item.id));
-  const remainingGroups = rankedGroups
+  if (shoppingRecommendationMode === "auto" || shoppingRecommendationMode === "history") {
+    addGroup(
+      "Mais selecionados por você",
+      "Produtos que aparecem no seu histórico e na sua lista atual.",
+      productsFromCustomerBehavior(favoriteProducts),
+      { limit: shoppingRecommendationMode === "history" ? 12 : 8 }
+    );
+  }
+
+  if (shoppingRecommendationMode === "auto" || shoppingRecommendationMode === "context") {
+    addGroup(
+      currentTicket ? `Combina com ${currentTicket.sector}` : "Sugestões pelo seu contexto",
+      contextSubtitle(currentTicket),
+      contextualProducts(currentTicket, used),
+      { limit: shoppingRecommendationMode === "context" ? 12 : 10 }
+    );
+  }
+
+  if (shoppingRecommendationMode === "auto") {
+    addGroup(
+      "Combina com seu perfil",
+      profileMatchSubtitle(),
+      profileMatchProducts(currentTicket, used),
+      { limit: 8 }
+    );
+  }
+
+  if (shoppingRecommendationMode === "auto" || shoppingRecommendationMode === "time") {
+    addGroup(
+      "Talvez faça sentido agora",
+      timeAwareSubtitle(),
+      timeAwareProducts(used),
+      { limit: shoppingRecommendationMode === "time" ? 12 : 8 }
+    );
+  }
+
+  if (shoppingRecommendationMode === "essentials") {
+    addGroup(
+      "Essenciais da compra",
+      "Itens básicos para completar a lista sem depender do histórico.",
+      essentialProducts(used),
+      { limit: 14 }
+    );
+  }
+
+  if (!groups.length) {
+    addGroup(
+      "Comece sua lista",
+      "Itens recorrentes para iniciar uma compra sem abrir o catálogo completo.",
+      keywordProducts(["arroz", "feijao", "leite", "cafe", "pao", "manteiga", "refrigerante", "macarrao", "molho", "banana"], [], used),
+      { limit: 12 }
+    );
+  }
+
+  return groups;
+}
+
+function searchedProductGroups(terms, favoriteProducts) {
+  return productGroups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => !highlightedIds.has(item.id))
+      items: applyShoppingSectorFilter(group.items.filter((item) => productMatchesSearch(item, terms)))
     }))
-    .filter((group) => group.items.length);
-
-  return [
-    {
-      sector: profile.title,
-      subtitle: profile.subtitle,
-      personalized: true,
-      items: highlighted
-    },
-    ...remainingGroups
-  ];
+    .filter((group) => group.items.length)
+    .map((group) => ({
+      ...group,
+      items: orderItemsByRelevance(group.items, favoriteProducts, terms).slice(0, 8),
+      score: group.items.reduce((sum, item) => sum + productRelevanceScore(item, favoriteProducts, terms), 0)
+    }))
+    .sort((first, second) => second.score - first.score || groupIndex(first.sector) - groupIndex(second.sector))
+    .slice(0, 4);
 }
 
-function orderItemsByRelevance(items, featuredIds, relatedIds) {
-  return [...items].sort((first, second) => productRelevanceScore(second, featuredIds, relatedIds) - productRelevanceScore(first, featuredIds, relatedIds));
+function orderItemsByRelevance(items, favoriteProducts, terms) {
+  return [...items].sort((first, second) => productRelevanceScore(second, favoriteProducts, terms) - productRelevanceScore(first, favoriteProducts, terms));
 }
 
-function productRelevanceScore(item, featuredIds, relatedIds) {
-  if (featuredIds.has(item.id)) return 30;
-  if (relatedIds.has(item.id)) return 16;
-  if (shoppingList.has(item.id)) return 8;
-  return 0;
+function productRelevanceScore(item, favoriteProducts, terms) {
+  let score = 0;
+  if (favoriteProducts.has(item.id)) score += 35 + favoriteProducts.get(item.id);
+  if (shoppingList.has(item.id)) score += 20;
+  if (terms.length) score += searchScore(item, terms) * 8;
+  score += sectorBehaviorScore(item.sector);
+  return score;
 }
 
-function personalizedGroupScore(group, index, priority, addedSectors, featuredIds, relatedIds) {
+function personalizedGroupScore(group, index, priority, addedSectors, favoriteSectors, favoriteProducts) {
   const priorityIndex = priority.indexOf(group.sector);
   const priorityScore = priorityIndex >= 0 ? 100 - priorityIndex * 8 : 0;
-  const featuredScore = group.items.filter((item) => featuredIds.has(item.id)).length * 10;
-  const relatedScore = group.items.filter((item) => relatedIds.has(item.id)).length * 4;
+  const behaviorScore = favoriteSectors.has(group.sector) ? 55 : 0;
+  const productScore = group.items.filter((item) => favoriteProducts.has(item.id)).length * 7;
   const listScore = addedSectors.has(group.sector) ? 18 : 0;
-  return priorityScore + featuredScore + relatedScore + listScore - index;
+  return priorityScore + behaviorScore + productScore + listScore - index;
 }
 
 function groupTitle(group, index) {
@@ -1446,8 +1439,195 @@ function groupSubtitle(group) {
   if (group.personalized) return group.subtitle;
   const added = group.items.filter((item) => shoppingList.has(item.id)).length;
   return added
-    ? `${added} na lista · ${group.items.length} ofertas`
-    : `${group.items.length} ofertas selecionadas`;
+    ? `${added} na lista · ${group.items.length} itens`
+    : `${group.items.length} itens disponíveis`;
+}
+
+const shoppingContextRules = {
+  acougue: {
+    sectors: ["Bebidas", "Padaria", "Mercearia", "Hortifruti"],
+    keywords: ["carvao", "carvão", "refrigerante", "suco", "pao", "pão", "cebola", "tomate", "batata", "molho", "oleo"],
+    subtitle: "Complementos prováveis para quem está no açougue, priorizando churrasco e preparo da carne."
+  },
+  frios: {
+    sectors: ["Padaria", "Frios e Laticínios", "Mercearia", "Bebidas"],
+    keywords: ["pao", "pão", "baguete", "manteiga", "requeijao", "queijo", "presunto", "cafe", "suco", "molho", "macarrao"],
+    subtitle: "Itens que costumam acompanhar frios, lanches rápidos e reposição de geladeira."
+  },
+  padaria: {
+    sectors: ["Frios e Laticínios", "Mercearia", "Bebidas", "Hortifruti"],
+    keywords: ["cafe", "leite", "manteiga", "requeijao", "queijo", "presunto", "suco", "banana", "maca", "iogurte"],
+    subtitle: "Combinações de café da manhã e lanche para complementar a padaria."
+  }
+};
+
+function productsFromCustomerBehavior(favoriteProducts) {
+  const selected = [
+    ...cartItems.map((item) => findProduct(item.productId)).filter(Boolean),
+    ...[...favoriteProducts.keys()].map((id) => findProduct(id)).filter(Boolean)
+  ];
+  return uniqueProducts(selected).sort((first, second) => (favoriteProducts.get(second.id) || 0) - (favoriteProducts.get(first.id) || 0));
+}
+
+function contextualProducts(currentTicket, exclude = new Set()) {
+  const sectorId = currentTicket?.sectorId || favoriteSectorId();
+  const rule = shoppingContextRules[sectorId];
+  const keywords = rule?.keywords || recentSearchKeywords();
+  const sectors = rule?.sectors || favoriteSectorNames();
+  return keywordProducts(keywords, sectors, exclude);
+}
+
+function profileMatchProducts(currentTicket, exclude = new Set()) {
+  const sectorId = currentTicket?.sectorId;
+  const clusters = shoppingAgentProfile.clusterSuggestions || [];
+  const sortedClusters = [...clusters].sort((first, second) => clusterPriority(second, sectorId) - clusterPriority(first, sectorId));
+  const keywords = sortedClusters.flatMap((cluster) => cluster.keywords || []);
+  const sectors = sortedClusters.flatMap((cluster) => cluster.sectors || []);
+  return keywordProducts(keywords.length ? keywords : recentSearchKeywords(), sectors, exclude);
+}
+
+function timeAwareProducts(exclude = new Set()) {
+  const preferred = shoppingAgentProfile.preferredHourBucket || currentHourBucket();
+  const keywordsByTime = {
+    manha: ["cafe", "leite", "pao", "manteiga", "requeijao", "banana", "iogurte"],
+    almoco: ["arroz", "feijao", "macarrao", "molho", "batata", "tomate", "suco"],
+    tarde: ["pao", "bolo", "cafe", "suco", "iogurte", "queijo", "presunto"],
+    noite: ["macarrao", "molho", "queijo", "refrigerante", "suco", "pao"],
+    madrugada: ["leite", "pao", "cafe", "banana"]
+  };
+  return keywordProducts(keywordsByTime[preferred] || keywordsByTime.tarde, favoriteSectorNames(), exclude);
+}
+
+function keywordProducts(keywords, sectors = [], exclude = new Set()) {
+  const terms = [...new Set((keywords || []).map(normalizeSearch).filter(Boolean))];
+  const sectorSet = new Set((sectors || []).map(normalizeSearch));
+  return productCatalog
+    .filter((item) => !exclude.has(item.id))
+    .map((item) => ({ item, score: productContextScore(item, terms, sectorSet) }))
+    .filter((entry) => entry.score > 0)
+    .sort((first, second) => second.score - first.score || first.item.name.localeCompare(second.item.name))
+    .map((entry) => entry.item);
+}
+
+function essentialProducts(exclude = new Set()) {
+  return keywordProducts(["arroz", "feijao", "leite", "cafe", "pao", "manteiga", "macarrao", "molho", "banana", "refrigerante", "suco", "oleo"], [], exclude);
+}
+
+function productContextScore(item, terms, sectors) {
+  const haystack = normalizeSearch(`${item.name} ${item.baseName} ${item.brand} ${item.category} ${item.sector} ${item.searchText}`);
+  const sectorScore = sectors.has(normalizeSearch(item.sector)) ? 8 : 0;
+  const keywordScore = terms.reduce((score, term) => score + (haystack.includes(term) ? 18 : 0), 0);
+  const behaviorScore = sectorBehaviorScore(item.sector);
+  const listScore = shoppingList.has(item.id) ? 12 : 0;
+  return keywordScore + sectorScore + behaviorScore + listScore;
+}
+
+function uniqueProducts(items) {
+  const seen = new Set();
+  return items.filter((item) => {
+    if (!item || seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+
+function contextSubtitle(currentTicket) {
+  const rule = shoppingContextRules[currentTicket?.sectorId];
+  return rule?.subtitle || "Produtos sugeridos por setor, lista atual e histórico recente.";
+}
+
+function profileMatchSubtitle() {
+  const cluster = (shoppingAgentProfile.clusterSuggestions || [])[0];
+  return cluster?.name
+    ? `Combinações frequentes para ${cluster.name.toLowerCase()} e produtos próximos ao seu padrão de compra.`
+    : "Sugestões baseadas nas combinações mais prováveis para o seu perfil.";
+}
+
+function timeAwareSubtitle() {
+  const bucket = shoppingAgentProfile.preferredHourBucket || currentHourBucket();
+  return `Ajustado para o período ${bucket} e para os setores que você mais usa.`;
+}
+
+function clusterPriority(cluster, sectorId) {
+  let score = Number(cluster.score || 0);
+  if (sectorId && (cluster.triggerSectors || []).includes(sectorId)) score += 30;
+  return score;
+}
+
+function favoriteSectorId() {
+  const label = (shoppingAgentProfile.favoriteSectors || [])[0]?.sectorName || "";
+  const normalized = normalizeSearch(label);
+  if (normalized.includes("acougue")) return "acougue";
+  if (normalized.includes("frios")) return "frios";
+  if (normalized.includes("padaria")) return "padaria";
+  return "";
+}
+
+function favoriteSectorNames() {
+  return (shoppingAgentProfile.favoriteSectors || []).map((item) => item.sectorName).filter(Boolean);
+}
+
+function recentSearchKeywords() {
+  return (shoppingAgentProfile.recentSearches || []).flatMap((item) => normalizedTerms(item.query)).slice(0, 12);
+}
+
+function currentHourBucket() {
+  const hour = new Date().getHours();
+  if (hour >= 6 && hour < 11) return "manha";
+  if (hour >= 11 && hour < 14) return "almoco";
+  if (hour >= 14 && hour < 18) return "tarde";
+  if (hour >= 18 && hour < 22) return "noite";
+  return "madrugada";
+}
+
+function applyShoppingSectorFilter(items) {
+  const sectors = shoppingSectorFilters[shoppingSectorFilter] || [];
+  if (!sectors.length) return items;
+  const accepted = new Set(sectors.map(normalizeSearch));
+  return items.filter((item) => accepted.has(normalizeSearch(item.sector)));
+}
+
+function syncShoppingPreferenceControls() {
+  document.querySelectorAll("[data-shopping-mode]").forEach((button) => {
+    const active = button.dataset.shoppingMode === shoppingRecommendationMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  document.querySelectorAll("[data-shopping-sector]").forEach((button) => {
+    const active = button.dataset.shoppingSector === shoppingSectorFilter;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+}
+
+function normalizedTerms(value) {
+  return normalizeSearch(value).split(" ").filter((term) => term.length > 1);
+}
+
+function normalizeSearch(value) {
+  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function productMatchesSearch(item, terms) {
+  if (!terms.length) return true;
+  const haystack = normalizeSearch(`${item.name} ${item.baseName} ${item.brand} ${item.weight} ${item.category} ${item.sector} ${item.searchText}`);
+  return terms.every((term) => haystack.includes(term));
+}
+
+function searchScore(item, terms) {
+  if (!terms.length) return 0;
+  const haystack = normalizeSearch(`${item.name} ${item.baseName} ${item.brand} ${item.weight} ${item.category} ${item.sector} ${item.searchText}`);
+  return terms.reduce((score, term) => score + (haystack.includes(term) ? 1 : 0), 0);
+}
+
+function sectorBehaviorScore(sectorName) {
+  const match = (shoppingAgentProfile.favoriteSectors || []).find((item) => item.sectorName === sectorName);
+  return match ? Math.min(30, Number(match.quantity || 1) * 4) : 0;
+}
+
+function groupIndex(sector) {
+  const index = productGroups.findIndex((group) => group.sector === sector);
+  return index >= 0 ? index : productGroups.length;
 }
 
 function syncActionButtons() {
@@ -1479,6 +1659,7 @@ function findProduct(id) {
 function openProduct(id) {
   const item = findProduct(id);
   if (!item) return;
+  recordShoppingSignal({ type: "view", productId: item.id, productName: item.name, sectorName: item.sector });
   document.querySelector("#detailName").textContent = item.name;
   document.querySelector("#detailDescription").textContent = item.description;
   document.querySelector("#detailOld").textContent = item.old;
@@ -1508,6 +1689,7 @@ async function addCurrentProduct() {
       }
     });
     await loadCart();
+    await loadShoppingAgent();
     shoppingList.add(productId);
     renderProducts();
     document.querySelector("#addProduct").textContent = "Produto na lista";
@@ -1516,6 +1698,50 @@ async function addCurrentProduct() {
   } catch (exception) {
     alert(exception.message);
   }
+}
+
+async function changeCartItemQuantity(itemId, delta) {
+  const item = cartItems.find((entry) => entry.id === itemId);
+  if (!item) return;
+  const nextQuantity = Number(item.quantity || 1) + delta;
+  if (nextQuantity < 1) {
+    await removeCartItemFromList(itemId);
+    return;
+  }
+  try {
+    await api(`/api/cart/items/${encodeURIComponent(itemId)}`, {
+      method: "PATCH",
+      body: { quantity: nextQuantity }
+    });
+    await refreshShoppingListAfterEdit();
+  } catch (exception) {
+    alert(exception.message);
+  }
+}
+
+async function removeCartItemFromList(itemId) {
+  try {
+    await api(`/api/cart/items/${encodeURIComponent(itemId)}`, {
+      method: "DELETE"
+    });
+    await refreshShoppingListAfterEdit();
+  } catch (exception) {
+    alert(exception.message);
+  }
+}
+
+async function refreshShoppingListAfterEdit() {
+  await loadCart();
+  await loadShoppingAgent();
+  if (productsRendered) renderProducts();
+}
+
+function recordShoppingSignal(signal) {
+  if (!currentUser) return;
+  api("/api/shopping-signals", {
+    method: "POST",
+    body: signal
+  }).catch((exception) => console.warn(exception));
 }
 
 function updateProductCard(productId) {
@@ -1589,6 +1815,9 @@ function bindEvents() {
   document.querySelector("#statusFinishButton").addEventListener("click", finishCurrentService);
   document.querySelector("#floatingFinishButton").addEventListener("click", finishCurrentService);
   document.querySelector("#addProduct").addEventListener("click", addCurrentProduct);
+  document.querySelector("#productSearch")?.addEventListener("input", handleProductSearch);
+  document.querySelectorAll("[data-shopping-mode]").forEach((button) => button.addEventListener("click", () => handleShoppingMode(button.dataset.shoppingMode)));
+  document.querySelectorAll("[data-shopping-sector]").forEach((button) => button.addEventListener("click", () => handleShoppingSector(button.dataset.shoppingSector)));
   document.querySelector("#queueHelpButton")?.addEventListener("click", () => openQueueTutorial());
   document.querySelector("#ticketHelpButton")?.addEventListener("click", () => openQueueTutorial());
   document.querySelector("#statusHelpButton")?.addEventListener("click", () => openQueueTutorial());
@@ -1609,6 +1838,27 @@ function bindEvents() {
   });
   document.querySelector("#sendRating").addEventListener("click", sendRating);
   document.querySelector("#logoutButton")?.addEventListener("click", logoutAccount);
+}
+
+function handleProductSearch(event) {
+  productSearchTerm = event.target.value.trim();
+  if (productsRendered) renderProducts();
+  clearTimeout(productSearchSignalTimer);
+  productSearchSignalTimer = setTimeout(() => {
+    if (productSearchTerm.length >= 2) recordShoppingSignal({ type: "search", query: productSearchTerm });
+  }, 650);
+}
+
+function handleShoppingMode(mode) {
+  if (!["auto", "history", "context", "time", "essentials"].includes(mode)) return;
+  shoppingRecommendationMode = mode;
+  if (productsRendered) renderProducts();
+}
+
+function handleShoppingSector(sector) {
+  if (!Object.prototype.hasOwnProperty.call(shoppingSectorFilters, sector)) return;
+  shoppingSectorFilter = sector;
+  if (productsRendered) renderProducts();
 }
 
 function syncPriorityControls() {

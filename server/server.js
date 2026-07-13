@@ -314,6 +314,23 @@ function bootstrap() {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS shopping_signals (
+      id TEXT PRIMARY KEY,
+      customer_id TEXT NOT NULL,
+      signal_type TEXT NOT NULL,
+      query TEXT,
+      product_id TEXT,
+      product_name TEXT,
+      sector_name TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_cart_items_created_at ON cart_items(created_at);
+    CREATE INDEX IF NOT EXISTS idx_cart_items_product ON cart_items(product_id);
+    CREATE INDEX IF NOT EXISTS idx_cart_items_customer_created ON cart_items(customer_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_tickets_customer_created ON tickets(customer_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_shopping_signals_customer_created ON shopping_signals(customer_id, created_at);
+
     CREATE TABLE IF NOT EXISTS login_attempts (
       attempt_key TEXT PRIMARY KEY,
       count INTEGER NOT NULL,
@@ -469,6 +486,12 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/offer-insights") {
+    if (!requireAuth(req, res, ADMIN_ROLES)) return;
+    sendJson(res, 200, getOfferInsights(url));
+    return;
+  }
+
   if (req.method === "GET" && url.pathname === "/api/staff/state") {
     const user = requireAuth(req, res, STAFF_ROLES);
     if (!user) return;
@@ -601,6 +624,22 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  if (req.method === "GET" && url.pathname === "/api/shopping-agent") {
+    const user = requireAuth(req, res, CUSTOMER_ROLES);
+    if (!user) return;
+    sendJson(res, 200, getShoppingAgent(user.customerId));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/shopping-signals") {
+    const user = requireAuth(req, res, CUSTOMER_ROLES);
+    if (!user) return;
+    if (!verifyCsrf(req, res, user)) return;
+    const result = createShoppingSignal(user.customerId, await readBody(req));
+    sendApiResult(res, 201, result);
+    return;
+  }
+
   if (req.method === "POST" && url.pathname === "/api/cart/items") {
     const user = requireAuth(req, res, CUSTOMER_ROLES);
     if (!user) return;
@@ -612,9 +651,20 @@ async function handleApi(req, res, url) {
     return;
   }
 
+  const cartUpdate = url.pathname.match(/^\/api\/cart\/items\/([^/]+)$/);
+  if (req.method === "PATCH" && cartUpdate) {
+    const user = requireAuth(req, res, CUSTOMER_ROLES);
+    if (!user) return;
+    if (!verifyCsrf(req, res, user)) return;
+    const result = updateCartItemQuantity(cartUpdate[1], user.customerId, await readBody(req));
+    broadcast();
+    sendApiResult(res, 200, result);
+    return;
+  }
+
   const cartDelete = url.pathname.match(/^\/api\/cart\/items\/([^/]+)$/);
   if (req.method === "DELETE" && cartDelete) {
-    const user = requireAuth(req, res, ["customer"]);
+    const user = requireAuth(req, res, CUSTOMER_ROLES);
     if (!user) return;
     if (!verifyCsrf(req, res, user)) return;
     const result = removeCartItem(cartDelete[1], user.customerId);
@@ -1886,6 +1936,142 @@ function addCartItem(body) {
   return { item: cartItemDto(db.prepare("SELECT * FROM cart_items WHERE id = ?").get(id)) };
 }
 
+function updateCartItemQuantity(itemId, customerId, body = {}) {
+  const quantity = Math.max(1, Math.min(99, Number.parseInt(body.quantity, 10) || 1));
+  const item = db.prepare("SELECT * FROM cart_items WHERE id = ? AND customer_id = ?").get(itemId, customerId);
+  if (!item) return fail("Item não encontrado.");
+  db.prepare("UPDATE cart_items SET quantity = ?, updated_at = ? WHERE id = ?").run(quantity, isoNow(), item.id);
+  registerEvent("carrinho_item_quantidade_atualizada", "cart_item", item.id, customerId, null, { productId: item.product_id, quantity });
+  return { item: cartItemDto(db.prepare("SELECT * FROM cart_items WHERE id = ?").get(item.id)) };
+}
+
+function createShoppingSignal(customerId, body = {}) {
+  const signalType = ["search", "view"].includes(body.type) ? body.type : "view";
+  const id = `signal-${crypto.randomUUID()}`;
+  const now = isoNow();
+  db.prepare(`
+    INSERT INTO shopping_signals (id, customer_id, signal_type, query, product_id, product_name, sector_name, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    id,
+    customerId,
+    signalType,
+    String(body.query || "").slice(0, 120),
+    cleanId(body.productId || ""),
+    String(body.productName || "").slice(0, 160),
+    String(body.sectorName || "").slice(0, 80),
+    now
+  );
+  return { ok: true, id, createdAt: now };
+}
+
+function getShoppingAgent(customerId) {
+  const cartRows = db.prepare("SELECT * FROM cart_items WHERE customer_id = ? ORDER BY updated_at DESC LIMIT 200").all(customerId);
+  const signalRows = db.prepare("SELECT * FROM shopping_signals WHERE customer_id = ? ORDER BY created_at DESC LIMIT 200").all(customerId);
+  const ticketRows = db.prepare("SELECT tickets.*, sectors.name AS sector_name FROM tickets LEFT JOIN sectors ON sectors.id = tickets.sector_id WHERE tickets.customer_id = ? ORDER BY tickets.created_at DESC LIMIT 100").all(customerId);
+  return buildShoppingAgentProfile(cartRows, signalRows, ticketRows);
+}
+
+function buildShoppingAgentProfile(cartRows, signalRows, ticketRows) {
+  const sectorEvents = [
+    ...cartRows.map((row) => ({ sectorName: row.sector_name, createdAt: row.updated_at, weight: Number(row.quantity || 1) * 2 })),
+    ...signalRows.filter((row) => row.sector_name).map((row) => ({ sectorName: row.sector_name, createdAt: row.created_at, weight: 1 })),
+    ...ticketRows.map((row) => ({ sectorName: row.sector_name || row.sector_id, createdAt: row.created_at, weight: 3 }))
+  ];
+  const productEvents = [
+    ...cartRows.map((row) => ({ productId: row.product_id, productName: row.product_name, sectorName: row.sector_name, quantity: Number(row.quantity || 1) * 2 })),
+    ...signalRows.filter((row) => row.product_id).map((row) => ({ productId: row.product_id, productName: row.product_name, sectorName: row.sector_name, quantity: 1 }))
+  ];
+  return {
+    favoriteSectors: rankSignals(sectorEvents, (event) => event.sectorName, (group) => ({ sectorName: group.key, quantity: group.quantity })).slice(0, 6),
+    favoriteProducts: rankSignals(productEvents, (event) => event.productId, (group) => ({
+      productId: group.key,
+      productName: group.events[0].productName,
+      sectorName: group.events[0].sectorName,
+      quantity: group.quantity
+    })).slice(0, 10),
+    recentSearches: rankSignals(signalRows.filter((row) => row.signal_type === "search" && row.query), (row) => normalizeSignalText(row.query), (group) => ({ query: group.events[0].query, quantity: group.quantity })).slice(0, 6),
+    clusterSuggestions: buildShoppingClusterSuggestions(cartRows, signalRows, ticketRows),
+    preferredHourBucket: preferredHourBucket([...cartRows, ...signalRows, ...ticketRows]),
+    generatedAt: isoNow()
+  };
+}
+
+function buildShoppingClusterSuggestions(cartRows, signalRows, ticketRows) {
+  const definitions = [
+    {
+      id: "acougue-complementar",
+      name: "Açougue com complementos",
+      triggerSectors: ["acougue"],
+      sectors: ["Açougue", "Bebidas", "Padaria", "Mercearia", "Hortifruti"],
+      keywords: ["carvao", "carvão", "refrigerante", "suco", "pao", "cebola", "tomate", "batata", "molho", "oleo"],
+      reason: "Quando o cliente passa pelo açougue, o cluster busca itens de preparo, bebida e acompanhamento."
+    },
+    {
+      id: "padaria-manha",
+      name: "Padaria de manhã",
+      triggerSectors: ["padaria"],
+      sectors: ["Padaria", "Frios e Laticínios", "Mercearia", "Bebidas", "Hortifruti"],
+      keywords: ["cafe", "leite", "pao", "manteiga", "requeijao", "queijo", "presunto", "suco", "banana", "iogurte"],
+      reason: "Perfil de café da manhã com produtos que combinam com padaria e reposição diária."
+    },
+    {
+      id: "frios-lanche",
+      name: "Frios para lanche",
+      triggerSectors: ["frios"],
+      sectors: ["Frios e Laticínios", "Padaria", "Mercearia", "Bebidas"],
+      keywords: ["queijo", "presunto", "requeijao", "pao", "baguete", "manteiga", "cafe", "suco", "molho", "macarrao"],
+      reason: "Cluster voltado a lanches rápidos, frios fatiados e complementos próximos."
+    },
+    {
+      id: "reposicao-recorrente",
+      name: "Reposição recorrente",
+      triggerSectors: [],
+      sectors: ["Mercearia", "Frios e Laticínios", "Hortifruti", "Bebidas"],
+      keywords: ["arroz", "feijao", "leite", "cafe", "macarrao", "molho", "banana", "suco"],
+      reason: "Produtos básicos ligados ao histórico de seleção e busca do cliente."
+    }
+  ];
+  const events = [
+    ...cartRows.map((row) => ({ sector: row.sector_name, product: row.product_name, quantity: Number(row.quantity || 1) * 2 })),
+    ...signalRows.map((row) => ({ sector: row.sector_name, product: `${row.product_name || ""} ${row.query || ""}`, quantity: 1 })),
+    ...ticketRows.map((row) => ({ sector: row.sector_name || row.sector_id, product: "", quantity: 3 }))
+  ];
+  return definitions
+    .map((definition) => {
+      const score = events.reduce((sum, event) => {
+        const text = normalizeSignalText(`${event.sector || ""} ${event.product || ""}`);
+        const sectorMatch = definition.sectors.some((sector) => text.includes(normalizeSignalText(sector))) || definition.triggerSectors.some((sector) => text.includes(sector));
+        const keywordMatch = definition.keywords.some((keyword) => text.includes(normalizeSignalText(keyword)));
+        return sum + (sectorMatch ? event.quantity * 3 : 0) + (keywordMatch ? event.quantity * 2 : 0);
+      }, 0);
+      return { ...definition, score };
+    })
+    .sort((first, second) => second.score - first.score)
+    .slice(0, 4);
+}
+
+function rankSignals(events, keyFn, summaryFn) {
+  const groups = new Map();
+  events.forEach((event) => {
+    const key = keyFn(event);
+    if (!key) return;
+    const group = groups.get(key) || { key, events: [], quantity: 0 };
+    group.events.push(event);
+    group.quantity += Number(event.quantity || event.weight || 1);
+    groups.set(key, group);
+  });
+  return [...groups.values()].map(summaryFn).sort((left, right) => right.quantity - left.quantity);
+}
+
+function preferredHourBucket(events) {
+  return rankSignals(events, (event) => hourBucketFor(Number(new Date(event.created_at || event.createdAt).toLocaleString("en-US", { hour: "numeric", hour12: false, timeZone: BUSINESS_TIME_ZONE }))), (group) => ({ label: group.key, quantity: group.quantity }))[0]?.label || "";
+}
+
+function normalizeSignalText(value) {
+  return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
 function removeCartItem(itemId, customerId) {
   const item = db.prepare("SELECT * FROM cart_items WHERE id = ? AND customer_id = ?").get(itemId, customerId);
   if (!item) return fail("Item não encontrado.");
@@ -1929,6 +2115,230 @@ function getMetrics() {
     satisfaction: satisfactionSummary(ratings),
     generatedAt: isoNow()
   };
+}
+
+function getOfferInsights(url = null) {
+  const days = Math.max(1, Math.min(90, Number(url?.searchParams?.get("days") || 30)));
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const cartRows = db.prepare(`
+    SELECT
+      cart_items.*,
+      (
+        SELECT tickets.sector_id
+        FROM tickets
+        WHERE tickets.customer_id = cart_items.customer_id
+          AND ABS(strftime('%s', tickets.created_at) - strftime('%s', cart_items.created_at)) <= 21600
+        ORDER BY ABS(strftime('%s', tickets.created_at) - strftime('%s', cart_items.created_at)) ASC
+        LIMIT 1
+      ) AS visit_sector_id
+    FROM cart_items
+    WHERE cart_items.created_at >= ?
+    ORDER BY cart_items.created_at DESC
+  `).all(since);
+
+  return buildOfferInsights(cartRows, { days });
+}
+
+function buildOfferInsights(rows, options = {}) {
+  const events = rows.map(offerEvent).filter(Boolean);
+  const productRanking = rankBy(events, (event) => event.productId, productSummary).slice(0, 8);
+  const sectorPatterns = rankBy(events, (event) => event.visitSectorId || slugifyLabel(event.productSector), sectorSummary).slice(0, 6);
+  const timePatterns = rankBy(events, (event) => `${event.dayName}|${event.hourBucket}|${event.visitSectorId || slugifyLabel(event.productSector)}`, timeSummary).slice(0, 8);
+  const clusters = buildOfferClusters(events);
+
+  return {
+    periodDays: options.days || 30,
+    totalSelections: events.reduce((sum, event) => sum + event.quantity, 0),
+    totalCustomers: new Set(events.map((event) => event.customerId)).size,
+    generatedAt: isoNow(),
+    productRanking,
+    sectorPatterns,
+    timePatterns,
+    clusters,
+    suggestions: buildOfferSuggestions(clusters, productRanking, timePatterns),
+    confidence: insightConfidence(events.length)
+  };
+}
+
+function offerEvent(row) {
+  const createdAt = new Date(row.created_at);
+  if (Number.isNaN(createdAt.getTime())) return null;
+  const hour = Number(createdAt.toLocaleString("en-US", { hour: "numeric", hour12: false, timeZone: BUSINESS_TIME_ZONE }));
+  return {
+    customerId: row.customer_id,
+    productId: row.product_id,
+    productName: row.product_name,
+    productSector: row.sector_name || "Oferta",
+    visitSectorId: row.visit_sector_id || null,
+    price: row.price || "",
+    quantity: Number(row.quantity || 1),
+    createdAt: row.created_at,
+    hour,
+    hourBucket: hourBucketFor(hour),
+    dayName: weekdayName(createdAt),
+    dayKey: weekdayKey(createdAt)
+  };
+}
+
+function rankBy(events, keyFn, summaryFn) {
+  const groups = new Map();
+  events.forEach((event) => {
+    const key = keyFn(event);
+    if (!key) return;
+    const group = groups.get(key) || { key, events: [], quantity: 0, customers: new Set() };
+    group.events.push(event);
+    group.quantity += event.quantity;
+    group.customers.add(event.customerId);
+    groups.set(key, group);
+  });
+  return [...groups.values()]
+    .map((group) => summaryFn(group))
+    .sort((left, right) => right.quantity - left.quantity || right.customers - left.customers);
+}
+
+function productSummary(group) {
+  const first = group.events[0];
+  return {
+    productId: first.productId,
+    productName: first.productName,
+    sectorName: first.productSector,
+    quantity: group.quantity,
+    customers: group.customers.size,
+    shareLabel: `${group.quantity} selecoes`
+  };
+}
+
+function sectorSummary(group) {
+  const first = group.events[0];
+  return {
+    sectorId: first.visitSectorId || slugifyLabel(first.productSector),
+    sectorName: sectorNameFor(first.visitSectorId, first.productSector),
+    quantity: group.quantity,
+    customers: group.customers.size,
+    topProducts: topProducts(group.events, 4)
+  };
+}
+
+function timeSummary(group) {
+  const first = group.events[0];
+  return {
+    label: `${first.dayName}, ${first.hourBucket} em ${sectorNameFor(first.visitSectorId, first.productSector)}`,
+    dayName: first.dayName,
+    hourBucket: first.hourBucket,
+    sectorName: sectorNameFor(first.visitSectorId, first.productSector),
+    quantity: group.quantity,
+    customers: group.customers.size,
+    topProducts: topProducts(group.events, 5)
+  };
+}
+
+function buildOfferClusters(events) {
+  const definitions = [
+    {
+      id: "churrasco-sexta",
+      name: "Churrasco de sexta",
+      matches: (event) => event.dayKey === 5 && event.hour >= 16 && event.hour <= 19 && matchesSector(event, "acougue")
+    },
+    {
+      id: "padaria-manha",
+      name: "Padaria de manha",
+      matches: (event) => event.hour >= 6 && event.hour < 11 && matchesSector(event, "padaria")
+    },
+    {
+      id: "frios-lanche",
+      name: "Lanche rapido de frios",
+      matches: (event) => matchesSector(event, "frios") || /queijo|presunto|requeij|pao|pão/i.test(event.productName)
+    },
+    {
+      id: "compra-complementar",
+      name: "Compra complementar",
+      matches: () => true
+    }
+  ];
+
+  const buckets = new Map(definitions.map((definition) => [definition.id, { ...definition, events: [] }]));
+  events.forEach((event) => {
+    const definition = definitions.find((candidate) => candidate.matches(event));
+    buckets.get(definition.id).events.push(event);
+  });
+
+  return [...buckets.values()]
+    .filter((cluster) => cluster.events.length)
+    .map(clusterSummary)
+    .sort((left, right) => right.quantity - left.quantity)
+    .slice(0, 6);
+}
+
+function clusterSummary(cluster) {
+  const quantity = cluster.events.reduce((sum, event) => sum + event.quantity, 0);
+  const customers = new Set(cluster.events.map((event) => event.customerId)).size;
+  const top = topProducts(cluster.events, 6);
+  const dominantTime = rankBy(cluster.events, (event) => event.hourBucket, (group) => ({ label: group.key, quantity: group.quantity, customers: group.customers.size }))[0]?.label || "Horario variado";
+  const dominantSector = rankBy(cluster.events, (event) => event.visitSectorId || slugifyLabel(event.productSector), sectorSummary)[0]?.sectorName || "Setores variados";
+  return {
+    id: cluster.id,
+    name: cluster.name,
+    quantity,
+    customers,
+    dominantTime,
+    dominantSector,
+    topProducts: top,
+    confidence: insightConfidence(cluster.events.length),
+    recommendation: recommendationForCluster(cluster.name, dominantSector, dominantTime, top)
+  };
+}
+
+function buildOfferSuggestions(clusters, products, timePatterns) {
+  const suggestions = clusters.slice(0, 3).map((cluster) => cluster.recommendation);
+  const topProduct = products[0];
+  if (topProduct) suggestions.push(`Dar destaque para ${topProduct.productName} nas ofertas: foi o item mais selecionado no periodo.`);
+  const topTime = timePatterns[0];
+  if (topTime) suggestions.push(`Criar vitrine contextual para ${topTime.label.toLowerCase()} com ${topTime.topProducts.map((item) => item.productName).join(", ")}.`);
+  return [...new Set(suggestions)].slice(0, 5);
+}
+
+function topProducts(events, limit = 5) {
+  return rankBy(events, (event) => event.productId, productSummary).slice(0, limit);
+}
+
+function recommendationForCluster(name, sector, time, products) {
+  const productNames = products.slice(0, 3).map((item) => item.productName).join(", ");
+  return `Para ${name.toLowerCase()}, montar oferta em ${sector} no periodo ${time} com ${productNames || "produtos relacionados"}.`;
+}
+
+function matchesSector(event, sectorId) {
+  const sector = `${event.visitSectorId || ""} ${event.productSector || ""}`.toLowerCase();
+  return sector.includes(sectorId) || (sectorId === "acougue" && sector.includes("açougue"));
+}
+
+function sectorNameFor(sectorId, fallback) {
+  return getSector(sectorId)?.name || fallback || "Oferta";
+}
+
+function hourBucketFor(hour) {
+  if (hour >= 6 && hour < 11) return "manha";
+  if (hour >= 11 && hour < 14) return "almoco";
+  if (hour >= 14 && hour < 18) return "tarde";
+  if (hour >= 18 && hour < 22) return "noite";
+  return "madrugada";
+}
+
+function weekdayName(date) {
+  return ["domingo", "segunda", "terca", "quarta", "quinta", "sexta", "sabado"][weekdayKey(date)];
+}
+
+function weekdayKey(date) {
+  return new Date(date.toLocaleString("en-US", { timeZone: BUSINESS_TIME_ZONE })).getDay();
+}
+
+function slugifyLabel(value) {
+  return String(value || "oferta").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "oferta";
+}
+
+function insightConfidence(sampleSize) {
+  if (sampleSize >= 40) return "alta";
+  if (sampleSize >= 12) return "media";
+  return "baixa";
 }
 
 function getCustomerState(customerId) {

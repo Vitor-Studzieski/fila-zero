@@ -19,11 +19,11 @@ async function route(request) {
   nodeReq.url = `${url.pathname}${url.search}`;
   nodeReq.headers = Object.fromEntries(request.headers.entries());
 
-  const response = await handleWithNodeResponse(nodeReq, url);
+  const response = await handleWithNodeResponse(backend, nodeReq, url);
   return response;
 }
 
-function handleWithNodeResponse(nodeReq, url) {
+function handleWithNodeResponse(backend, nodeReq, url) {
   return new Promise((resolve) => {
     const chunks = [];
     const responseHeaders = new Map();
@@ -67,4 +67,5 @@ function handleWithNodeResponse(nodeReq, url) {
 export const GET = route;
 export const POST = route;
 export const PUT = route;
+export const PATCH = route;
 export const DELETE = route;

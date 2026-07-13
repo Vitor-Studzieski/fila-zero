@@ -1,4 +1,5 @@
 -- Fila Zero Supabase schema
+-- Consolidated migration: initial schema, offer insight indexes, and shopping agent signals.
 -- Run this file in Supabase SQL Editor before switching the app from SQLite to Supabase.
 
 create extension if not exists pgcrypto;
@@ -192,6 +193,17 @@ create table if not exists public.cart_items (
   unique (customer_id, product_id)
 );
 
+create table if not exists public.shopping_signals (
+  id uuid primary key default gen_random_uuid(),
+  customer_id uuid not null references public.profiles(id) on delete cascade,
+  signal_type text not null,
+  query text,
+  product_id text,
+  product_name text,
+  sector_name text,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists public.login_attempts (
   attempt_key text primary key,
   count integer not null default 0,
@@ -203,8 +215,13 @@ create table if not exists public.login_attempts (
 create index if not exists idx_tickets_customer_status on public.tickets (customer_id, status);
 create index if not exists idx_tickets_sector_queue on public.tickets (sector_id, priority desc, queue_order);
 create index if not exists idx_tickets_sector_status on public.tickets (sector_id, status);
+create index if not exists idx_tickets_customer_created on public.tickets (customer_id, created_at desc);
 create index if not exists idx_events_created_at on public.events (created_at desc);
 create index if not exists idx_cart_customer on public.cart_items (customer_id);
+create index if not exists idx_cart_items_created_at on public.cart_items (created_at desc);
+create index if not exists idx_cart_items_product on public.cart_items (product_id);
+create index if not exists idx_cart_items_customer_created on public.cart_items (customer_id, created_at desc);
+create index if not exists idx_shopping_signals_customer_created on public.shopping_signals (customer_id, created_at desc);
 
 create or replace function public.set_updated_at()
 returns trigger
@@ -277,6 +294,7 @@ on conflict (id) do update set
   updated_at = now();
 
 alter table public.profiles enable row level security;
+alter table public.sectors enable row level security;
 alter table public.profile_sector_permissions enable row level security;
 alter table public.devices enable row level security;
 alter table public.tickets enable row level security;
@@ -286,6 +304,7 @@ alter table public.ratings enable row level security;
 alter table public.events enable row level security;
 alter table public.ticket_counters enable row level security;
 alter table public.cart_items enable row level security;
+alter table public.shopping_signals enable row level security;
 alter table public.login_attempts enable row level security;
 
 drop policy if exists "profiles_select_own" on public.profiles;
@@ -312,6 +331,18 @@ create policy "cart_items_customer_read"
 on public.cart_items for select
 to authenticated
 using (customer_id = auth.uid());
+
+drop policy if exists "shopping_signals_customer_read" on public.shopping_signals;
+create policy "shopping_signals_customer_read"
+on public.shopping_signals for select
+to authenticated
+using (customer_id = auth.uid());
+
+drop policy if exists "shopping_signals_customer_insert" on public.shopping_signals;
+create policy "shopping_signals_customer_insert"
+on public.shopping_signals for insert
+to authenticated
+with check (customer_id = auth.uid());
 
 drop policy if exists "tickets_customer_read" on public.tickets;
 create policy "tickets_customer_read"

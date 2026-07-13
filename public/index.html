@@ -62,7 +62,7 @@
             <h3>Acesso rápido</h3>
             <div class="quick-grid">
               <button class="quick highlighted" data-go="sectors"><span>FZ</span>Fila Zero</button>
-              <button class="quick" data-go="offers"><span>%</span>Ofertas</button>
+              <button class="quick" data-go="offers"><span>✓</span>Lista</button>
               <button class="quick" data-go="club"><span>C</span>Clube</button>
               <button class="quick" data-go="account"><span>+</span>Conta</button>
             </div>
@@ -71,7 +71,7 @@
             <article class="promo-copy">
               <strong>Seleção Pompeia</strong>
               <p>Ofertas organizadas por setor para aproveitar enquanto acompanha seu atendimento.</p>
-              <button class="blue-action" data-go="offers">Ver ofertas</button>
+              <button class="blue-action" data-go="offers">Montar lista</button>
             </article>
             <div class="shelf-photo"></div>
           </section>
@@ -147,7 +147,7 @@
             <div class="hero-photo small"></div>
             <button class="yellow-action" data-go="status">Acompanhar senha</button>
             <button class="soft-action cancel-ticket-action" id="ticketCancelButton">Cancelar senha</button>
-            <button class="blue-action" data-go="offers">Ver ofertas</button>
+            <button class="blue-action" data-go="offers">Montar lista</button>
           </section>
 
           <section class="screen" data-screen="status">
@@ -184,13 +184,38 @@
             <div class="info-row"><strong>Pessoas na frente</strong><span id="aheadInfo">--</span></div>
             <button class="soft-action cancel-ticket-action" id="statusCancelButton">Cancelar senha</button>
             <button class="yellow-action service-finish-action" id="statusFinishButton">Informar fim do pedido</button>
-            <button class="blue-action" data-go="offers">Ver ofertas</button>
+            <button class="blue-action" data-go="offers">Montar lista</button>
           </section>
 
           <section class="screen" data-screen="offers">
             <div class="queue-mini" id="offersQueue"></div>
-            <h2>Ofertas selecionadas</h2>
-            <p class="muted">Produtos organizados por setor para montar sua lista de compras.</p>
+            <h2>Lista de compras</h2>
+            <p class="muted">Produtos recomendados pelo seu comportamento de compra, setor visitado e horário.</p>
+            <div class="shopping-toolbar">
+              <input class="search offers-search" id="productSearch" type="search" placeholder="Buscar item, marca ou setor" aria-label="Buscar item, marca ou setor" />
+              <section class="shopping-preferences" aria-label="Personalizacao da lista">
+                <div class="preference-row">
+                  <span>Personalizar por</span>
+                  <div class="preference-chips" role="group" aria-label="Tipo de recomendacao">
+                    <button type="button" data-shopping-mode="auto">Perfil</button>
+                    <button type="button" data-shopping-mode="history">Mais usados</button>
+                    <button type="button" data-shopping-mode="context">Setor atual</button>
+                    <button type="button" data-shopping-mode="time">Horario</button>
+                    <button type="button" data-shopping-mode="essentials">Essenciais</button>
+                  </div>
+                </div>
+                <div class="preference-row">
+                  <span>Setor</span>
+                  <div class="preference-chips" role="group" aria-label="Filtro por setor">
+                    <button type="button" data-shopping-sector="all">Todos</button>
+                    <button type="button" data-shopping-sector="acougue">Açougue</button>
+                    <button type="button" data-shopping-sector="frios">Frios</button>
+                    <button type="button" data-shopping-sector="padaria">Padaria</button>
+                    <button type="button" data-shopping-sector="mercearia">Mercearia</button>
+                  </div>
+                </div>
+              </section>
+            </div>
             <div class="cart-panel">
               <strong>Minha lista</strong>
               <div id="cartList"></div>
@@ -208,7 +233,7 @@
               <strong id="detailPrice">--</strong>
             </div>
             <button class="yellow-action" id="addProduct">Adicionar à lista</button>
-            <button class="text-action" data-go="offers">Voltar para ofertas</button>
+            <button class="text-action" data-go="offers">Voltar para lista</button>
             <p class="toast" id="toast">Produto adicionado à lista.</p>
           </section>
 
@@ -249,7 +274,7 @@
                 <span>Acompanhe promoções do setor enquanto aguarda sua senha.</span>
               </article>
             </div>
-            <button class="yellow-action" data-go="offers">Ver ofertas do clube</button>
+            <button class="yellow-action" data-go="offers">Montar lista do clube</button>
           </section>
 
           <section class="screen" data-screen="account">
@@ -318,7 +343,7 @@
             </svg>
             <span>Início</span>
           </button>
-          <button data-tab="offers" aria-label="Ofertas">
+          <button data-tab="offers" aria-label="Lista">
             <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
               <path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V4h9l8.6 8.6a2 2 0 0 1 0 2.8Z"></path>
               <path d="M7.5 7.5h.01"></path>
@@ -326,7 +351,7 @@
               <path d="M9 9h.01"></path>
               <path d="M15 15h.01"></path>
             </svg>
-            <span>Ofertas</span>
+            <span>Lista</span>
           </button>
           <button data-tab="sectors" class="on" aria-label="Senhas">
             <svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true">
