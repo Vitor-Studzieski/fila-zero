@@ -5,6 +5,9 @@ const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || "");
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
 const AUTH_SECRET = authSecret();
 const AUTO_CONFIRM_PUBLIC_CUSTOMERS = process.env.SUPABASE_AUTO_CONFIRM_CUSTOMERS !== "0";
+const PRESENCE_CHECK_ENABLED = envFlag("PRESENCE_CHECK_ENABLED", process.env.NODE_ENV === "production");
+const QR_TOKENS = loadQrTokens();
+const STORE_LOCATION = loadStoreLocation();
 
 const BUSINESS_TIME_ZONE = "America/Sao_Paulo";
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
@@ -50,6 +53,9 @@ async function handleRequest(request) {
   try {
     if (!isSupabaseReady()) {
       return json({ error: "Supabase nao configurado." }, 500);
+    }
+    if (request.method === "GET" && url.pathname === "/api/config") {
+      return json({ presenceCheckEnabled: PRESENCE_CHECK_ENABLED });
     }
     await maybeRunScheduledJobs({
       wait: url.pathname === "/api/state" || url.pathname === "/api/staff/state" || url.pathname === "/api/events"
@@ -410,21 +416,37 @@ async function createTicket(body) {
   if (sector.status !== "open") return fail("Setor fechado para novas senhas.");
   const session = await upsertSession(body, "");
   const active = await select("tickets", `customer_id=eq.${encodeURIComponent(session.customerId)}&status=in.(${ACTIVE_STATUSES.join(",")})`);
-  if (active.length >= MAX_ACTIVE_TICKETS_PER_CUSTOMER) return fail(`Limite de ${MAX_ACTIVE_TICKETS_PER_CUSTOMER} senhas ativas por cliente atingido.`);
   const existing = active.find((ticket) => ticket.sector_id === sector.id);
   if (existing) return { ticket: await safeTicketDto(existing), alreadyExists: true };
+  if (active.length >= MAX_ACTIVE_TICKETS_PER_CUSTOMER) return fail(`Limite de ${MAX_ACTIVE_TICKETS_PER_CUSTOMER} senhas ativas por cliente atingido.`);
+  const presence = validatePresence(body, sector.id);
+  if (!presence.ok) return fail(presence.error);
   const priority = normalizePriority(body);
-  const row = await rpc("issue_ticket", {
+  const row = await rpc("issue_verified_ticket", {
     p_customer_id: session.customerId,
     p_device_id: session.deviceId,
     p_sector_id: sector.id,
     p_priority: priority.enabled,
     p_priority_reason: priority.reason,
+    p_qr_verified: presence.qrVerified,
+    p_location_verified: presence.locationVerified,
+    p_location_lat: presence.location?.latitude ?? null,
+    p_location_lng: presence.location?.longitude ?? null,
+    p_location_accuracy: presence.location?.accuracy ?? null,
+    p_location_distance_meters: presence.distanceMeters,
     p_auto_call_delay_seconds: AUTO_CALL_DELAY_SECONDS,
     p_max_active_tickets: MAX_ACTIVE_TICKETS_PER_CUSTOMER
   });
   if (!row || row.error) return fail("Nao foi possivel emitir a senha agora.");
-  await registerEvent("senha_emitida", "ticket", row.id, row.customer_id, row.sector_id, { code: row.code, priority });
+  await registerEvent("senha_emitida", "ticket", row.id, row.customer_id, row.sector_id, {
+    code: row.code,
+    priority,
+    presence: {
+      qrVerified: presence.qrVerified,
+      locationVerified: presence.locationVerified,
+      distanceMeters: presence.distanceMeters
+    }
+  });
   return { ticket: await safeTicketDto(row), alreadyExists: false };
 }
 
@@ -443,33 +465,20 @@ async function callNextTicket(sectorId, options = {}) {
 }
 
 async function confirmTicket(ticketId) {
-  const ticket = await getTicket(ticketId);
-  if (!ticket) return fail("Senha nao encontrada.");
-  if (ticket.status !== "chamado") return fail("A senha precisa estar chamada para iniciar atendimento.");
-  const blocking = await select("tickets", `id=neq.${encodeURIComponent(ticket.id)}&customer_id=eq.${encodeURIComponent(ticket.customer_id)}&status=eq.em_atendimento&limit=1`);
-  if (blocking.length) return fail("Cliente ja possui outro atendimento em andamento.");
-  const now = isoNow();
-  const updated = await update("tickets", ticket.id, { status: "em_atendimento", service_started_at: now, updated_at: now });
-  await insert("services", { ticket_id: ticket.id, sector_id: ticket.sector_id, customer_id: ticket.customer_id, started_at: now });
-  await registerEvent("atendimento_iniciado", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { code: ticket.code });
+  const updated = await rpc("confirm_ticket", { p_ticket_id: ticketId });
+  if (!updated || updated.error) return fail("A senha nao esta mais disponivel para iniciar atendimento. Atualize a fila.");
+  await registerEvent("atendimento_iniciado", "ticket", updated.id, updated.customer_id, updated.sector_id, { code: updated.code });
   return { ticket: await safeTicketDto(updated) };
 }
 
 async function finishTicket(ticketId) {
-  const ticket = await getTicket(ticketId);
-  if (!ticket) return fail("Senha nao encontrada.");
-  if (ticket.status !== "em_atendimento") return fail("A senha precisa estar em atendimento para finalizar pedido.");
-  const now = isoNow();
-  await update("tickets", ticket.id, { status: "atendido", finished_at: now, updated_at: now });
-  const services = await select("services", `ticket_id=eq.${encodeURIComponent(ticket.id)}&finished_at=is.null&limit=1`);
-  if (services[0]) await update("services", services[0].id, { finished_at: now });
-  const sector = await getSector(ticket.sector_id);
-  await update("sectors", ticket.sector_id, { current_number: Math.max(Number(sector.current_number || 0), Number(ticket.number || 0)), updated_at: now });
-  await registerEvent("pedido_finalizado", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { code: ticket.code });
-  const released = await releaseSmartWaitTicket(ticket.customer_id);
-  const nextInSector = await callNextTicket(ticket.sector_id, { preferStandby: true });
+  const finished = await rpc("finish_ticket", { p_ticket_id: ticketId });
+  if (!finished || finished.error) return fail("A senha nao esta mais em atendimento. Atualize a fila.");
+  await registerEvent("pedido_finalizado", "ticket", finished.id, finished.customer_id, finished.sector_id, { code: finished.code });
+  const released = await releaseSmartWaitTicket(finished.customer_id);
+  const nextInSector = await callNextTicket(finished.sector_id, { preferStandby: true });
   return {
-    finishedTicket: await safeTicketDto(await getTicket(ticket.id)),
+    finishedTicket: await safeTicketDto(finished),
     releasedTicket: released ? await safeTicketDto(released) : null,
     nextTicket: nextInSector?.ticket || null
   };
@@ -509,11 +518,13 @@ async function skipTicket(ticketId, body = {}) {
         standby_expires_at: null,
         updated_at: now
       };
-  const skipped = await update("tickets", ticket.id, patch);
+  const skipped = await updateTicketIfStatus(ticket.id, [ticket.status], patch);
+  if (!skipped) return fail("A senha foi alterada por outra operacao. Atualize a fila.");
   await insert("calls", { ticket_id: ticket.id, sector_id: ticket.sector_id, action: `senha_pulada:${reason}`, created_at: now });
   await registerEvent("senha_pulada_pelo_atendente", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { code: ticket.code, previousStatus: ticket.status, reason });
+  const released = CALL_BLOCKING_STATUSES.includes(ticket.status) ? await releaseSmartWaitTicket(ticket.customer_id) : null;
   const nextInSector = CALL_BLOCKING_STATUSES.includes(ticket.status) ? await callNextTicket(ticket.sector_id) : null;
-  return { skippedTicket: await safeTicketDto(skipped), nextTicket: nextInSector?.ticket || null };
+  return { skippedTicket: await safeTicketDto(skipped), releasedTicket: released ? await safeTicketDto(released) : null, nextTicket: nextInSector?.ticket || null };
 }
 
 async function cancelTicket(ticketId, customerId) {
@@ -521,7 +532,7 @@ async function cancelTicket(ticketId, customerId) {
   if (!ticket || ticket.customer_id !== customerId) return fail("Senha nao encontrada.");
   if (!CUSTOMER_CANCELABLE_STATUSES.includes(ticket.status)) return fail("Esta senha nao pode mais ser cancelada pelo cliente.");
   const now = isoNow();
-  const canceled = await update("tickets", ticket.id, {
+  const canceled = await updateTicketIfStatus(ticket.id, [ticket.status], {
     status: "cancelado",
     canceled_at: now,
     called_at: null,
@@ -530,6 +541,7 @@ async function cancelTicket(ticketId, customerId) {
     smart_wait_since: null,
     updated_at: now
   });
+  if (!canceled) return fail("A senha foi alterada por outra operacao. Atualize a fila.");
   await registerEvent("senha_cancelada_pelo_cliente", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { code: ticket.code, previousStatus: ticket.status });
   const released = CALL_BLOCKING_STATUSES.includes(ticket.status) ? await releaseSmartWaitTicket(ticket.customer_id) : null;
   return { canceledTicket: await safeTicketDto(canceled), releasedTicket: released ? await safeTicketDto(released) : null };
@@ -540,18 +552,19 @@ async function releaseSmartWaitTicket(customerId) {
   const next = rows[0];
   if (!next) return null;
   const now = isoNow();
-  const updated = await update("tickets", next.id, {
-    status: "chamado",
-    called_at: now,
+  const updated = await updateTicketIfStatus(next.id, ["espera_inteligente"], {
+    status: "aguardando",
+    called_at: null,
+    eligible_at: now,
     smart_wait_reason: null,
     blocked_by_ticket_id: null,
     smart_wait_since: null,
     updated_at: now
   });
-  await insert("calls", { ticket_id: next.id, sector_id: next.sector_id, action: "senha_chamada", created_at: now });
+  if (!updated) return null;
   await registerEvent("espera_inteligente_liberada", "ticket", next.id, next.customer_id, next.sector_id, { code: next.code });
-  await registerEvent("senha_chamada", "ticket", next.id, next.customer_id, next.sector_id, { code: next.code, source: "fim_do_pedido_anterior" });
-  return updated;
+  await callNextTicket(next.sector_id, { preferStandby: true });
+  return getTicket(next.id);
 }
 
 async function updateSector(sectorId, body) {
@@ -1465,7 +1478,7 @@ async function expireAbsentCalls() {
     const absenceCount = Number(ticket.absence_count || 0) + 1;
     const now = isoNow();
     if (absenceCount >= 2) {
-      await update("tickets", ticket.id, {
+      const updated = await updateTicketIfStatus(ticket.id, ["chamado"], {
         status: "cancelado",
         absence_count: absenceCount,
         canceled_at: now,
@@ -1474,10 +1487,12 @@ async function expireAbsentCalls() {
         standby_expires_at: null,
         updated_at: now
       });
+      if (!updated) continue;
       await registerEvent("senha_cancelada_por_ausencia", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { absenceCount });
+      await releaseSmartWaitTicket(ticket.customer_id);
       continue;
     }
-    await update("tickets", ticket.id, {
+    const updated = await updateTicketIfStatus(ticket.id, ["chamado"], {
       status: "standby",
       absence_count: absenceCount,
       called_at: null,
@@ -1486,7 +1501,9 @@ async function expireAbsentCalls() {
       queue_order: Number(ticket.queue_order || 0) + 1000,
       updated_at: now
     });
+    if (!updated) continue;
     await registerEvent("senha_em_standby_por_ausencia", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { absenceCount });
+    await releaseSmartWaitTicket(ticket.customer_id);
   }
 }
 
@@ -1494,7 +1511,8 @@ async function expireExpiredStandbyTickets() {
   const now = isoNow();
   const expired = await select("tickets", `status=eq.standby&standby_expires_at=not.is.null&standby_expires_at=lt.${encodeURIComponent(now)}`);
   for (const ticket of expired) {
-    await update("tickets", ticket.id, { status: "cancelado", canceled_at: now, standby_started_at: null, standby_expires_at: null, updated_at: now });
+    const updated = await updateTicketIfStatus(ticket.id, ["standby"], { status: "cancelado", canceled_at: now, standby_started_at: null, standby_expires_at: null, updated_at: now });
+    if (!updated) continue;
     await registerEvent("senha_cancelada_por_standby_expirado", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { code: ticket.code });
   }
 }
@@ -1505,7 +1523,7 @@ async function expireStaleActiveTickets() {
   const stale = active.filter((ticket) => businessDateFor(ticket.created_at) !== today);
   for (const ticket of stale) {
     const now = isoNow();
-    await update("tickets", ticket.id, {
+    const updated = await updateTicketIfStatus(ticket.id, [ticket.status], {
       status: "expirado",
       expired_at: now,
       called_at: null,
@@ -1514,6 +1532,7 @@ async function expireStaleActiveTickets() {
       smart_wait_since: null,
       updated_at: now
     });
+    if (!updated) continue;
     await registerEvent("senha_expirada_por_reset_diario", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { code: ticket.code });
   }
 }
@@ -1722,6 +1741,21 @@ async function update(table, id, body) {
   return Array.isArray(result) ? result[0] : result;
 }
 
+async function updateTicketIfStatus(id, expectedStatuses, body) {
+  const statuses = [...new Set(expectedStatuses)].filter((status) => ACTIVE_STATUSES.includes(status));
+  if (!statuses.length) return null;
+  const statusFilter = statuses.length === 1
+    ? `status=eq.${encodeURIComponent(statuses[0])}`
+    : `status=in.(${statuses.map(encodeURIComponent).join(",")})`;
+  const result = await supabaseFetch(`/rest/v1/tickets?id=eq.${encodeURIComponent(id)}&${statusFilter}&select=*`, {
+    method: "PATCH",
+    headers: { Prefer: "return=representation" },
+    body
+  });
+  if (result.error) throw new Error(result.error);
+  return Array.isArray(result) ? result[0] || null : null;
+}
+
 async function upsert(table, body, onConflict) {
   const result = await supabaseFetch(`/rest/v1/${table}?on_conflict=${encodeURIComponent(onConflict)}&select=*`, {
     method: "POST",
@@ -1780,6 +1814,70 @@ function supabaseErrorMessage(payload, response) {
 
 function isSupabaseReady() {
   return Boolean(SUPABASE_URL && SUPABASE_ANON_KEY && SUPABASE_SERVICE_ROLE_KEY);
+}
+
+function envFlag(name, fallback = false) {
+  const value = process.env[name];
+  if (value === undefined || value === "") return fallback;
+  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
+}
+
+function loadQrTokens() {
+  return {
+    acougue: String(process.env.QR_TOKEN_ACOUGUE || ""),
+    frios: String(process.env.QR_TOKEN_FRIOS || ""),
+    padaria: String(process.env.QR_TOKEN_PADARIA || "")
+  };
+}
+
+function loadStoreLocation() {
+  const latitude = Number(process.env.STORE_LATITUDE);
+  const longitude = Number(process.env.STORE_LONGITUDE);
+  const radiusMeters = Number(process.env.STORE_RADIUS_METERS);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(radiusMeters) || radiusMeters <= 0) return null;
+  return { latitude, longitude, radiusMeters };
+}
+
+function validatePresence(body, sectorId) {
+  if (!PRESENCE_CHECK_ENABLED) {
+    return { ok: true, qrVerified: false, locationVerified: false, location: null, distanceMeters: null };
+  }
+
+  const token = String(body.qrToken || "");
+  const expectedToken = QR_TOKENS[sectorId] || "";
+  const qrVerified = Boolean(token && expectedToken && safeEqual(token, expectedToken));
+  const location = normalizeLocation(body.location);
+  const distanceMeters = location && STORE_LOCATION
+    ? distanceBetweenMeters(location.latitude, location.longitude, STORE_LOCATION.latitude, STORE_LOCATION.longitude)
+    : null;
+  const locationVerified = Boolean(STORE_LOCATION && location && distanceMeters <= STORE_LOCATION.radiusMeters);
+
+  if (qrVerified || locationVerified) {
+    return { ok: true, qrVerified, locationVerified, location, distanceMeters };
+  }
+  if (token) return { ok: false, error: "QR Code do setor invalido." };
+  if (location && STORE_LOCATION) return { ok: false, error: "Voce precisa estar dentro ou perto da loja para solicitar senha." };
+  return { ok: false, error: "Use o QR Code do setor para solicitar senha." };
+}
+
+function normalizeLocation(location) {
+  if (!location) return null;
+  const latitude = Number(location.latitude);
+  const longitude = Number(location.longitude);
+  const accuracy = Number(location.accuracy || 0);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+  return { latitude, longitude, accuracy: Number.isFinite(accuracy) ? Math.max(0, accuracy) : 0 };
+}
+
+function distanceBetweenMeters(latA, lngA, latB, lngB) {
+  const earthRadius = 6371000;
+  const toRadians = (value) => (value * Math.PI) / 180;
+  const deltaLat = toRadians(latB - latA);
+  const deltaLng = toRadians(lngB - lngA);
+  const a = Math.sin(deltaLat / 2) ** 2
+    + Math.cos(toRadians(latA)) * Math.cos(toRadians(latB)) * Math.sin(deltaLng / 2) ** 2;
+  return Math.round(earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
 }
 
 function validateCustomerRegistration(body) {

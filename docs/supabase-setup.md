@@ -45,11 +45,12 @@ AUTH_SECRET=
 QR_TOKEN_ACOUGUE=
 QR_TOKEN_FRIOS=
 QR_TOKEN_PADARIA=
+PRESENCE_CHECK_ENABLED=1
 ```
 
 `AUTH_SECRET` voce cria. Use um valor fixo, aleatorio e com 32 ou mais caracteres.
 
-Os `QR_TOKEN_*` voce tambem cria. Use valores longos e diferentes por setor. Em producao, mantenha `SUPABASE_AUTO_CONFIRM_CUSTOMERS=0` para exigir a confirmacao de e-mail.
+Os `QR_TOKEN_*` voce tambem cria. Use valores longos e diferentes por setor. Em producao, mantenha `PRESENCE_CHECK_ENABLED=1` e `SUPABASE_AUTO_CONFIRM_CUSTOMERS=0`. Geolocalizacao so e aceita quando `STORE_LATITUDE`, `STORE_LONGITUDE` e `STORE_RADIUS_METERS` tambem estiverem configurados; sem eles, um QR valido e obrigatorio.
 
 ## Como criar as tabelas
 

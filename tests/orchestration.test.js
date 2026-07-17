@@ -26,6 +26,7 @@ test.before(async () => {
       DATA_DIR: dataDir,
       API_ONLY: "1",
       SUPABASE_AUTH_ENABLED: "0",
+      PRESENCE_CHECK_ENABLED: "0",
       DEMO_USERS_JSON: JSON.stringify(testCredentials.seedUsers),
       AUTH_SECRET: crypto.randomBytes(32).toString("hex"),
       QR_TOKEN_ACOUGUE: testCredentials.qrTokens.acougue,
@@ -64,6 +65,184 @@ test("orquestra espera inteligente e libera uma senha por vez", async () => {
   await api(`/api/tickets/${first.ticket.id}/finish`, { method: "POST", cookie, body: identity });
   state = await api(`/api/state?customer_id=${identity.customerId}`, { cookie });
   assert.equal(state.tickets.find((ticket) => ticket.sectorId === "frios").status, "chamado");
+});
+
+test("nao libera espera inteligente quando o setor ja possui chamada ativa", async () => {
+  resetSectorTickets("acougue");
+  resetSectorTickets("frios");
+  try {
+    const firstCustomer = await createCustomer("espera-setor-ocupado-a");
+    const secondCustomer = await createCustomer("espera-setor-ocupado-b");
+
+    const firstService = await api("/api/tickets", {
+      method: "POST",
+      cookie: firstCustomer.cookie,
+      body: { ...firstCustomer.identity, sectorId: "acougue", qrToken: qrToken("acougue") }
+    });
+    await api("/api/sectors/acougue/call-next", { method: "POST", cookie: adminCookie });
+    await api(`/api/tickets/${firstService.ticket.id}/confirm`, { method: "POST", cookie: adminCookie });
+
+    const smartWait = await api("/api/tickets", {
+      method: "POST",
+      cookie: firstCustomer.cookie,
+      body: { ...firstCustomer.identity, sectorId: "frios", qrToken: qrToken("frios") }
+    });
+    await api("/api/sectors/frios/call-next", { method: "POST", cookie: adminCookie });
+
+    const other = await api("/api/tickets", {
+      method: "POST",
+      cookie: secondCustomer.cookie,
+      body: { ...secondCustomer.identity, sectorId: "frios", qrToken: qrToken("frios") }
+    });
+    await api("/api/sectors/frios/call-next", { method: "POST", cookie: adminCookie });
+    await api(`/api/tickets/${firstService.ticket.id}/finish`, { method: "POST", cookie: adminCookie });
+
+    const staff = await api("/api/staff/state", { cookie: adminCookie });
+    const frios = staff.sectors.find((sector) => sector.id === "frios");
+    const activeCalls = frios.tickets.filter((ticket) => ["chamado", "em_atendimento"].includes(ticket.status));
+    assert.equal(activeCalls.length, 1);
+    assert.equal(activeCalls[0].id, other.ticket.id);
+
+    const customerState = await api(`/api/state?customer_id=${firstCustomer.identity.customerId}`, { cookie: firstCustomer.cookie });
+    assert.equal(customerState.tickets.find((ticket) => ticket.id === smartWait.ticket.id).status, "aguardando");
+  } finally {
+    resetSectorTickets("acougue");
+    resetSectorTickets("frios");
+  }
+});
+
+test("responde 401 para mutacao anonima em vez de manter a conexao aberta", async () => {
+  const response = await fetch(`${BASE_URL}/api/tickets/inexistente/confirm`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+    signal: AbortSignal.timeout(1500)
+  });
+  const payload = await response.json();
+  assert.equal(response.status, 401);
+  assert.match(payload.error, /autenticacao/i);
+});
+
+test("migration restringe papeis e funcoes privilegiadas do Supabase", () => {
+  const migration = fs.readFileSync(path.resolve(__dirname, "../supabase/migrations/0001_initial_schema.sql"), "utf8");
+  assert.match(migration, /revoke update on table public\.profiles from anon, authenticated/i);
+  assert.match(migration, /grant update \(name\) on table public\.profiles to authenticated/i);
+  assert.match(migration, /revoke execute on function public\.issue_ticket[\s\S]*from PUBLIC, anon, authenticated/i);
+  assert.match(migration, /grant execute on function public\.confirm_ticket\(uuid\) to service_role/i);
+  assert.match(migration, /grant execute on function public\.issue_verified_ticket[\s\S]*to service_role/i);
+  assert.match(migration, /create unique index if not exists uq_tickets_active_call_customer/i);
+  assert.match(migration, /create or replace function public\.call_next_ticket[\s\S]*security invoker/i);
+  assert.match(migration, /insert into public\.sectors[\s\S]*on conflict \(id\) do nothing/i);
+  assert.doesNotMatch(migration, /on conflict \(id\) do update set[\s\S]*queue_size = excluded\.queue_size/i);
+});
+
+test("presenca ativa exige QR valido e registra a verificacao real", async () => {
+  const port = 3400 + Math.floor(Math.random() * 300);
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const isolatedDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fila-zero-presence-"));
+  const email = `presence-${crypto.randomUUID()}@${TEST_DOMAIN}`;
+  const password = strongPassword();
+  const qrTokenValue = crypto.randomBytes(24).toString("base64url");
+  const presenceServer = spawn(process.execPath, ["--no-warnings", "server/server.js"], {
+    cwd: path.resolve(__dirname, ".."),
+    env: {
+      ...process.env,
+      PORT: String(port),
+      DATA_DIR: isolatedDataDir,
+      API_ONLY: "1",
+      SUPABASE_AUTH_ENABLED: "0",
+      PRESENCE_CHECK_ENABLED: "1",
+      DEMO_USERS_JSON: JSON.stringify([{ name: "Cliente Presenca", email, password, role: "customer", sectorIds: [] }]),
+      AUTH_SECRET: crypto.randomBytes(32).toString("hex"),
+      QR_TOKEN_ACOUGUE: qrTokenValue,
+      QR_TOKEN_FRIOS: crypto.randomBytes(24).toString("base64url"),
+      QR_TOKEN_PADARIA: crypto.randomBytes(24).toString("base64url")
+    },
+    stdio: "ignore"
+  });
+
+  try {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      try {
+        const response = await fetch(`${baseUrl}/api/config`);
+        if (response.ok) break;
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      if (attempt === 99) throw new Error("Servidor de presenca nao iniciou.");
+    }
+
+    const loginResponse = await fetch(`${baseUrl}/api/auth/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password })
+    });
+    assert.equal(loginResponse.status, 200);
+    const setCookie = loginResponse.headers.get("set-cookie") || "";
+    const cookie = `${setCookie.match(/fz_auth=[^;,]+/)?.[0]}; ${setCookie.match(/fz_csrf=[^;,]+/)?.[0]}`;
+    const csrf = csrfHeader(cookie);
+
+    const missingQr = await fetch(`${baseUrl}/api/tickets`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie, ...csrf },
+      body: JSON.stringify({ sectorId: "acougue", deviceId: `presence-${crypto.randomUUID()}` })
+    });
+    assert.equal(missingQr.status, 400);
+    assert.match((await missingQr.json()).error, /QR Code/i);
+
+    const validQr = await fetch(`${baseUrl}/api/tickets`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie, ...csrf },
+      body: JSON.stringify({ sectorId: "acougue", deviceId: `presence-${crypto.randomUUID()}`, qrToken: qrTokenValue })
+    });
+    const payload = await validQr.json();
+    assert.equal(validQr.status, 201);
+    assert.equal(payload.ticket.qrVerified, true);
+    assert.equal(payload.ticket.locationVerified, false);
+  } finally {
+    presenceServer.kill();
+    if (presenceServer.exitCode === null) await new Promise((resolve) => presenceServer.once("exit", resolve));
+    fs.rmSync(isolatedDataDir, { recursive: true, force: true });
+  }
+});
+
+test("duas emissoes paralelas no mesmo setor retornam a mesma senha", async () => {
+  resetSectorTickets("padaria");
+  try {
+    const customer = await createCustomer("emissao-paralela");
+    const request = () => api("/api/tickets", {
+      method: "POST",
+      cookie: customer.cookie,
+      body: { ...customer.identity, sectorId: "padaria", qrToken: qrToken("padaria") }
+    });
+    const [first, second] = await Promise.all([request(), request()]);
+    assert.equal(first.ticket.id, second.ticket.id);
+  } finally {
+    resetSectorTickets("padaria");
+  }
+});
+
+test("duas chamadas paralelas deixam somente uma senha ativa no setor", async () => {
+  resetSectorTickets("acougue");
+  try {
+    const firstCustomer = await createCustomer("chamada-paralela-a");
+    const secondCustomer = await createCustomer("chamada-paralela-b");
+    await api("/api/tickets", { method: "POST", cookie: firstCustomer.cookie, body: { ...firstCustomer.identity, sectorId: "acougue", qrToken: qrToken("acougue") } });
+    await api("/api/tickets", { method: "POST", cookie: secondCustomer.cookie, body: { ...secondCustomer.identity, sectorId: "acougue", qrToken: qrToken("acougue") } });
+
+    const call = () => fetch(`${BASE_URL}/api/sectors/acougue/call-next`, {
+      method: "POST",
+      headers: { "content-type": "application/json", cookie: adminCookie, ...csrfHeader(adminCookie) }
+    });
+    const responses = await Promise.all([call(), call()]);
+    assert.deepEqual(responses.map((response) => response.status).sort(), [200, 400]);
+
+    const staff = await api("/api/staff/state", { cookie: adminCookie });
+    const sector = staff.sectors.find((item) => item.id === "acougue");
+    assert.equal(sector.tickets.filter((ticket) => ["chamado", "em_atendimento"].includes(ticket.status)).length, 1);
+  } finally {
+    resetSectorTickets("acougue");
+  }
 });
 
 test("permite senha sem presenca durante testes controlados", async () => {

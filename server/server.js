@@ -23,13 +23,9 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 const db = new DatabaseSync(DB_PATH);
 const sseClients = new Set();
 
-const STORE_LOCATION = {
-  latitude: -22.1064,
-  longitude: -50.1746,
-  radiusMeters: 50000
-};
+const STORE_LOCATION = loadStoreLocation();
 const QR_TOKENS = loadQrTokens();
-const PRESENCE_CHECK_ENABLED = false;
+const PRESENCE_CHECK_ENABLED = envFlag("PRESENCE_CHECK_ENABLED", !dev);
 const MAX_ACTIVE_TICKETS_PER_CUSTOMER = 3;
 const AUTO_CALL_DELAY_SECONDS = 30;
 const CALL_ABSENCE_SECONDS = 10 * 60;
@@ -393,6 +389,10 @@ function migrateSchema() {
 }
 
 async function handleApi(req, res, url) {
+  if (req.method === "GET" && url.pathname === "/api/config") {
+    sendJson(res, 200, { presenceCheckEnabled: PRESENCE_CHECK_ENABLED });
+    return;
+  }
   maybeRunScheduledJobs();
 
   if (req.method === "POST" && url.pathname === "/api/auth/login") {
@@ -1109,7 +1109,11 @@ function getSessionForRequest(req) {
 }
 
 function verifyCsrf(req, res, user) {
-  if (!user || !["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) return Boolean(user);
+  if (!user) {
+    sendJson(res, 401, { error: "Autenticacao necessaria." });
+    return false;
+  }
+  if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) return true;
   const session = getSessionForRequest(req);
   const headerToken = String(req.headers["x-csrf-token"] || "");
   const cookieToken = getCookie(req, "fz_csrf") || "";
@@ -1398,24 +1402,23 @@ function validatePresence(body, sectorId) {
   }
 
   const token = String(body.qrToken || "");
-  const qrVerified = token && QR_TOKENS[sectorId] === token;
+  const expectedToken = QR_TOKENS[sectorId] || "";
+  const qrVerified = Boolean(token && expectedToken && safeEqual(token, expectedToken));
   const location = normalizeLocation(body.location);
-  const distanceMeters = location ? distanceBetweenMeters(location.latitude, location.longitude, STORE_LOCATION.latitude, STORE_LOCATION.longitude) : null;
-  const locationVerified = Boolean(location && distanceMeters <= STORE_LOCATION.radiusMeters);
+  const distanceMeters = location && STORE_LOCATION
+    ? distanceBetweenMeters(location.latitude, location.longitude, STORE_LOCATION.latitude, STORE_LOCATION.longitude)
+    : null;
+  const locationVerified = Boolean(location && STORE_LOCATION && distanceMeters <= STORE_LOCATION.radiusMeters);
 
   if (qrVerified || locationVerified) {
     return { ok: true, qrVerified, locationVerified, location, distanceMeters };
   }
 
-  if (!location && !token) {
-    return { ok: false, error: "Autorize a localização ou use o QR Code do setor para solicitar senha." };
-  }
-
-  if (location && !locationVerified) {
+  if (location && STORE_LOCATION) {
     return { ok: false, error: "Você precisa estar dentro ou perto da loja para solicitar senha." };
   }
-
-  return { ok: false, error: "QR Code do setor inválido." };
+  if (token) return { ok: false, error: "QR Code do setor inválido." };
+  return { ok: false, error: "Use o QR Code do setor para solicitar senha." };
 }
 
 function normalizePriority(body = {}) {
@@ -1446,6 +1449,20 @@ function loadQrTokens() {
   };
 }
 
+function loadStoreLocation() {
+  const latitude = Number(process.env.STORE_LATITUDE);
+  const longitude = Number(process.env.STORE_LONGITUDE);
+  const radiusMeters = Number(process.env.STORE_RADIUS_METERS);
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(radiusMeters) || radiusMeters <= 0) return null;
+  return { latitude, longitude, radiusMeters };
+}
+
+function envFlag(name, fallback = false) {
+  const value = process.env[name];
+  if (value === undefined || value === "") return fallback;
+  return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
+}
+
 function parseJsonEnv(name) {
   if (!process.env[name]) return null;
   try {
@@ -1462,7 +1479,8 @@ function normalizeLocation(location) {
   const longitude = Number(location.longitude);
   const accuracy = Number(location.accuracy || 0);
   if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  return { latitude, longitude, accuracy };
+  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
+  return { latitude, longitude, accuracy: Number.isFinite(accuracy) ? Math.max(0, accuracy) : 0 };
 }
 
 function distanceBetweenMeters(latA, lngA, latB, lngB) {
@@ -1497,12 +1515,6 @@ function createTicket(body) {
   if (sector.status !== "open") return fail("Setor fechado para novas senhas.");
 
   const session = upsertSession(body, "");
-  const activeTotal = db.prepare(`
-    SELECT COUNT(*) AS total FROM tickets
-    WHERE customer_id = ? AND status IN (${placeholders(ACTIVE_STATUSES)})
-  `).get(session.customerId, ...ACTIVE_STATUSES).total;
-  if (activeTotal >= MAX_ACTIVE_TICKETS_PER_CUSTOMER) return fail(`Limite de ${MAX_ACTIVE_TICKETS_PER_CUSTOMER} senhas ativas por cliente atingido.`);
-
   const existing = db.prepare(`
     SELECT * FROM tickets
     WHERE customer_id = ? AND sector_id = ? AND status IN (${placeholders(ACTIVE_STATUSES)})
@@ -1510,6 +1522,12 @@ function createTicket(body) {
   `).get(session.customerId, sector.id, ...ACTIVE_STATUSES);
 
   if (existing) return { ticket: ticketDto(existing), alreadyExists: true };
+
+  const activeTotal = db.prepare(`
+    SELECT COUNT(*) AS total FROM tickets
+    WHERE customer_id = ? AND status IN (${placeholders(ACTIVE_STATUSES)})
+  `).get(session.customerId, ...ACTIVE_STATUSES).total;
+  if (activeTotal >= MAX_ACTIVE_TICKETS_PER_CUSTOMER) return fail(`Limite de ${MAX_ACTIVE_TICKETS_PER_CUSTOMER} senhas ativas por cliente atingido.`);
 
   const presence = validatePresence(body, sector.id);
   if (!presence.ok) return fail(presence.error);
@@ -1567,7 +1585,15 @@ function createTicket(body) {
       nextTicket.createdAt
     );
 
-    registerEvent("senha_emitida", "ticket", nextTicket.id, nextTicket.customerId, nextTicket.sectorId, { code: nextTicket.code, presence, priority });
+    registerEvent("senha_emitida", "ticket", nextTicket.id, nextTicket.customerId, nextTicket.sectorId, {
+      code: nextTicket.code,
+      priority,
+      presence: {
+        qrVerified: presence.qrVerified,
+        locationVerified: presence.locationVerified,
+        distanceMeters: presence.distanceMeters
+      }
+    });
     return nextTicket;
   });
 
@@ -1675,6 +1701,7 @@ function expireAbsentCalls() {
         WHERE id = ?
       `).run("cancelado", absenceCount, now, now, ticket.id);
       registerEvent("senha_cancelada_por_ausencia", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { absenceCount });
+      releaseSmartWaitTicket(ticket.customer_id);
       return;
     }
 
@@ -1687,6 +1714,7 @@ function expireAbsentCalls() {
       WHERE id = ?
     `).run("standby", absenceCount, now, standbyExpiresAt, now, ticket.id);
     registerEvent("senha_em_standby_por_ausencia", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { absenceCount, standbyExpiresAt });
+    releaseSmartWaitTicket(ticket.customer_id);
   });
   broadcast();
 }
@@ -1824,9 +1852,11 @@ function skipTicket(ticketId, body = {}) {
       reason
     });
 
+    const released = CALL_BLOCKING_STATUSES.includes(ticket.status) ? releaseSmartWaitTicket(ticket.customer_id) : null;
     const nextInSector = CALL_BLOCKING_STATUSES.includes(ticket.status) ? callNextTicket(ticket.sector_id) : null;
     return {
       skippedTicket: ticketDto(getTicket(ticket.id)),
+      releasedTicket: released ? ticketDto(released) : null,
       nextTicket: nextInSector?.ticket || null
     };
   });
@@ -1865,14 +1895,15 @@ function releaseSmartWaitTicket(customerId) {
   if (!next) return null;
 
   const now = isoNow();
-  db.prepare(`
+  const released = db.prepare(`
     UPDATE tickets
-    SET status = ?, called_at = ?, smart_wait_reason = NULL, blocked_by_ticket_id = NULL, smart_wait_since = NULL, updated_at = ?
-    WHERE id = ?
-  `).run("chamado", now, now, next.id);
-  db.prepare("INSERT INTO calls (id, ticket_id, sector_id, action, created_at) VALUES (?, ?, ?, ?, ?)").run(`call-${crypto.randomUUID()}`, next.id, next.sector_id, "senha_chamada", now);
+    SET status = ?, called_at = NULL, eligible_at = ?, smart_wait_reason = NULL,
+        blocked_by_ticket_id = NULL, smart_wait_since = NULL, updated_at = ?
+    WHERE id = ? AND status = ?
+  `).run("aguardando", now, now, next.id, "espera_inteligente");
+  if (!released.changes) return null;
   registerEvent("espera_inteligente_liberada", "ticket", next.id, next.customer_id, next.sector_id, { code: next.code });
-  registerEvent("senha_chamada", "ticket", next.id, next.customer_id, next.sector_id, { code: next.code, source: "fim_do_pedido_anterior" });
+  callNextTicket(next.sector_id, { preferStandby: true });
   return getTicket(next.id);
 }
 

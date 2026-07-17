@@ -4,6 +4,14 @@
 
 create extension if not exists pgcrypto;
 
+-- New Supabase projects no longer guarantee automatic Data API grants.
+alter default privileges for role postgres in schema public
+  revoke select, insert, update, delete on tables from anon, authenticated, service_role;
+alter default privileges for role postgres in schema public
+  revoke usage, select on sequences from anon, authenticated, service_role;
+alter default privileges for role postgres in schema public
+  revoke execute on functions from PUBLIC, anon, authenticated, service_role;
+
 do $$ begin
   create type public.user_role as enum ('customer', 'attendant', 'manager', 'admin');
 exception
@@ -216,16 +224,45 @@ create index if not exists idx_tickets_customer_status on public.tickets (custom
 create index if not exists idx_tickets_sector_queue on public.tickets (sector_id, priority desc, queue_order);
 create index if not exists idx_tickets_sector_status on public.tickets (sector_id, status);
 create index if not exists idx_tickets_customer_created on public.tickets (customer_id, created_at desc);
+create index if not exists idx_tickets_device on public.tickets (device_id);
+create index if not exists idx_tickets_blocked_by on public.tickets (blocked_by_ticket_id);
+create index if not exists idx_calls_ticket on public.calls (ticket_id);
+create index if not exists idx_calls_sector on public.calls (sector_id);
+create index if not exists idx_services_ticket on public.services (ticket_id);
+create index if not exists idx_services_sector on public.services (sector_id);
+create index if not exists idx_services_customer on public.services (customer_id);
+create index if not exists idx_ratings_customer on public.ratings (customer_id);
+create index if not exists idx_ratings_ticket on public.ratings (ticket_id);
+create index if not exists idx_devices_customer on public.devices (customer_id);
+create index if not exists idx_events_customer on public.events (customer_id);
+create index if not exists idx_events_sector on public.events (sector_id);
+create index if not exists idx_profile_sector_permissions_sector on public.profile_sector_permissions (sector_id);
 create index if not exists idx_events_created_at on public.events (created_at desc);
 create index if not exists idx_cart_customer on public.cart_items (customer_id);
 create index if not exists idx_cart_items_created_at on public.cart_items (created_at desc);
 create index if not exists idx_cart_items_product on public.cart_items (product_id);
 create index if not exists idx_cart_items_customer_created on public.cart_items (customer_id, created_at desc);
 create index if not exists idx_shopping_signals_customer_created on public.shopping_signals (customer_id, created_at desc);
+create unique index if not exists uq_tickets_active_customer_sector
+  on public.tickets (customer_id, sector_id)
+  where status in ('aguardando', 'proximo', 'chamado', 'em_atendimento', 'espera_inteligente', 'standby');
+create unique index if not exists uq_tickets_active_call_sector
+  on public.tickets (sector_id)
+  where status in ('chamado', 'em_atendimento');
+create unique index if not exists uq_tickets_active_call_customer
+  on public.tickets (customer_id)
+  where status in ('chamado', 'em_atendimento');
+create unique index if not exists uq_tickets_active_call_device
+  on public.tickets (device_id)
+  where device_id is not null and status in ('chamado', 'em_atendimento');
+create unique index if not exists uq_services_open_ticket
+  on public.services (ticket_id)
+  where finished_at is null;
 
 create or replace function public.set_updated_at()
 returns trigger
 language plpgsql
+set search_path = ''
 as $$
 begin
   new.updated_at = now();
@@ -257,7 +294,7 @@ create or replace function public.handle_new_auth_user()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $$
 begin
   insert into public.profiles (id, email, name, role)
@@ -282,16 +319,8 @@ values
   ('acougue', 'Acougue', 'A', 'Balcao 1', 'Carnes frescas e cortes especiais', 0, 0, 7, 42, 1, 'open'),
   ('frios', 'Frios e Laticinios', 'F', 'Balcao 2', 'Queijos, embutidos e fatiados', 0, 0, 4, 36, 1, 'open'),
   ('padaria', 'Padaria', 'P', 'Balcao 3', 'Paes, bolos e salgados frescos', 0, 0, 5, 34, 1, 'open')
-on conflict (id) do update set
-  name = excluded.name,
-  prefix = excluded.prefix,
-  counter_label = excluded.counter_label,
-  service_label = excluded.service_label,
-  queue_size = excluded.queue_size,
-  average_service_seconds = excluded.average_service_seconds,
-  capacity = excluded.capacity,
-  status = excluded.status,
-  updated_at = now();
+-- Reexecutar a migration nao pode apagar configuracoes operacionais do gestor.
+on conflict (id) do nothing;
 
 alter table public.profiles enable row level security;
 alter table public.sectors enable row level security;
@@ -307,18 +336,28 @@ alter table public.cart_items enable row level security;
 alter table public.shopping_signals enable row level security;
 alter table public.login_attempts enable row level security;
 
+revoke all privileges on all tables in schema public from anon, authenticated, service_role;
+grant usage on schema public to authenticated, service_role;
+grant select, insert, update, delete on all tables in schema public to service_role;
+grant select on table public.profiles, public.sectors, public.tickets, public.cart_items, public.shopping_signals to authenticated;
+grant insert on table public.shopping_signals to authenticated;
+
 drop policy if exists "profiles_select_own" on public.profiles;
 create policy "profiles_select_own"
 on public.profiles for select
 to authenticated
-using (id = auth.uid());
+using (id = (select auth.uid()));
 
 drop policy if exists "profiles_update_own_name" on public.profiles;
 create policy "profiles_update_own_name"
 on public.profiles for update
 to authenticated
-using (id = auth.uid())
-with check (id = auth.uid());
+using (id = (select auth.uid()))
+with check (id = (select auth.uid()));
+
+-- RLS filters rows, while column grants prevent a customer from changing role/status.
+revoke update on table public.profiles from anon, authenticated;
+grant update (name) on table public.profiles to authenticated;
 
 drop policy if exists "sectors_public_read" on public.sectors;
 create policy "sectors_public_read"
@@ -330,25 +369,25 @@ drop policy if exists "cart_items_customer_read" on public.cart_items;
 create policy "cart_items_customer_read"
 on public.cart_items for select
 to authenticated
-using (customer_id = auth.uid());
+using (customer_id = (select auth.uid()));
 
 drop policy if exists "shopping_signals_customer_read" on public.shopping_signals;
 create policy "shopping_signals_customer_read"
 on public.shopping_signals for select
 to authenticated
-using (customer_id = auth.uid());
+using (customer_id = (select auth.uid()));
 
 drop policy if exists "shopping_signals_customer_insert" on public.shopping_signals;
 create policy "shopping_signals_customer_insert"
 on public.shopping_signals for insert
 to authenticated
-with check (customer_id = auth.uid());
+with check (customer_id = (select auth.uid()));
 
 drop policy if exists "tickets_customer_read" on public.tickets;
 create policy "tickets_customer_read"
 on public.tickets for select
 to authenticated
-using (customer_id = auth.uid());
+using (customer_id = (select auth.uid()));
 
 create or replace function public.issue_ticket(
   p_customer_id uuid,
@@ -361,8 +400,8 @@ create or replace function public.issue_ticket(
 )
 returns public.tickets
 language plpgsql
-security definer
-set search_path = public
+security invoker
+set search_path = ''
 as $$
 declare
   v_sector public.sectors;
@@ -469,10 +508,59 @@ begin
     coalesce(p_priority, false),
     p_priority_reason,
     false,
-    true,
+    false,
     now(),
     now()
   )
+  returning * into v_ticket;
+
+  return v_ticket;
+end;
+$$;
+
+create or replace function public.issue_verified_ticket(
+  p_customer_id uuid,
+  p_device_id text,
+  p_sector_id text,
+  p_priority boolean,
+  p_priority_reason text,
+  p_qr_verified boolean,
+  p_location_verified boolean,
+  p_location_lat double precision,
+  p_location_lng double precision,
+  p_location_accuracy double precision,
+  p_location_distance_meters double precision,
+  p_auto_call_delay_seconds integer,
+  p_max_active_tickets integer
+)
+returns public.tickets
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_ticket public.tickets;
+begin
+  select * into v_ticket
+  from public.issue_ticket(
+    p_customer_id,
+    p_device_id,
+    p_sector_id,
+    p_priority,
+    p_priority_reason,
+    p_auto_call_delay_seconds,
+    p_max_active_tickets
+  );
+
+  update public.tickets
+  set qr_verified = coalesce(p_qr_verified, false),
+      location_verified = coalesce(p_location_verified, false),
+      location_lat = p_location_lat,
+      location_lng = p_location_lng,
+      location_accuracy = p_location_accuracy,
+      location_distance_meters = p_location_distance_meters,
+      updated_at = now()
+  where id = v_ticket.id
   returning * into v_ticket;
 
   return v_ticket;
@@ -486,8 +574,8 @@ create or replace function public.call_next_ticket(
 )
 returns public.tickets
 language plpgsql
-security definer
-set search_path = public
+security invoker
+set search_path = ''
 as $$
 declare
   v_sector public.sectors;
@@ -552,21 +640,173 @@ begin
       continue;
     end if;
 
-    update public.tickets
-    set status = 'chamado',
-        called_at = now(),
-        standby_started_at = null,
-        standby_expires_at = null,
-        updated_at = now()
-    where id = v_candidate.id
-    returning * into v_called;
+    begin
+      update public.tickets
+      set status = 'chamado',
+          called_at = now(),
+          standby_started_at = null,
+          standby_expires_at = null,
+          updated_at = now()
+      where id = v_candidate.id
+      returning * into v_called;
 
-    insert into public.calls (ticket_id, sector_id, action, created_at)
-    values (v_called.id, p_sector_id, 'senha_chamada', now());
+      insert into public.calls (ticket_id, sector_id, action, created_at)
+      values (v_called.id, p_sector_id, 'senha_chamada', now());
 
-    return v_called;
+      return v_called;
+    exception
+      when unique_violation then
+        select * into v_conflict
+        from public.tickets
+        where id <> v_candidate.id
+          and (customer_id = v_candidate.customer_id or device_id = v_candidate.device_id)
+          and status in ('chamado', 'em_atendimento')
+        order by updated_at desc
+        limit 1
+        for update;
+
+        if found then
+          update public.tickets
+          set status = 'espera_inteligente',
+              called_at = null,
+              smart_wait_reason = 'Cliente ja possui a senha ' || v_conflict.code || ' em atendimento ou chamada.',
+              blocked_by_ticket_id = v_conflict.id,
+              smart_wait_since = now(),
+              updated_at = now()
+          where id = v_candidate.id;
+          continue;
+        end if;
+
+        raise;
+    end;
   end loop;
 
   return null;
 end;
 $$;
+
+create or replace function public.confirm_ticket(p_ticket_id uuid)
+returns public.tickets
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_customer_id uuid;
+  v_ticket public.tickets;
+  v_blocking public.tickets;
+begin
+  select customer_id into v_customer_id
+  from public.tickets
+  where id = p_ticket_id;
+
+  if not found then
+    raise exception 'ticket_not_found';
+  end if;
+
+  perform 1
+  from public.profiles
+  where id = v_customer_id
+  for update;
+
+  select * into v_ticket
+  from public.tickets
+  where id = p_ticket_id
+  for update;
+
+  if v_ticket.status <> 'chamado' then
+    raise exception 'invalid_ticket_status';
+  end if;
+
+  select * into v_blocking
+  from public.tickets
+  where id <> v_ticket.id
+    and customer_id = v_ticket.customer_id
+    and status = 'em_atendimento'
+  limit 1
+  for update;
+
+  if found then
+    raise exception 'customer_already_in_service';
+  end if;
+
+  update public.tickets
+  set status = 'em_atendimento',
+      service_started_at = now(),
+      updated_at = now()
+  where id = v_ticket.id
+  returning * into v_ticket;
+
+  insert into public.services (ticket_id, sector_id, customer_id, started_at)
+  values (v_ticket.id, v_ticket.sector_id, v_ticket.customer_id, v_ticket.service_started_at);
+
+  return v_ticket;
+end;
+$$;
+
+create or replace function public.finish_ticket(p_ticket_id uuid)
+returns public.tickets
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+declare
+  v_customer_id uuid;
+  v_ticket public.tickets;
+begin
+  select customer_id into v_customer_id
+  from public.tickets
+  where id = p_ticket_id;
+
+  if not found then
+    raise exception 'ticket_not_found';
+  end if;
+
+  perform 1
+  from public.profiles
+  where id = v_customer_id
+  for update;
+
+  select * into v_ticket
+  from public.tickets
+  where id = p_ticket_id
+  for update;
+
+  if v_ticket.status <> 'em_atendimento' then
+    raise exception 'invalid_ticket_status';
+  end if;
+
+  update public.tickets
+  set status = 'atendido',
+      finished_at = now(),
+      updated_at = now()
+  where id = v_ticket.id
+  returning * into v_ticket;
+
+  update public.services
+  set finished_at = v_ticket.finished_at
+  where ticket_id = v_ticket.id
+    and finished_at is null;
+
+  update public.sectors
+  set current_number = greatest(current_number, v_ticket.number),
+      updated_at = now()
+  where id = v_ticket.sector_id;
+
+  return v_ticket;
+end;
+$$;
+
+-- Backend-only functions are not directly callable through anon/authenticated JWTs.
+revoke execute on function public.handle_new_auth_user() from PUBLIC, anon, authenticated;
+revoke execute on function public.issue_ticket(uuid, text, text, boolean, text, integer, integer) from PUBLIC, anon, authenticated;
+revoke execute on function public.issue_verified_ticket(uuid, text, text, boolean, text, boolean, boolean, double precision, double precision, double precision, double precision, integer, integer) from PUBLIC, anon, authenticated;
+revoke execute on function public.call_next_ticket(text, boolean, boolean) from PUBLIC, anon, authenticated;
+revoke execute on function public.confirm_ticket(uuid) from PUBLIC, anon, authenticated;
+revoke execute on function public.finish_ticket(uuid) from PUBLIC, anon, authenticated;
+
+grant execute on function public.issue_ticket(uuid, text, text, boolean, text, integer, integer) to service_role;
+grant execute on function public.issue_verified_ticket(uuid, text, text, boolean, text, boolean, boolean, double precision, double precision, double precision, double precision, integer, integer) to service_role;
+grant execute on function public.call_next_ticket(text, boolean, boolean) to service_role;
+grant execute on function public.confirm_ticket(uuid) to service_role;
+grant execute on function public.finish_ticket(uuid) to service_role;

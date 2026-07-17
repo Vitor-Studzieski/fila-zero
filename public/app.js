@@ -16,7 +16,7 @@ const SMART_WAIT_STATUS = "espera_inteligente";
 const CANCELABLE_STATUSES = new Set(["aguardando", "proximo", "chamado", SMART_WAIT_STATUS, "standby"]);
 const QR_SECTORS = new Set(["acougue", "frios", "padaria"]);
 const LOCATION_CACHE_MS = 5 * 60 * 1000;
-const PRESENCE_CHECK_ENABLED = false;
+let presenceCheckEnabled = true;
 const PRIORITY_LABELS = {
   deficiencia_ou_mobilidade_reduzida: "Deficiencia ou mobilidade reduzida",
   tea: "TEA",
@@ -29,7 +29,7 @@ const shoppingList = new Set();
 let cartItems = [];
 const identity = getOrCreateIdentity();
 let currentUser = null;
-let presenceCheckins = safeJsonParse(localStorage.getItem("filaZeroPresenceCheckins"), {});
+let presenceCheckins = safeJsonParse(sessionStorage.getItem("filaZeroPresenceCheckins"), {});
 let alertPreferences = loadAlertPreferences();
 let queueTutorialSeen = localStorage.getItem("filaZeroQueueTutorialSeen") === "1";
 
@@ -170,6 +170,7 @@ async function init() {
   bindEvents();
   syncPriorityControls();
   syncAlertControls();
+  await loadRuntimeConfig();
   syncPresenceStatus();
   navigate("home");
   currentUser = await requireSession(["customer", "manager", "admin"]);
@@ -182,7 +183,16 @@ async function init() {
   await Promise.all([syncSession(), loadCart(), loadState(), loadShoppingAgent()]);
   connectRealtime();
   startCountdownTimer();
-  if (PRESENCE_CHECK_ENABLED) warmupLocation();
+  if (presenceCheckEnabled) warmupLocation();
+}
+
+async function loadRuntimeConfig() {
+  try {
+    const config = await api("/api/config");
+    presenceCheckEnabled = config.presenceCheckEnabled !== false;
+  } catch {
+    presenceCheckEnabled = true;
+  }
 }
 
 function simplifyStatusDetails() {
@@ -1158,12 +1168,15 @@ function bindCartItemActions() {
 }
 
 async function getPresencePayload(sectorId) {
-  if (!PRESENCE_CHECK_ENABLED) return {};
+  if (!presenceCheckEnabled) return {};
 
   const qrToken = new URLSearchParams(location.search).get("qr");
   const storedToken = presenceCheckins[sectorId];
   if (qrToken) {
     registerSectorPresence(sectorId, qrToken);
+    const cleanUrl = new URL(location.href);
+    cleanUrl.searchParams.delete("qr");
+    history.replaceState(null, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
     return { qrToken };
   }
   try {
@@ -1176,7 +1189,7 @@ async function getPresencePayload(sectorId) {
 }
 
 async function confirmSectorPresence(sectorId) {
-  if (!PRESENCE_CHECK_ENABLED) {
+  if (!presenceCheckEnabled) {
     navigate("sectors");
     return;
   }
@@ -1192,7 +1205,7 @@ async function confirmSectorPresence(sectorId) {
 function registerSectorPresence(sectorId, token = null) {
   if (!QR_SECTORS.has(sectorId) || !token) return;
   presenceCheckins = { ...presenceCheckins, [sectorId]: token };
-  localStorage.setItem("filaZeroPresenceCheckins", JSON.stringify(presenceCheckins));
+  sessionStorage.setItem("filaZeroPresenceCheckins", JSON.stringify(presenceCheckins));
   syncPresenceStatus();
 }
 
@@ -1201,7 +1214,7 @@ function clearSectorPresence(sectorId) {
   const nextCheckins = { ...presenceCheckins };
   delete nextCheckins[sectorId];
   presenceCheckins = nextCheckins;
-  localStorage.setItem("filaZeroPresenceCheckins", JSON.stringify(presenceCheckins));
+  sessionStorage.setItem("filaZeroPresenceCheckins", JSON.stringify(presenceCheckins));
   syncPresenceStatus();
 }
 
@@ -1264,7 +1277,7 @@ function hasFreshLocation() {
 }
 
 function locationStatusText() {
-  if (!PRESENCE_CHECK_ENABLED) return "Localizacao desativada durante os testes.";
+  if (!presenceCheckEnabled) return "Localizacao desativada durante os testes.";
   if (hasFreshLocation()) return "Localizacao confirmada automaticamente.";
   if (locationState.status === "loading") return "Confirmando localizacao automaticamente...";
   if (locationState.status === "error") return locationState.error || "Nao foi possivel confirmar a localizacao.";
