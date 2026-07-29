@@ -181,6 +181,7 @@ async function init() {
   localStorage.setItem("filaZeroIdentity", JSON.stringify(identity));
   await loadProductCatalog();
   await Promise.all([syncSession(), loadCart(), loadState(), loadShoppingAgent()]);
+  applyRequestedView();
   connectRealtime();
   startCountdownTimer();
   if (presenceCheckEnabled) warmupLocation();
@@ -345,6 +346,20 @@ function applyState(state) {
   if (!currentSector || !activeQueues[currentSector]) currentSector = Object.keys(activeQueues)[0] || null;
   syncPresenceStatus();
   syncQueue();
+}
+
+function applyRequestedView() {
+  const view = new URLSearchParams(location.search).get("view");
+  if (["status", "account"].includes(view)) navigate(view);
+}
+
+async function handlePushRefresh(event) {
+  try {
+    await loadState();
+    if (["queue_called", "queue_recalled", "queue_next"].includes(event.detail?.type)) navigate("status");
+  } catch (exception) {
+    console.warn("push_state_refresh_failed", exception);
+  }
 }
 
 function startCountdownTimer() {
@@ -1149,10 +1164,10 @@ function renderCart() {
             <small>${escapeHtml(item.sectorName || "Lista")}</small>
           </div>
           <div class="cart-item-controls" aria-label="Editar ${escapeHtml(item.productName)}">
-            <button type="button" data-cart-decrease="${escapeHtml(item.id)}" aria-label="Diminuir quantidade">−</button>
+            <button type="button" data-cart-decrease="${escapeHtml(item.id)}" data-online-required aria-label="Diminuir quantidade">−</button>
             <b>${escapeHtml(item.quantity)}</b>
-            <button type="button" data-cart-increase="${escapeHtml(item.id)}" aria-label="Aumentar quantidade">+</button>
-            <button class="remove" type="button" data-cart-remove="${escapeHtml(item.id)}" aria-label="Remover item">×</button>
+            <button type="button" data-cart-increase="${escapeHtml(item.id)}" data-online-required aria-label="Aumentar quantidade">+</button>
+            <button class="remove" type="button" data-cart-remove="${escapeHtml(item.id)}" data-online-required aria-label="Remover item">×</button>
           </div>
           <strong>${escapeHtml(item.price)}</strong>
         </div>
@@ -1766,24 +1781,13 @@ function updateProductCard(productId) {
 }
 
 function notifyTicketCalled(ticket) {
-  if ("Notification" in window && Notification.permission === "granted") {
-    new Notification(`${displayCustomerName(ticket)} chamado`, {
-      body: `${ticket.sector} - ${ticket.counterLabel} - ${supportCode(ticket)}`,
-      tag: ticket.id
-    });
-  }
+  if (alertPreferences.sound) playQueueAlertSound();
+  if (alertPreferences.vibration) vibrateQueueAlert(1);
 }
 
-async function handleNotifyButton() {
-  if ("Notification" in window && Notification.permission === "default") {
-    await Notification.requestPermission();
-  }
-  const called = Object.values(activeQueues).find((ticket) => ticket.status === "chamado");
-  if (called) {
-    currentSector = called.sectorId;
-    syncQueue();
-    document.querySelector("#callModal").classList.add("visible");
-  }
+function handleNotifyButton() {
+  navigate("account");
+  setTimeout(() => window.filaZeroPwa?.openNotificationSettings(), 0);
 }
 
 async function sendRating() {
@@ -1802,6 +1806,7 @@ async function sendRating() {
 
 async function logoutAccount() {
   try {
+    await window.filaZeroPwa?.prepareLogout();
     await api("/api/auth/logout", { method: "POST" });
   } catch (exception) {
     console.warn(exception);
@@ -1851,6 +1856,9 @@ function bindEvents() {
   });
   document.querySelector("#sendRating").addEventListener("click", sendRating);
   document.querySelector("#logoutButton")?.addEventListener("click", logoutAccount);
+  window.addEventListener("fila-zero:push", handlePushRefresh);
+  window.addEventListener("fila-zero:notification-click", handlePushRefresh);
+  window.addEventListener("fila-zero:reconnected", () => loadState().catch(() => {}));
 }
 
 function handleProductSearch(event) {
@@ -1890,21 +1898,32 @@ function formatTimer(totalSeconds) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    method: options.method || "GET",
-    headers: {
-      "content-type": "application/json",
-      ...csrfHeader()
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined
-  });
-  const payload = await parseApiPayload(response);
-  if (response.status === 401) {
-    location.href = `/login?next=${encodeURIComponent(location.pathname)}`;
-    throw new Error("Login necessÃ¡rio.");
+  const method = options.method || "GET";
+  const mutation = method !== "GET";
+  if (mutation) window.filaZeroPwa?.markCriticalOperation(true);
+  try {
+    const response = await fetch(path, {
+      method,
+      headers: {
+        "content-type": "application/json",
+        ...csrfHeader()
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined
+    });
+    const payload = await parseApiPayload(response);
+    window.filaZeroPwa?.reportNetworkSuccess();
+    if (response.status === 401) {
+      location.href = `/login?next=${encodeURIComponent(location.pathname)}`;
+      throw new Error("Login necessÃ¡rio.");
+    }
+    if (!response.ok || payload.error) throw new Error(payload.error || "Falha na API.");
+    return payload;
+  } catch (error) {
+    window.filaZeroPwa?.reportNetworkFailure();
+    throw error;
+  } finally {
+    if (mutation) window.filaZeroPwa?.markCriticalOperation(false);
   }
-  if (!response.ok || payload.error) throw new Error(payload.error || "Falha na API.");
-  return payload;
 }
 
 async function parseApiPayload(response) {

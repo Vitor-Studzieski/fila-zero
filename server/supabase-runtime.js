@@ -1,4 +1,13 @@
 const crypto = require("node:crypto");
+const {
+  DEFAULT_PREFERENCES,
+  PushNotificationService,
+  isAllowedPushEndpoint,
+  loadPushConfiguration,
+  normalizePreferences,
+  preferencesToRow,
+  validatePushSubscription
+} = require("./push-notification-service");
 
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || "");
@@ -8,6 +17,11 @@ const AUTO_CONFIRM_PUBLIC_CUSTOMERS = process.env.SUPABASE_AUTO_CONFIRM_CUSTOMER
 const PRESENCE_CHECK_ENABLED = envFlag("PRESENCE_CHECK_ENABLED", process.env.NODE_ENV === "production");
 const QR_TOKENS = loadQrTokens();
 const STORE_LOCATION = loadStoreLocation();
+const PUSH_CONFIGURATION = loadPushConfiguration(process.env);
+const pushNotificationService = new PushNotificationService({
+  repository: createSupabasePushRepository(),
+  configuration: PUSH_CONFIGURATION
+});
 
 const BUSINESS_TIME_ZONE = "America/Sao_Paulo";
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
@@ -15,6 +29,7 @@ const MAX_ACTIVE_TICKETS_PER_CUSTOMER = 3;
 const AUTO_CALL_DELAY_SECONDS = 30;
 const CALL_ABSENCE_SECONDS = 10 * 60;
 const STANDBY_SECONDS = 10 * 60;
+const STANDBY_WARNING_SECONDS = 2 * 60;
 const TICKET_MIN_NUMBER = 0;
 const TICKET_MAX_NUMBER = 999;
 const ACTIVE_STATUSES = ["aguardando", "proximo", "chamado", "em_atendimento", "espera_inteligente", "standby"];
@@ -66,6 +81,11 @@ async function handleRequest(request) {
     if (request.method === "POST" && url.pathname === "/api/auth/register") return registerCustomer(request);
     if (request.method === "POST" && url.pathname === "/api/auth/logout") return logout(request);
     if (request.method === "GET" && url.pathname === "/api/auth/me") return me(request);
+    if (request.method === "GET" && url.pathname === "/api/push/status") return pushStatusRoute(request);
+    if (request.method === "POST" && url.pathname === "/api/push/subscribe") return pushSubscribeRoute(request);
+    if (request.method === "DELETE" && url.pathname === "/api/push/unsubscribe") return pushUnsubscribeRoute(request);
+    if (request.method === "PATCH" && url.pathname === "/api/push/preferences") return pushPreferencesRoute(request);
+    if (request.method === "POST" && url.pathname === "/api/push/test") return pushTestRoute(request);
     if (request.method === "GET" && url.pathname === "/api/events") return events(request, url);
     if (request.method === "POST" && url.pathname === "/api/sessions") return sessions(request);
     if (request.method === "GET" && url.pathname === "/api/state") return state(request);
@@ -213,12 +233,119 @@ async function logout(request) {
   const user = await requireUser(request, CUSTOMER_ROLES);
   if (user.response) return user.response;
   if (!(await verifyCsrf(request, user))) return json({ error: "Token de seguranca invalido. Recarregue a pagina e tente novamente." }, 403);
+  await revokePushSubscriptionsForUser(user.id);
   return json({ ok: true }, 200, clearAuthCookies());
 }
 
 async function me(request) {
   const user = await getAuthUser(request);
   return json({ user, csrfToken: user?.csrf_token || null });
+}
+
+async function pushStatusRoute(request) {
+  const user = await requireUser(request, CUSTOMER_ROLES);
+  if (user.response) return user.response;
+  const [preferences, subscriptions] = await Promise.all([
+    getSupabasePushPreferences(user.id),
+    select("web_push_subscriptions", `user_id=eq.${encodeURIComponent(user.id)}&enabled=eq.true&order=updated_at.desc`)
+  ]);
+  return json({
+    configured: pushNotificationService.isConfigured(),
+    publicKey: pushNotificationService.publicKey(),
+    canTest: process.env.NODE_ENV !== "production" || hasAnyRole(user, ADMIN_ROLES),
+    preferences,
+    devices: subscriptions.map(pushDeviceDto)
+  });
+}
+
+async function pushSubscribeRoute(request) {
+  const user = await requireUser(request, CUSTOMER_ROLES);
+  if (user.response) return user.response;
+  if (!(await verifyCsrf(request, user))) return json({ error: "Token de seguranca invalido. Recarregue a pagina e tente novamente." }, 403);
+  if (!verifyPushRequestOrigin(request)) return json({ error: "Origem da requisicao nao autorizada." }, 403);
+  if (!(await consumePushRateLimit(user, request, "subscribe", 10, 60 * 60))) {
+    return json({ error: "Muitas tentativas de inscricao. Aguarde e tente novamente." }, 429);
+  }
+  if (!pushNotificationService.isConfigured()) return json({ error: "As notificacoes ainda nao foram configuradas no servidor." }, 503);
+
+  const body = await readJson(request);
+  const subscription = validatePushSubscription(body?.subscription);
+  if (subscription.error) return json(subscription, 400);
+  const existing = (await select("web_push_subscriptions", `endpoint=eq.${encodeURIComponent(subscription.endpoint)}&limit=1`))[0];
+  const now = isoNow();
+  const row = await upsert("web_push_subscriptions", {
+    id: existing?.id || crypto.randomUUID(),
+    user_id: user.id,
+    endpoint: subscription.endpoint,
+    p256dh: subscription.p256dh,
+    auth: subscription.auth,
+    user_agent: cleanLimitedText(request.headers.get("user-agent"), 512) || null,
+    device_name: cleanLimitedText(body?.device?.deviceName, 120) || "Navegador atual",
+    platform: cleanLimitedText(body?.device?.platform, 80) || "unknown",
+    enabled: true,
+    created_at: existing?.created_at || now,
+    updated_at: now,
+    last_failure_at: null,
+    failure_count: 0,
+    revoked_at: null
+  }, "endpoint");
+  const preferences = await setSupabasePushPreferences(user.id, body?.preferences);
+  return json({ ok: true, subscription: pushDeviceDto(row), preferences }, 201);
+}
+
+async function pushUnsubscribeRoute(request) {
+  const user = await requireUser(request, CUSTOMER_ROLES);
+  if (user.response) return user.response;
+  if (!(await verifyCsrf(request, user))) return json({ error: "Token de seguranca invalido. Recarregue a pagina e tente novamente." }, 403);
+  if (!verifyPushRequestOrigin(request)) return json({ error: "Origem da requisicao nao autorizada." }, 403);
+  if (!(await consumePushRateLimit(user, request, "unsubscribe", 20, 60 * 60))) {
+    return json({ error: "Muitas tentativas. Aguarde e tente novamente." }, 429);
+  }
+  const body = await readJson(request);
+  const endpoint = String(body?.endpoint || "").trim();
+  if (!isAllowedPushEndpoint(endpoint)) return json({ error: "Endpoint de notificacao invalido." }, 400);
+  const now = isoNow();
+  const result = await supabaseFetch(
+    `/rest/v1/web_push_subscriptions?user_id=eq.${encodeURIComponent(user.id)}&endpoint=eq.${encodeURIComponent(endpoint)}`,
+    {
+      method: "PATCH",
+      headers: { Prefer: "return=minimal" },
+      body: { enabled: false, revoked_at: now, updated_at: now }
+    }
+  );
+  if (result?.error) return json({ error: "Nao foi possivel remover este dispositivo." }, 500);
+  return json({ ok: true });
+}
+
+async function pushPreferencesRoute(request) {
+  const user = await requireUser(request, CUSTOMER_ROLES);
+  if (user.response) return user.response;
+  if (!(await verifyCsrf(request, user))) return json({ error: "Token de seguranca invalido. Recarregue a pagina e tente novamente." }, 403);
+  if (!verifyPushRequestOrigin(request)) return json({ error: "Origem da requisicao nao autorizada." }, 403);
+  if (!(await consumePushRateLimit(user, request, "preferences", 30, 60 * 60))) {
+    return json({ error: "Muitas alteracoes em pouco tempo. Aguarde e tente novamente." }, 429);
+  }
+  const body = await readJson(request);
+  return json({ ok: true, preferences: await setSupabasePushPreferences(user.id, body?.preferences) });
+}
+
+async function pushTestRoute(request) {
+  const roles = process.env.NODE_ENV !== "production" ? CUSTOMER_ROLES : ADMIN_ROLES;
+  const user = await requireUser(request, roles);
+  if (user.response) return user.response;
+  if (!(await verifyCsrf(request, user))) return json({ error: "Token de seguranca invalido. Recarregue a pagina e tente novamente." }, 403);
+  if (!verifyPushRequestOrigin(request)) return json({ error: "Origem da requisicao nao autorizada." }, 403);
+  if (!(await consumePushRateLimit(user, request, "test", 5, 15 * 60))) {
+    return json({ error: "Limite de testes atingido. Aguarde antes de tentar novamente." }, 429);
+  }
+  const delivery = await pushNotificationService.sendBusinessEvent({
+    type: "push_test",
+    eventKey: `push-test:${user.id}:${crypto.randomUUID()}`,
+    userId: user.id,
+    payloadVersion: 1,
+    context: { customerName: user.name, url: "/?view=account" }
+  });
+  return json({ ok: delivery.status !== "failed", delivery }, delivery.status === "failed" ? 502 : 200);
 }
 
 async function events(request, url) {
@@ -447,7 +574,56 @@ async function createTicket(body) {
       distanceMeters: presence.distanceMeters
     }
   });
+  await notifyQueueMilestones(row.sector_id);
   return { ticket: await safeTicketDto(row), alreadyExists: false };
+}
+
+async function dispatchTicketPush(ticket, type, version, extraContext = {}) {
+  if (!ticket?.id || !ticket.customer_id) return;
+  try {
+    const sector = await getSector(ticket.sector_id);
+    if (!sector) return;
+    await pushNotificationService.sendBusinessEvent({
+      type,
+      eventKey: `${ticket.id}:${type}:${version}:v1`,
+      userId: ticket.customer_id,
+      ticketId: ticket.id,
+      payloadVersion: 1,
+      context: {
+        customerName: ticket.customer_name || "Cliente",
+        sector: sector.name,
+        counterLabel: sector.counter_label,
+        ...extraContext
+      }
+    });
+  } catch (error) {
+    console.error("push_business_event_failed", { eventType: type, message: error.message });
+  }
+}
+
+async function notifyQueueMilestones(sectorId) {
+  const rows = await select(
+    "tickets",
+    `sector_id=eq.${encodeURIComponent(sectorId)}&status=in.(${CALL_ELIGIBLE_STATUSES.join(",")})&order=priority.desc,queue_order.asc`
+  );
+  for (const ticket of rows.filter((row) => ["aguardando", "proximo"].includes(row.status))) {
+    const ahead = countAheadInRows(ticket, rows);
+    if (ahead === 2) await dispatchTicketPush(ticket, "queue_near", "ahead-2", { ahead });
+    if (ahead === 0) await dispatchTicketPush(ticket, "queue_next", "position-1", { ahead });
+  }
+}
+
+async function notifyStandbyExpiringTickets() {
+  if (!pushNotificationService.isConfigured()) return;
+  const now = isoNow();
+  const warningAt = new Date(Date.now() + STANDBY_WARNING_SECONDS * 1000).toISOString();
+  const tickets = await select(
+    "tickets",
+    `status=eq.standby&standby_expires_at=not.is.null&standby_expires_at=gt.${encodeURIComponent(now)}&standby_expires_at=lte.${encodeURIComponent(warningAt)}`
+  );
+  for (const ticket of tickets) {
+    await dispatchTicketPush(ticket, "queue_standby_expiring", `absence-${Number(ticket.absence_count || 0)}`);
+  }
 }
 
 async function callNextTicket(sectorId, options = {}) {
@@ -459,6 +635,9 @@ async function callNextTicket(sectorId, options = {}) {
   if (called.error) return fail("Finalize a senha atual antes de chamar a proxima.");
   if (called?.id) {
     await registerEvent("senha_chamada", "ticket", called.id, called.customer_id, called.sector_id, { code: called.code });
+    const pushType = Number(called.absence_count || 0) > 0 ? "queue_recalled" : "queue_called";
+    await dispatchTicketPush(called, pushType, `absence-${Number(called.absence_count || 0)}`);
+    await notifyQueueMilestones(sectorId);
     return { ticket: await safeTicketDto(called) };
   }
   return { ticket: null, message: "Nenhuma senha elegivel para chamada." };
@@ -477,6 +656,7 @@ async function finishTicket(ticketId) {
   await registerEvent("pedido_finalizado", "ticket", finished.id, finished.customer_id, finished.sector_id, { code: finished.code });
   const released = await releaseSmartWaitTicket(finished.customer_id);
   const nextInSector = await callNextTicket(finished.sector_id, { preferStandby: true });
+  await notifyQueueMilestones(finished.sector_id);
   return {
     finishedTicket: await safeTicketDto(finished),
     releasedTicket: released ? await safeTicketDto(released) : null,
@@ -522,8 +702,14 @@ async function skipTicket(ticketId, body = {}) {
   if (!skipped) return fail("A senha foi alterada por outra operacao. Atualize a fila.");
   await insert("calls", { ticket_id: ticket.id, sector_id: ticket.sector_id, action: `senha_pulada:${reason}`, created_at: now });
   await registerEvent("senha_pulada_pelo_atendente", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { code: ticket.code, previousStatus: ticket.status, reason });
+  if (reason === "cliente_ausente") {
+    await dispatchTicketPush(skipped, "queue_standby", `absence-${absenceCount}`);
+  } else {
+    await dispatchTicketPush(skipped, "queue_changed", `skipped-${reason}`);
+  }
   const released = CALL_BLOCKING_STATUSES.includes(ticket.status) ? await releaseSmartWaitTicket(ticket.customer_id) : null;
   const nextInSector = CALL_BLOCKING_STATUSES.includes(ticket.status) ? await callNextTicket(ticket.sector_id) : null;
+  await notifyQueueMilestones(ticket.sector_id);
   return { skippedTicket: await safeTicketDto(skipped), releasedTicket: released ? await safeTicketDto(released) : null, nextTicket: nextInSector?.ticket || null };
 }
 
@@ -544,6 +730,7 @@ async function cancelTicket(ticketId, customerId) {
   if (!canceled) return fail("A senha foi alterada por outra operacao. Atualize a fila.");
   await registerEvent("senha_cancelada_pelo_cliente", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { code: ticket.code, previousStatus: ticket.status });
   const released = CALL_BLOCKING_STATUSES.includes(ticket.status) ? await releaseSmartWaitTicket(ticket.customer_id) : null;
+  await notifyQueueMilestones(ticket.sector_id);
   return { canceledTicket: await safeTicketDto(canceled), releasedTicket: released ? await safeTicketDto(released) : null };
 }
 
@@ -563,7 +750,9 @@ async function releaseSmartWaitTicket(customerId) {
   });
   if (!updated) return null;
   await registerEvent("espera_inteligente_liberada", "ticket", next.id, next.customer_id, next.sector_id, { code: next.code });
+  await dispatchTicketPush(updated, "queue_changed", "smart-wait-released");
   await callNextTicket(next.sector_id, { preferStandby: true });
+  await notifyQueueMilestones(next.sector_id);
   return getTicket(next.id);
 }
 
@@ -1437,6 +1626,7 @@ async function upsertSession(body, userAgent) {
 
 async function runScheduledJobs() {
   await expireAbsentCalls();
+  await notifyStandbyExpiringTickets();
   await expireExpiredStandbyTickets();
   await autoCallReadyTickets();
 }
@@ -1489,7 +1679,9 @@ async function expireAbsentCalls() {
       });
       if (!updated) continue;
       await registerEvent("senha_cancelada_por_ausencia", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { absenceCount });
+      await dispatchTicketPush(updated, "queue_changed", `absence-canceled-${absenceCount}`);
       await releaseSmartWaitTicket(ticket.customer_id);
+      await notifyQueueMilestones(ticket.sector_id);
       continue;
     }
     const updated = await updateTicketIfStatus(ticket.id, ["chamado"], {
@@ -1503,7 +1695,9 @@ async function expireAbsentCalls() {
     });
     if (!updated) continue;
     await registerEvent("senha_em_standby_por_ausencia", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { absenceCount });
+    await dispatchTicketPush(updated, "queue_standby", `absence-${absenceCount}`);
     await releaseSmartWaitTicket(ticket.customer_id);
+    await notifyQueueMilestones(ticket.sector_id);
   }
 }
 
@@ -1514,6 +1708,8 @@ async function expireExpiredStandbyTickets() {
     const updated = await updateTicketIfStatus(ticket.id, ["standby"], { status: "cancelado", canceled_at: now, standby_started_at: null, standby_expires_at: null, updated_at: now });
     if (!updated) continue;
     await registerEvent("senha_cancelada_por_standby_expirado", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { code: ticket.code });
+    await dispatchTicketPush(updated, "queue_standby_expired", `absence-${Number(ticket.absence_count || 0)}`);
+    await notifyQueueMilestones(ticket.sector_id);
   }
 }
 
@@ -1681,6 +1877,120 @@ async function verifyCsrf(request, user) {
   const cookieToken = getCookie(request, "fz_csrf") || "";
   const expected = user.csrf_token || "";
   return safeEqual(headerToken, expected) && safeEqual(cookieToken, expected);
+}
+
+async function getSupabasePushPreferences(userId) {
+  const row = (await select("push_notification_preferences", `user_id=eq.${encodeURIComponent(userId)}&limit=1`))[0];
+  return normalizePreferences(row || DEFAULT_PREFERENCES);
+}
+
+async function setSupabasePushPreferences(userId, input) {
+  const preferences = normalizePreferences(input);
+  const existing = (await select("push_notification_preferences", `user_id=eq.${encodeURIComponent(userId)}&limit=1`))[0];
+  await upsert("push_notification_preferences", {
+    user_id: userId,
+    ...preferencesToRow(preferences),
+    created_at: existing?.created_at || isoNow(),
+    updated_at: isoNow()
+  }, "user_id");
+  return preferences;
+}
+
+function pushDeviceDto(row) {
+  return {
+    id: row.id,
+    endpointHash: crypto.createHash("sha256").update(String(row.endpoint || "")).digest("base64url"),
+    deviceName: row.device_name || "Navegador atual",
+    platform: row.platform || "unknown",
+    enabled: Boolean(row.enabled),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastSuccessAt: row.last_success_at,
+    lastFailureAt: row.last_failure_at
+  };
+}
+
+async function revokePushSubscriptionsForUser(userId) {
+  const now = isoNow();
+  const result = await supabaseFetch(`/rest/v1/web_push_subscriptions?user_id=eq.${encodeURIComponent(userId)}&enabled=eq.true`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: { enabled: false, revoked_at: now, updated_at: now }
+  });
+  if (result?.error) console.error("push_logout_revoke_failed");
+}
+
+function verifyPushRequestOrigin(request) {
+  const origin = String(request.headers.get("origin") || "");
+  if (!origin && process.env.NODE_ENV !== "production") return true;
+  try {
+    return Boolean(origin && new URL(origin).origin === new URL(request.url).origin);
+  } catch {
+    return false;
+  }
+}
+
+async function consumePushRateLimit(user, request, action, limit, windowSeconds) {
+  const raw = `${user.id}:${clientIp(request)}:${action}`;
+  const rateKey = `push:${crypto.createHash("sha256").update(raw).digest("hex")}`;
+  const result = await rpc("consume_push_rate_limit", {
+    p_rate_key: rateKey,
+    p_limit: limit,
+    p_window_seconds: windowSeconds
+  });
+  return result === true;
+}
+
+function cleanLimitedText(value, maximum) {
+  return String(value || "").replace(/[\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim().slice(0, maximum);
+}
+
+function createSupabasePushRepository() {
+  return {
+    async claimEvent(event) {
+      const claimed = await rpc("claim_push_notification_event", {
+        p_event_key: event.eventKey,
+        p_user_id: event.userId,
+        p_ticket_id: event.ticketId || null,
+        p_event_type: event.eventType,
+        p_payload_version: event.payloadVersion
+      });
+      return claimed?.id ? claimed : null;
+    },
+    async getPreferences(userId) {
+      return getSupabasePushPreferences(userId);
+    },
+    async getEnabledSubscriptions(userId) {
+      return select("web_push_subscriptions", `user_id=eq.${encodeURIComponent(userId)}&enabled=eq.true&order=created_at.asc`);
+    },
+    async completeEvent(eventId, result) {
+      await update("push_notification_events", eventId, {
+        status: result.status,
+        attempts: Number(result.attempts || 0),
+        failure_reason: result.failureReason || null,
+        sent_at: result.sentAt || null,
+        failed_at: result.failedAt || null,
+        updated_at: isoNow()
+      });
+    },
+    async markSubscriptionSuccess(subscriptionId, at) {
+      await update("web_push_subscriptions", subscriptionId, {
+        last_success_at: at,
+        last_failure_at: null,
+        failure_count: 0,
+        updated_at: at
+      });
+    },
+    async markSubscriptionFailure(subscriptionId, failure) {
+      await update("web_push_subscriptions", subscriptionId, {
+        last_failure_at: failure.at,
+        failure_count: failure.failureCount,
+        enabled: !failure.invalid,
+        revoked_at: failure.invalid ? failure.at : null,
+        updated_at: failure.at
+      });
+    }
+  };
 }
 
 async function isLoginLocked(key) {
@@ -2020,7 +2330,7 @@ function json(payload, status = 200, extraHeaders = {}) {
 
 function securityHeaders(extra = {}) {
   return {
-    "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://source.unsplash.com https://images.unsplash.com; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+    "content-security-policy": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https://source.unsplash.com https://images.unsplash.com; connect-src 'self'; font-src 'self' https://fonts.gstatic.com; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
     "x-content-type-options": "nosniff",
     "x-frame-options": "DENY",
     "strict-transport-security": "max-age=31536000; includeSubDomains; preload",

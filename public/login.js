@@ -128,17 +128,28 @@ function setSubmitting(button, submitting) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    method: options.method || "GET",
-    headers: {
-      "content-type": "application/json",
-      ...csrfHeader()
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined
-  });
-  const payload = await parseApiPayload(response);
-  if (!response.ok || payload.error) throw new Error(payload.error || "Falha na API.");
-  return payload;
+  const method = options.method || "GET";
+  const mutation = method !== "GET";
+  if (mutation) window.filaZeroPwa?.markCriticalOperation(true);
+  try {
+    const response = await fetch(path, {
+      method,
+      headers: {
+        "content-type": "application/json",
+        ...csrfHeader()
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined
+    });
+    const payload = await parseApiPayload(response);
+    window.filaZeroPwa?.reportNetworkSuccess();
+    if (!response.ok || payload.error) throw new Error(payload.error || "Falha na API.");
+    return payload;
+  } catch (error) {
+    window.filaZeroPwa?.reportNetworkFailure();
+    throw error;
+  } finally {
+    if (mutation) window.filaZeroPwa?.markCriticalOperation(false);
+  }
 }
 
 async function parseApiPayload(response) {

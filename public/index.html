@@ -49,9 +49,9 @@
               <strong>Check-in por setor</strong>
               <span id="presenceStatus">Nenhum setor confirmado.</span>
               <div>
-                <button data-qr-checkin="acougue">Açougue</button>
-                <button data-qr-checkin="frios">Frios</button>
-                <button data-qr-checkin="padaria">Padaria</button>
+                <button data-qr-checkin="acougue" data-online-required>Açougue</button>
+                <button data-qr-checkin="frios" data-online-required>Frios</button>
+                <button data-qr-checkin="padaria" data-online-required>Padaria</button>
               </div>
             </div>
             <button class="yellow-action" data-go="sectors">Escolher setor</button>
@@ -104,7 +104,7 @@
                 <b>Balcão 1</b>
               </div>
               <div class="sector-meta"><span>Fila atual: 7 pessoas</span><span>Atendimento médio: 42s</span></div>
-              <button class="yellow-action compact" data-join="acougue">Solicitar senha - Açougue</button>
+              <button class="yellow-action compact" data-join="acougue" data-online-required>Solicitar senha - Açougue</button>
             </article>
             <article class="sector-card">
               <div class="sector-head">
@@ -112,7 +112,7 @@
                 <b>Balcão 2</b>
               </div>
               <div class="sector-meta"><span>Fila atual: 4 pessoas</span><span>Atendimento médio: 36s</span></div>
-              <button class="yellow-action compact" data-join="frios">Solicitar senha - Frios</button>
+              <button class="yellow-action compact" data-join="frios" data-online-required>Solicitar senha - Frios</button>
             </article>
             <article class="sector-card">
               <div class="sector-head">
@@ -120,7 +120,7 @@
                 <b>Balcão 3</b>
               </div>
               <div class="sector-meta"><span>Fila atual: 5 pessoas</span><span>Atendimento médio: 34s</span></div>
-              <button class="yellow-action compact" data-join="padaria">Solicitar senha - Padaria</button>
+              <button class="yellow-action compact" data-join="padaria" data-online-required>Solicitar senha - Padaria</button>
             </article>
           </section>
 
@@ -139,14 +139,14 @@
             <div class="quick-add-ticket">
               <strong>Adicionar outra senha</strong>
               <div>
-                <button data-quick-join="acougue">Açougue</button>
-                <button data-quick-join="frios">Frios</button>
-                <button data-quick-join="padaria">Padaria</button>
+                <button data-quick-join="acougue" data-online-required>Açougue</button>
+                <button data-quick-join="frios" data-online-required>Frios</button>
+                <button data-quick-join="padaria" data-online-required>Padaria</button>
               </div>
             </div>
             <div class="hero-photo small"></div>
             <button class="yellow-action" data-go="status">Acompanhar senha</button>
-            <button class="soft-action cancel-ticket-action" id="ticketCancelButton">Cancelar senha</button>
+            <button class="soft-action cancel-ticket-action" id="ticketCancelButton" data-online-required>Cancelar senha</button>
             <button class="blue-action" data-go="offers">Montar lista</button>
           </section>
 
@@ -182,8 +182,8 @@
             <div class="info-row"><strong>Tempo estimado</strong><span id="timeInfo">--</span></div>
             <div class="estimate-note" id="estimateNote">Tempo estimado indisponivel.</div>
             <div class="info-row"><strong>Pessoas na frente</strong><span id="aheadInfo">--</span></div>
-            <button class="soft-action cancel-ticket-action" id="statusCancelButton">Cancelar senha</button>
-            <button class="yellow-action service-finish-action" id="statusFinishButton">Informar fim do pedido</button>
+            <button class="soft-action cancel-ticket-action" id="statusCancelButton" data-online-required>Cancelar senha</button>
+            <button class="yellow-action service-finish-action" id="statusFinishButton" data-online-required>Informar fim do pedido</button>
             <button class="blue-action" data-go="offers">Montar lista</button>
           </section>
 
@@ -232,7 +232,7 @@
               <del id="detailOld">--</del>
               <strong id="detailPrice">--</strong>
             </div>
-            <button class="yellow-action" id="addProduct">Adicionar à lista</button>
+            <button class="yellow-action" id="addProduct" data-online-required>Adicionar à lista</button>
             <button class="text-action" data-go="offers">Voltar para lista</button>
             <p class="toast" id="toast">Produto adicionado à lista.</p>
           </section>
@@ -245,7 +245,7 @@
               <strong id="serviceCurrent">Atendimento atual: --</strong>
               <span id="serviceNext">Nenhuma senha protegida.</span>
             </div>
-            <button class="yellow-action" id="completeServiceButton">Informar fim do pedido</button>
+            <button class="yellow-action" id="completeServiceButton" data-online-required>Informar fim do pedido</button>
             <button class="outline-action" data-go="home">Voltar ao início</button>
           </section>
 
@@ -317,6 +317,53 @@
                 </a>
               </div>
             </section>
+            <section class="pwa-settings" id="notificationSettings" aria-labelledby="notificationSettingsTitle">
+              <h3 id="notificationSettingsTitle">Notificações e aplicativo</h3>
+              <p>Ative os alertas para receber um aviso quando sua vez estiver próxima, mesmo que o Fila Zero não esteja aberto.</p>
+              <div class="pwa-settings-state" id="pushSettingsState" role="status" aria-live="polite">
+                <strong id="pushSettingsTitle">Verificando compatibilidade...</strong>
+                <span id="pushSettingsDescription">Aguarde enquanto consultamos este dispositivo.</span>
+              </div>
+              <div class="pwa-preference-list" aria-label="Preferências de notificação">
+                <label class="pwa-switch">
+                  <span>Atendimento próximo</span>
+                  <input type="checkbox" data-push-preference="queueNear" data-online-required />
+                  <span aria-hidden="true"></span>
+                </label>
+                <label class="pwa-switch">
+                  <span>Aviso de chamada</span>
+                  <input type="checkbox" data-push-preference="queueCalled" data-online-required />
+                  <span aria-hidden="true"></span>
+                </label>
+                <label class="pwa-switch">
+                  <span>Avisos de standby</span>
+                  <input type="checkbox" data-push-preference="standby" data-online-required />
+                  <span aria-hidden="true"></span>
+                </label>
+                <label class="pwa-switch">
+                  <span>Alterações relevantes na fila</span>
+                  <input type="checkbox" data-push-preference="queueChanges" data-online-required />
+                  <span aria-hidden="true"></span>
+                </label>
+                <label class="pwa-switch">
+                  <span>Ofertas e comunicações promocionais</span>
+                  <input type="checkbox" data-push-preference="promotions" data-online-required />
+                  <span aria-hidden="true"></span>
+                </label>
+              </div>
+              <p class="pwa-device" id="pushDeviceDescription">Nenhum dispositivo inscrito.</p>
+              <div class="pwa-settings-actions">
+                <button class="pwa-button" id="enablePushButton" type="button" data-online-required>Ativar alertas</button>
+                <button class="pwa-button warning" id="disablePushButton" type="button" data-online-required hidden>Remover este dispositivo</button>
+                <button class="pwa-button secondary" id="pushTestButton" type="button" data-online-required hidden>Enviar teste</button>
+              </div>
+              <div class="pwa-help" id="pushHelp" hidden></div>
+              <div class="pwa-install-area">
+                <strong>Instalar Fila Zero</strong>
+                <p id="installStateText">Use o aplicativo pela tela inicial para acessar sua fila com mais rapidez.</p>
+                <button class="pwa-button secondary" id="accountInstallButton" type="button">Instalar aplicativo</button>
+              </div>
+            </section>
             <button class="outline-action" id="logoutButton">Sair da conta</button>
           </section>
 
@@ -329,7 +376,7 @@
             </div>
             <label class="textarea-label">Comentário opcional</label>
             <textarea placeholder="Conte-nos como foi sua experiência..."></textarea>
-            <button class="blue-action" id="sendRating">Enviar avaliação</button>
+            <button class="blue-action" id="sendRating" data-online-required>Enviar avaliação</button>
             <p class="toast" id="ratingToast">Avaliação enviada. Obrigado!</p>
           </section>
         </div>
@@ -383,7 +430,7 @@
           <span id="floatingTime"></span>
         </button>
 
-        <button class="floating-finish" id="floatingFinishButton" aria-label="Informar fim do pedido">
+        <button class="floating-finish" id="floatingFinishButton" aria-label="Informar fim do pedido" data-online-required>
           Informar fim do pedido
         </button>
 
@@ -392,7 +439,7 @@
             <div class="notify-icon">!</div>
             <h3>É a sua vez</h3>
             <p id="callText"></p>
-            <button class="blue-action" id="confirmCall">Estou a caminho</button>
+            <button class="blue-action" id="confirmCall" data-online-required>Estou a caminho</button>
           </div>
         </div>
         <div class="tutorial-backdrop" id="queueTutorial" hidden>

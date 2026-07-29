@@ -46,6 +46,10 @@ QR_TOKEN_ACOUGUE=
 QR_TOKEN_FRIOS=
 QR_TOKEN_PADARIA=
 PRESENCE_CHECK_ENABLED=1
+PUSH_NOTIFICATIONS_ENABLED=0
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=
+VAPID_PRIVATE_KEY=
+VAPID_SUBJECT=mailto:contato@seu-dominio.com
 ```
 
 `AUTH_SECRET` voce cria. Use um valor fixo, aleatorio e com 32 ou mais caracteres.
@@ -66,6 +70,12 @@ supabase/migrations/0001_initial_schema.sql
 
 4. Execute.
 
+5. Em outra query, execute tambem:
+
+```text
+supabase/migrations/20260724182303_pwa_push_notifications.sql
+```
+
 Isso cria:
 
 - `profiles`
@@ -80,6 +90,10 @@ Isso cria:
 - `ticket_counters`
 - `cart_items`
 - `login_attempts`
+- `web_push_subscriptions`
+- `push_notification_preferences`
+- `push_notification_events`
+- `push_rate_limits`
 
 Tambem cria os setores iniciais:
 
@@ -155,3 +169,15 @@ Nesse modo, o app usa Supabase/Postgres para:
 - controle de tentativas de login.
 
 O SQLite permanece apenas como fallback local quando `DATA_BACKEND` nao for `supabase`.
+
+## Ativando Web Push
+
+Gere um unico par VAPID para o projeto:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Cadastre a chave publica em `NEXT_PUBLIC_VAPID_PUBLIC_KEY`, a chave privada em `VAPID_PRIVATE_KEY` e um e-mail de contato em `VAPID_SUBJECT`, por exemplo `mailto:contato@seu-dominio.com`. Use os mesmos valores em Production e Preview somente se os dois ambientes representarem o mesmo aplicativo.
+
+Deixe `PUSH_NOTIFICATIONS_ENABLED=0` durante a configuracao. Depois de aplicar a migracao, cadastrar as tres variaveis e fazer um novo deploy, altere para `1` e redeploy. A permissao de notificacao continua sendo solicitada somente depois de uma acao explicita do cliente.

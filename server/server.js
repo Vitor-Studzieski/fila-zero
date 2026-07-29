@@ -3,6 +3,15 @@ const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
 const { DatabaseSync } = require("node:sqlite");
+const {
+  DEFAULT_PREFERENCES,
+  PushNotificationService,
+  isAllowedPushEndpoint,
+  loadPushConfiguration,
+  normalizePreferences,
+  preferencesToRow,
+  validatePushSubscription
+} = require("./push-notification-service");
 
 const ROOT = path.resolve(__dirname, "..");
 loadEnvFile(path.join(ROOT, ".env"));
@@ -22,6 +31,11 @@ fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const db = new DatabaseSync(DB_PATH);
 const sseClients = new Set();
+const PUSH_CONFIGURATION = loadPushConfiguration(process.env);
+const pushNotificationService = new PushNotificationService({
+  repository: createSqlitePushRepository(),
+  configuration: PUSH_CONFIGURATION
+});
 
 const STORE_LOCATION = loadStoreLocation();
 const QR_TOKENS = loadQrTokens();
@@ -56,6 +70,7 @@ const LOGIN_ATTEMPT_LIMIT = 5;
 const LOGIN_LOCK_MS = 15 * 60 * 1000;
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
 const SCHEDULED_JOBS_MIN_INTERVAL_MS = 1000;
+const STANDBY_WARNING_SECONDS = 2 * 60;
 const CSRF_EXEMPT_PATHS = new Set(["/api/auth/login"]);
 const AUTH_SECRET = authSecret();
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
@@ -138,6 +153,7 @@ function startBackgroundJobs() {
 
 function runScheduledJobs() {
   expireAbsentCalls();
+  notifyStandbyExpiringTickets();
   expireExpiredStandbyTickets();
   autoCallReadyTickets();
 }
@@ -321,11 +337,71 @@ function bootstrap() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS web_push_subscriptions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL,
+      endpoint TEXT NOT NULL UNIQUE,
+      p256dh TEXT NOT NULL,
+      auth TEXT NOT NULL,
+      user_agent TEXT,
+      device_name TEXT,
+      platform TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      last_success_at TEXT,
+      last_failure_at TEXT,
+      failure_count INTEGER NOT NULL DEFAULT 0,
+      revoked_at TEXT,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS push_notification_preferences (
+      user_id TEXT PRIMARY KEY,
+      queue_near_enabled INTEGER NOT NULL DEFAULT 1,
+      queue_called_enabled INTEGER NOT NULL DEFAULT 1,
+      standby_enabled INTEGER NOT NULL DEFAULT 1,
+      queue_changes_enabled INTEGER NOT NULL DEFAULT 1,
+      promotions_enabled INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS push_notification_events (
+      id TEXT PRIMARY KEY,
+      event_key TEXT NOT NULL UNIQUE,
+      user_id TEXT NOT NULL,
+      ticket_id TEXT,
+      event_type TEXT NOT NULL,
+      payload_version INTEGER NOT NULL DEFAULT 1,
+      status TEXT NOT NULL DEFAULT 'processing',
+      attempts INTEGER NOT NULL DEFAULT 0,
+      failure_reason TEXT,
+      sent_at TEXT,
+      failed_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS push_rate_limits (
+      rate_key TEXT PRIMARY KEY,
+      window_started_at TEXT NOT NULL,
+      request_count INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_cart_items_created_at ON cart_items(created_at);
     CREATE INDEX IF NOT EXISTS idx_cart_items_product ON cart_items(product_id);
     CREATE INDEX IF NOT EXISTS idx_cart_items_customer_created ON cart_items(customer_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_tickets_customer_created ON tickets(customer_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_shopping_signals_customer_created ON shopping_signals(customer_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_web_push_subscriptions_user_enabled ON web_push_subscriptions(user_id, enabled);
+    CREATE INDEX IF NOT EXISTS idx_push_notification_events_user_created ON push_notification_events(user_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_push_notification_events_ticket_type ON push_notification_events(ticket_id, event_type);
+    CREATE INDEX IF NOT EXISTS idx_push_rate_limits_updated_at ON push_rate_limits(updated_at);
 
     CREATE TABLE IF NOT EXISTS login_attempts (
       attempt_key TEXT PRIMARY KEY,
@@ -431,6 +507,69 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/auth/me") {
     const user = getAuthUser(req);
     sendJson(res, 200, { user, csrfToken: user ? getSessionForRequest(req)?.csrf_token || null : null });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/push/status") {
+    const user = requireAuth(req, res, CUSTOMER_ROLES);
+    if (!user) return;
+    sendJson(res, 200, getPushStatus(user));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/push/subscribe") {
+    const user = requireAuth(req, res, CUSTOMER_ROLES);
+    if (!user) return;
+    if (!verifyCsrf(req, res, user) || !verifyPushRequestOrigin(req, res)) return;
+    if (!consumePushRateLimit(user, req, "subscribe", 10, 60 * 60)) {
+      sendJson(res, 429, { error: "Muitas tentativas de inscricao. Aguarde e tente novamente." });
+      return;
+    }
+    const result = subscribePushDevice(user, await readBody(req), req.headers["user-agent"] || "");
+    sendApiResult(res, 201, result);
+    return;
+  }
+
+  if (req.method === "DELETE" && url.pathname === "/api/push/unsubscribe") {
+    const user = requireAuth(req, res, CUSTOMER_ROLES);
+    if (!user) return;
+    if (!verifyCsrf(req, res, user) || !verifyPushRequestOrigin(req, res)) return;
+    if (!consumePushRateLimit(user, req, "unsubscribe", 20, 60 * 60)) {
+      sendJson(res, 429, { error: "Muitas tentativas. Aguarde e tente novamente." });
+      return;
+    }
+    sendApiResult(res, 200, unsubscribePushDevice(user, await readBody(req)));
+    return;
+  }
+
+  if (req.method === "PATCH" && url.pathname === "/api/push/preferences") {
+    const user = requireAuth(req, res, CUSTOMER_ROLES);
+    if (!user) return;
+    if (!verifyCsrf(req, res, user) || !verifyPushRequestOrigin(req, res)) return;
+    if (!consumePushRateLimit(user, req, "preferences", 30, 60 * 60)) {
+      sendJson(res, 429, { error: "Muitas alteracoes em pouco tempo. Aguarde e tente novamente." });
+      return;
+    }
+    sendApiResult(res, 200, updatePushPreferences(user, await readBody(req)));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/push/test") {
+    const user = requireAuth(req, res, dev ? CUSTOMER_ROLES : ADMIN_ROLES);
+    if (!user) return;
+    if (!verifyCsrf(req, res, user) || !verifyPushRequestOrigin(req, res)) return;
+    if (!consumePushRateLimit(user, req, "test", 5, 15 * 60)) {
+      sendJson(res, 429, { error: "Limite de testes atingido. Aguarde antes de tentar novamente." });
+      return;
+    }
+    const result = await pushNotificationService.sendBusinessEvent({
+      type: "push_test",
+      eventKey: `push-test:${user.id}:${crypto.randomUUID()}`,
+      userId: user.id,
+      payloadVersion: 1,
+      context: { customerName: user.name, url: "/?view=account" }
+    });
+    sendJson(res, result.status === "failed" ? 502 : 200, { ok: result.status !== "failed", delivery: result });
     return;
   }
 
@@ -1077,6 +1216,8 @@ async function supabaseUpsertProfile(id, email, name, role) {
 }
 
 function logoutUser(req, res) {
+  const user = getAuthUser(req);
+  if (user?.id) revokePushSubscriptionsForUser(user.id);
   const sessionId = getCookie(req, "fz_auth");
   if (sessionId) db.prepare("DELETE FROM auth_sessions WHERE id = ?").run(sessionId);
   res.setHeader("set-cookie", "fz_auth=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
@@ -1134,6 +1275,269 @@ function requireAuth(req, res, roles) {
     return null;
   }
   return user;
+}
+
+function getPushStatus(user) {
+  const preferences = getSqlitePushPreferences(user.id);
+  const devices = db.prepare(`
+    SELECT id, endpoint, device_name, platform, enabled, created_at, updated_at, last_success_at, last_failure_at
+    FROM web_push_subscriptions
+    WHERE user_id = ? AND enabled = 1
+    ORDER BY updated_at DESC
+  `).all(user.id).map(pushDeviceDto);
+  return {
+    configured: pushNotificationService.isConfigured(),
+    publicKey: pushNotificationService.publicKey(),
+    canTest: dev || hasAnyRole(user, ADMIN_ROLES),
+    preferences,
+    devices
+  };
+}
+
+function subscribePushDevice(user, body, userAgent) {
+  if (!pushNotificationService.isConfigured()) return fail("As notificacoes ainda nao foram configuradas no servidor.");
+  const subscription = validatePushSubscription(body?.subscription);
+  if (subscription.error) return subscription;
+  const deviceName = cleanLimitedText(body?.device?.deviceName, 120) || "Navegador atual";
+  const platform = cleanLimitedText(body?.device?.platform, 80) || "unknown";
+  const normalizedUserAgent = cleanLimitedText(userAgent, 512);
+  const now = isoNow();
+  const existing = db.prepare("SELECT id, created_at FROM web_push_subscriptions WHERE endpoint = ?").get(subscription.endpoint);
+  const id = existing?.id || `push-${crypto.randomUUID()}`;
+
+  db.prepare(`
+    INSERT INTO web_push_subscriptions (
+      id, user_id, endpoint, p256dh, auth, user_agent, device_name, platform, enabled,
+      created_at, updated_at, last_success_at, last_failure_at, failure_count, revoked_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL, NULL, 0, NULL)
+    ON CONFLICT(endpoint) DO UPDATE SET
+      user_id = excluded.user_id,
+      p256dh = excluded.p256dh,
+      auth = excluded.auth,
+      user_agent = excluded.user_agent,
+      device_name = excluded.device_name,
+      platform = excluded.platform,
+      enabled = 1,
+      updated_at = excluded.updated_at,
+      last_failure_at = NULL,
+      failure_count = 0,
+      revoked_at = NULL
+  `).run(
+    id,
+    user.id,
+    subscription.endpoint,
+    subscription.p256dh,
+    subscription.auth,
+    normalizedUserAgent,
+    deviceName,
+    platform,
+    existing?.created_at || now,
+    now
+  );
+  setSqlitePushPreferences(user.id, body?.preferences);
+  const row = db.prepare("SELECT * FROM web_push_subscriptions WHERE endpoint = ? AND user_id = ?").get(subscription.endpoint, user.id);
+  return {
+    ok: true,
+    subscription: pushDeviceDto(row),
+    preferences: getSqlitePushPreferences(user.id)
+  };
+}
+
+function unsubscribePushDevice(user, body) {
+  const endpoint = String(body?.endpoint || "").trim();
+  if (!isAllowedPushEndpoint(endpoint)) return fail("Endpoint de notificacao invalido.");
+  const now = isoNow();
+  db.prepare(`
+    UPDATE web_push_subscriptions
+    SET enabled = 0, revoked_at = ?, updated_at = ?
+    WHERE user_id = ? AND endpoint = ?
+  `).run(now, now, user.id, endpoint);
+  return { ok: true };
+}
+
+function updatePushPreferences(user, body) {
+  const preferences = setSqlitePushPreferences(user.id, body?.preferences);
+  return { ok: true, preferences };
+}
+
+function getSqlitePushPreferences(userId) {
+  const row = db.prepare("SELECT * FROM push_notification_preferences WHERE user_id = ?").get(userId);
+  return normalizePreferences(row || DEFAULT_PREFERENCES);
+}
+
+function setSqlitePushPreferences(userId, input) {
+  const preferences = normalizePreferences(input);
+  const row = preferencesToRow(preferences);
+  const now = isoNow();
+  db.prepare(`
+    INSERT INTO push_notification_preferences (
+      user_id, queue_near_enabled, queue_called_enabled, standby_enabled,
+      queue_changes_enabled, promotions_enabled, created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET
+      queue_near_enabled = excluded.queue_near_enabled,
+      queue_called_enabled = excluded.queue_called_enabled,
+      standby_enabled = excluded.standby_enabled,
+      queue_changes_enabled = excluded.queue_changes_enabled,
+      promotions_enabled = excluded.promotions_enabled,
+      updated_at = excluded.updated_at
+  `).run(
+    userId,
+    row.queue_near_enabled ? 1 : 0,
+    row.queue_called_enabled ? 1 : 0,
+    row.standby_enabled ? 1 : 0,
+    row.queue_changes_enabled ? 1 : 0,
+    row.promotions_enabled ? 1 : 0,
+    now,
+    now
+  );
+  return preferences;
+}
+
+function pushDeviceDto(row) {
+  return {
+    id: row.id,
+    endpointHash: endpointHash(row.endpoint),
+    deviceName: row.device_name || "Navegador atual",
+    platform: row.platform || "unknown",
+    enabled: Boolean(row.enabled),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    lastSuccessAt: row.last_success_at,
+    lastFailureAt: row.last_failure_at
+  };
+}
+
+function revokePushSubscriptionsForUser(userId) {
+  const now = isoNow();
+  db.prepare(`
+    UPDATE web_push_subscriptions
+    SET enabled = 0, revoked_at = ?, updated_at = ?
+    WHERE user_id = ? AND enabled = 1
+  `).run(now, now, userId);
+}
+
+function verifyPushRequestOrigin(req, res) {
+  const origin = String(req.headers.origin || "");
+  if (!origin && dev) return true;
+  const protocol = String(req.headers["x-forwarded-proto"] || (dev ? "http" : "https")).split(",")[0].trim();
+  const host = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim();
+  let valid = false;
+  try {
+    valid = Boolean(origin && host && new URL(origin).origin === `${protocol}://${host}`);
+  } catch {
+    valid = false;
+  }
+  if (valid) return true;
+  sendJson(res, 403, { error: "Origem da requisicao nao autorizada." });
+  return false;
+}
+
+function consumePushRateLimit(user, req, action, limit, windowSeconds) {
+  const raw = `${user.id}:${clientIp(req)}:${action}`;
+  const rateKey = `push:${crypto.createHash("sha256").update(raw).digest("hex")}`;
+  const now = Date.now();
+  const current = db.prepare("SELECT * FROM push_rate_limits WHERE rate_key = ?").get(rateKey);
+  const windowStartedAt = current ? new Date(current.window_started_at).getTime() : 0;
+  const reset = !Number.isFinite(windowStartedAt) || now - windowStartedAt >= windowSeconds * 1000;
+  const count = reset ? 1 : Number(current.request_count || 0) + 1;
+  const startedAt = reset ? new Date(now).toISOString() : current.window_started_at;
+  db.prepare(`
+    INSERT INTO push_rate_limits (rate_key, window_started_at, request_count, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(rate_key) DO UPDATE SET
+      window_started_at = excluded.window_started_at,
+      request_count = excluded.request_count,
+      updated_at = excluded.updated_at
+  `).run(rateKey, startedAt, count, isoNow());
+  return count <= limit;
+}
+
+function endpointHash(endpoint) {
+  return crypto.createHash("sha256").update(String(endpoint || "")).digest("base64url");
+}
+
+function cleanLimitedText(value, maximum) {
+  return String(value || "").replace(/[\u0000-\u001f\u007f]/g, "").replace(/\s+/g, " ").trim().slice(0, maximum);
+}
+
+function createSqlitePushRepository() {
+  return {
+    claimEvent(event) {
+      const id = `push-event-${crypto.randomUUID()}`;
+      const now = isoNow();
+      const result = db.prepare(`
+        INSERT OR IGNORE INTO push_notification_events (
+          id, event_key, user_id, ticket_id, event_type, payload_version,
+          status, attempts, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, 'processing', 0, ?, ?)
+      `).run(
+        id,
+        event.eventKey,
+        event.userId,
+        event.ticketId || null,
+        event.eventType,
+        event.payloadVersion,
+        now,
+        now
+      );
+      return result.changes ? db.prepare("SELECT * FROM push_notification_events WHERE id = ?").get(id) : null;
+    },
+    getPreferences(userId) {
+      return db.prepare("SELECT * FROM push_notification_preferences WHERE user_id = ?").get(userId) || DEFAULT_PREFERENCES;
+    },
+    getEnabledSubscriptions(userId) {
+      return db.prepare(`
+        SELECT * FROM web_push_subscriptions
+        WHERE user_id = ? AND enabled = 1
+        ORDER BY created_at ASC
+      `).all(userId);
+    },
+    completeEvent(eventId, result) {
+      db.prepare(`
+        UPDATE push_notification_events
+        SET status = ?, attempts = ?, failure_reason = ?, sent_at = ?, failed_at = ?, updated_at = ?
+        WHERE id = ?
+      `).run(
+        result.status,
+        Number(result.attempts || 0),
+        result.failureReason || null,
+        result.sentAt || null,
+        result.failedAt || null,
+        isoNow(),
+        eventId
+      );
+    },
+    markSubscriptionSuccess(subscriptionId, at) {
+      db.prepare(`
+        UPDATE web_push_subscriptions
+        SET last_success_at = ?, last_failure_at = NULL, failure_count = 0, updated_at = ?
+        WHERE id = ?
+      `).run(at, at, subscriptionId);
+    },
+    markSubscriptionFailure(subscriptionId, failure) {
+      db.prepare(`
+        UPDATE web_push_subscriptions
+        SET last_failure_at = ?,
+            failure_count = ?,
+            enabled = CASE WHEN ? THEN 0 ELSE enabled END,
+            revoked_at = CASE WHEN ? THEN ? ELSE revoked_at END,
+            updated_at = ?
+        WHERE id = ?
+      `).run(
+        failure.at,
+        failure.failureCount,
+        failure.invalid ? 1 : 0,
+        failure.invalid ? 1 : 0,
+        failure.invalid ? failure.at : null,
+        failure.at,
+        subscriptionId
+      );
+    }
+  };
 }
 
 function setAuthCookies(res, sessionId, csrfToken) {
@@ -1370,7 +1774,7 @@ function roleHome(user) {
 
 function applySecurityHeaders(req, res) {
   const connectSrc = dev ? "'self' ws: http://localhost:*" : "'self'";
-  const scriptSrc = dev ? "'self' 'unsafe-inline' 'unsafe-eval'" : "'self'";
+  const scriptSrc = dev ? "'self' 'unsafe-inline' 'unsafe-eval'" : "'self' 'unsafe-inline'";
   res.setHeader("content-security-policy", [
     "default-src 'self'",
     `script-src ${scriptSrc}`,
@@ -1378,6 +1782,8 @@ function applySecurityHeaders(req, res) {
     "img-src 'self' data: https://source.unsplash.com https://images.unsplash.com",
     `connect-src ${connectSrc}`,
     "font-src 'self' https://fonts.gstatic.com",
+    "worker-src 'self'",
+    "manifest-src 'self'",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
@@ -1594,6 +2000,7 @@ function createTicket(body) {
         distanceMeters: presence.distanceMeters
       }
     });
+    notifyQueueMilestones(nextTicket.sectorId);
     return nextTicket;
   });
 
@@ -1620,6 +2027,63 @@ function nextTicketNumber(sectorId, now = isoNow()) {
 
 function nextQueueOrder(sectorId) {
   return db.prepare("SELECT COALESCE(MAX(queue_order), 0) + 1 AS next_order FROM tickets WHERE sector_id = ?").get(sectorId).next_order;
+}
+
+function dispatchTicketPush(ticket, type, version, extraContext = {}) {
+  if (!ticket?.id || !ticket.customer_id) return;
+  const sector = getSector(ticket.sector_id);
+  if (!sector) return;
+  pushNotificationService.sendBusinessEvent({
+    type,
+    eventKey: `${ticket.id}:${type}:${version}:v1`,
+    userId: ticket.customer_id,
+    ticketId: ticket.id,
+    payloadVersion: 1,
+    context: {
+      customerName: ticket.customer_name || "Cliente",
+      sector: sector.name,
+      counterLabel: sector.counter_label,
+      ...extraContext
+    }
+  }).catch((error) => {
+    console.error("push_business_event_failed", { eventType: type, message: error.message });
+  });
+}
+
+function notifyQueueMilestones(sectorId) {
+  const rows = db.prepare(`
+    SELECT * FROM tickets
+    WHERE sector_id = ? AND status IN (${placeholders(CALL_ELIGIBLE_STATUSES)})
+    ORDER BY priority DESC, queue_order ASC
+  `).all(sectorId, ...CALL_ELIGIBLE_STATUSES);
+
+  rows.filter((ticket) => ["aguardando", "proximo"].includes(ticket.status)).forEach((ticket) => {
+    const ahead = rows.filter((candidate) => (
+      Number(candidate.priority || 0) > Number(ticket.priority || 0)
+      || (
+        Number(candidate.priority || 0) === Number(ticket.priority || 0)
+        && Number(candidate.queue_order) < Number(ticket.queue_order)
+      )
+    )).length;
+    if (ahead === 2) dispatchTicketPush(ticket, "queue_near", "ahead-2", { ahead });
+    if (ahead === 0) dispatchTicketPush(ticket, "queue_next", "position-1", { ahead });
+  });
+}
+
+function notifyStandbyExpiringTickets() {
+  if (!pushNotificationService.isConfigured()) return;
+  const now = isoNow();
+  const warningAt = new Date(Date.now() + STANDBY_WARNING_SECONDS * 1000).toISOString();
+  const tickets = db.prepare(`
+    SELECT * FROM tickets
+    WHERE status = 'standby'
+      AND standby_expires_at IS NOT NULL
+      AND standby_expires_at > ?
+      AND standby_expires_at <= ?
+  `).all(now, warningAt);
+  tickets.forEach((ticket) => {
+    dispatchTicketPush(ticket, "queue_standby_expiring", `absence-${Number(ticket.absence_count || 0)}`);
+  });
 }
 
 function callNextTicket(sectorId, options = {}) {
@@ -1658,7 +2122,11 @@ function callNextTicket(sectorId, options = {}) {
     db.prepare("UPDATE tickets SET status = ?, called_at = ?, standby_started_at = NULL, standby_expires_at = NULL, updated_at = ? WHERE id = ?").run("chamado", now, now, candidate.id);
     db.prepare("INSERT INTO calls (id, ticket_id, sector_id, action, created_at) VALUES (?, ?, ?, ?, ?)").run(`call-${crypto.randomUUID()}`, candidate.id, sectorId, "senha_chamada", now);
     registerEvent("senha_chamada", "ticket", candidate.id, candidate.customer_id, candidate.sector_id, { code: candidate.code });
-    return { ticket: ticketDto(getTicket(candidate.id)) };
+    const called = getTicket(candidate.id);
+    const pushType = Number(candidate.absence_count || 0) > 0 ? "queue_recalled" : "queue_called";
+    dispatchTicketPush(called, pushType, `absence-${Number(candidate.absence_count || 0)}`);
+    notifyQueueMilestones(sectorId);
+    return { ticket: ticketDto(called) };
   }
 
   return { ticket: null, message: "Nenhuma senha elegível para chamada." };
@@ -1701,7 +2169,9 @@ function expireAbsentCalls() {
         WHERE id = ?
       `).run("cancelado", absenceCount, now, now, ticket.id);
       registerEvent("senha_cancelada_por_ausencia", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { absenceCount });
+      dispatchTicketPush(getTicket(ticket.id), "queue_changed", `absence-canceled-${absenceCount}`);
       releaseSmartWaitTicket(ticket.customer_id);
+      notifyQueueMilestones(ticket.sector_id);
       return;
     }
 
@@ -1714,7 +2184,9 @@ function expireAbsentCalls() {
       WHERE id = ?
     `).run("standby", absenceCount, now, standbyExpiresAt, now, ticket.id);
     registerEvent("senha_em_standby_por_ausencia", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { absenceCount, standbyExpiresAt });
+    dispatchTicketPush(getTicket(ticket.id), "queue_standby", `absence-${absenceCount}`);
     releaseSmartWaitTicket(ticket.customer_id);
+    notifyQueueMilestones(ticket.sector_id);
   });
   broadcast();
 }
@@ -1731,6 +2203,8 @@ function expireExpiredStandbyTickets() {
       WHERE id = ?
     `).run("cancelado", now, now, ticket.id);
     registerEvent("senha_cancelada_por_standby_expirado", "ticket", ticket.id, ticket.customer_id, ticket.sector_id, { code: ticket.code });
+    dispatchTicketPush(getTicket(ticket.id), "queue_standby_expired", `absence-${Number(ticket.absence_count || 0)}`);
+    notifyQueueMilestones(ticket.sector_id);
   });
   broadcast();
 }
@@ -1802,6 +2276,7 @@ function cancelTicket(ticketId, customerId) {
     return null;
   });
 
+  notifyQueueMilestones(ticket.sector_id);
   return {
     canceledTicket: ticketDto(getTicket(ticket.id)),
     releasedTicket: released ? ticketDto(released) : null
@@ -1851,9 +2326,15 @@ function skipTicket(ticketId, body = {}) {
       previousStatus: ticket.status,
       reason
     });
+    if (reason === "cliente_ausente") {
+      dispatchTicketPush(getTicket(ticket.id), "queue_standby", `absence-${absenceCount}`);
+    } else {
+      dispatchTicketPush(getTicket(ticket.id), "queue_changed", `skipped-${reason}`);
+    }
 
     const released = CALL_BLOCKING_STATUSES.includes(ticket.status) ? releaseSmartWaitTicket(ticket.customer_id) : null;
     const nextInSector = CALL_BLOCKING_STATUSES.includes(ticket.status) ? callNextTicket(ticket.sector_id) : null;
+    notifyQueueMilestones(ticket.sector_id);
     return {
       skippedTicket: ticketDto(getTicket(ticket.id)),
       releasedTicket: released ? ticketDto(released) : null,
@@ -1876,6 +2357,7 @@ function finishTicket(ticketId) {
 
     const released = releaseSmartWaitTicket(ticket.customer_id);
     const nextInSector = callNextTicket(ticket.sector_id, { preferStandby: true });
+    notifyQueueMilestones(ticket.sector_id);
     return {
       finishedTicket: ticketDto(getTicket(ticket.id)),
       releasedTicket: released ? ticketDto(released) : null,
@@ -1903,7 +2385,9 @@ function releaseSmartWaitTicket(customerId) {
   `).run("aguardando", now, now, next.id, "espera_inteligente");
   if (!released.changes) return null;
   registerEvent("espera_inteligente_liberada", "ticket", next.id, next.customer_id, next.sector_id, { code: next.code });
+  dispatchTicketPush(getTicket(next.id), "queue_changed", "smart-wait-released");
   callNextTicket(next.sector_id, { preferStandby: true });
+  notifyQueueMilestones(next.sector_id);
   return getTicket(next.id);
 }
 

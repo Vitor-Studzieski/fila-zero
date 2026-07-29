@@ -1,6 +1,41 @@
+import Script from "next/script";
+
 export const metadata = {
-  title: "Fila Zero - Supermercado Pompeia",
-  description: "Sistema de fila virtual com Next.js, SQLite e tempo real."
+  title: {
+    default: "Fila Zero - Supermercado Pompeia",
+    template: "%s | Fila Zero"
+  },
+  applicationName: "Fila Zero",
+  description: "Fila virtual, acompanhamento de atendimento e lista de compras do Supermercado Pompeia.",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [
+      { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/icons/fila-zero-192.png", sizes: "192x192", type: "image/png" }
+    ],
+    apple: [
+      { url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }
+    ]
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Fila Zero"
+  },
+  formatDetection: {
+    telephone: false
+  },
+  other: {
+    "mobile-web-app-capable": "yes"
+  }
+};
+
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+  themeColor: "#06466f",
+  colorScheme: "light"
 };
 
 export default function RootLayout({ children }) {
@@ -11,8 +46,13 @@ export default function RootLayout({ children }) {
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
         <link rel="stylesheet" href="/styles.css" />
+        <link rel="stylesheet" href="/pwa.css" />
       </head>
-      <body>{children}</body>
+      <body>
+        {children}
+        <Script src="/pwa-utils.js" strategy="afterInteractive" />
+        <Script src="/pwa.js" strategy="afterInteractive" />
+      </body>
     </html>
   );
 }

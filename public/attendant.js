@@ -69,7 +69,7 @@ function renderAttendant() {
           <span>Tempo medio do setor</span>
           <b>${escapeHtml(formatAverageService(sector))}</b>
         </div>
-        <button class="blue-action compact-action" data-call-next="${escapeHtml(sector.id)}" ${canCallNext ? "" : "disabled"}>${hasActiveService ? "Aguardando finalizacao" : "Chamar proxima senha"}</button>
+        <button class="blue-action compact-action" data-call-next="${escapeHtml(sector.id)}" data-online-required ${canCallNext ? "" : "disabled"}>${hasActiveService ? "Aguardando finalizacao" : "Chamar proxima senha"}</button>
         ${ticketSection("Chamadas", called)}
         ${ticketSection("Em atendimento", inService)}
         ${ticketSection("Fila", waiting)}
@@ -117,10 +117,10 @@ function ticketRow(ticket) {
 
 function ticketActions(ticket) {
   if (ticket.status === "chamado") {
-    return `<div class="ops-ticket-actions"><button data-start-ticket="${escapeHtml(ticket.id)}">Iniciar</button><button class="danger-action" data-skip-ticket="${escapeHtml(ticket.id)}">Pular</button></div>`;
+    return `<div class="ops-ticket-actions"><button data-start-ticket="${escapeHtml(ticket.id)}" data-online-required>Iniciar</button><button class="danger-action" data-skip-ticket="${escapeHtml(ticket.id)}" data-online-required>Pular</button></div>`;
   }
-  if (ticket.status === "em_atendimento") return `<button data-finish-ticket="${escapeHtml(ticket.id)}">Finalizar</button>`;
-  return `<div class="ops-ticket-actions"><small>${escapeHtml(`${ticket.position}º`)}</small><button class="danger-action" data-skip-ticket="${escapeHtml(ticket.id)}">Pular</button></div>`;
+  if (ticket.status === "em_atendimento") return `<button data-finish-ticket="${escapeHtml(ticket.id)}" data-online-required>Finalizar</button>`;
+  return `<div class="ops-ticket-actions"><small>${escapeHtml(`${ticket.position}º`)}</small><button class="danger-action" data-skip-ticket="${escapeHtml(ticket.id)}" data-online-required>Pular</button></div>`;
 }
 
 function ticketDetailLine(ticket) {
@@ -281,17 +281,28 @@ function statusLabel(status) {
 }
 
 async function api(path, options = {}) {
-  const response = await fetch(path, {
-    method: options.method || "GET",
-    headers: {
-      "content-type": "application/json",
-      ...csrfHeader()
-    },
-    body: options.body ? JSON.stringify(options.body) : undefined
-  });
-  const payload = await parseApiPayload(response);
-  if (!response.ok || payload.error) throw new Error(payload.error || "Falha na API.");
-  return payload;
+  const method = options.method || "GET";
+  const mutation = method !== "GET";
+  if (mutation) window.filaZeroPwa?.markCriticalOperation(true);
+  try {
+    const response = await fetch(path, {
+      method,
+      headers: {
+        "content-type": "application/json",
+        ...csrfHeader()
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined
+    });
+    const payload = await parseApiPayload(response);
+    window.filaZeroPwa?.reportNetworkSuccess();
+    if (!response.ok || payload.error) throw new Error(payload.error || "Falha na API.");
+    return payload;
+  } catch (error) {
+    window.filaZeroPwa?.reportNetworkFailure();
+    throw error;
+  } finally {
+    if (mutation) window.filaZeroPwa?.markCriticalOperation(false);
+  }
 }
 
 async function parseApiPayload(response) {
@@ -342,6 +353,7 @@ async function requireSession(roles) {
 }
 
 async function logout() {
+  await window.filaZeroPwa?.prepareLogout();
   await api("/api/auth/logout", { method: "POST" });
   location.href = "/login";
 }
