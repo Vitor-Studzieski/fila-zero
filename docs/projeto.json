@@ -44,7 +44,7 @@
     "A página Ofertas só exibe contexto da senha quando existe fila ativa.",
     "O painel do atendente chama a próxima senha elegível, inicia atendimento e finaliza pedido.",
     "O painel administrativo configura setores, balcões, fila base, tempo médio, capacidade e status.",
-    "A emissão de senha exige presença validada por geolocalização dentro do raio da loja ou QR Code do setor.",
+    "A emissão digital de senha é direta e não exige QR Code nem geolocalização nesta fase.",
     "O sistema limita a quantidade de senhas ativas por cliente e evita solicitações repetidas.",
     "Senhas chamadas expiram ou são reagendadas quando o cliente não confirma presença dentro do tempo limite.",
     "A espera inteligente impede que o mesmo cliente seja chamado simultaneamente em setores diferentes.",
@@ -54,14 +54,6 @@
     "A lista de ofertas é persistida no backend como carrinho do cliente.",
     "O painel administrativo exibe métricas de atendimento, abandono, espera inteligente e satisfação."
   ],
-  "presence_validation": {
-    "store_location": {
-      "latitude": -22.1064,
-      "longitude": -50.1746,
-      "radius_meters": 100
-    },
-    "qr_tokens": "Configurados por variaveis de ambiente QR_TOKEN_* ou QR_TOKENS."
-  },
   "access_control": {
     "session_type": "Cookie HTTP-only com validade de 12 horas",
     "password_storage": "PBKDF2 SHA-256 com salt individual",

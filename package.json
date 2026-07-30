@@ -10,13 +10,18 @@
     "dev": "node --no-warnings server/server.js",
     "start": "node --no-warnings server/server.js",
     "build": "next build --webpack",
-    "check": "node --check proxy.js && node --check server/server.js && node --check server/supabase-runtime.js && node --check server/push-notification-service.js && node --check public/app.js && node --check public/attendant.js && node --check public/admin.js && node --check public/login.js && node --check public/pwa-utils.js && node --check public/pwa.js && node --check public/sw.js && node --check public/sw/config.js && node --check public/sw/cache.js && node --check public/sw/push.js && node --check tests/orchestration.test.js && node --check tests/pwa.test.js",
+    "check": "node --check proxy.js && node --check server/server.js && node --check server/supabase-runtime.js && node --check server/push-notification-service.js && node --check server/print-kiosk-service.js && node --check server/escpos-receipt.js && node --check scripts/print-simulator.js && node --check scripts/print-agent.js && node --check scripts/print-agent/serial-printer.js && node --check scripts/print-agent/runtime.js && node --check public/app.js && node --check public/attendant.js && node --check public/admin.js && node --check public/login.js && node --check public/install.js && node --check public/totem.js && node --check public/pwa-utils.js && node --check public/pwa.js && node --check public/sw.js && node --check public/sw/config.js && node --check public/sw/cache.js && node --check public/sw/push.js && node --check tests/orchestration.test.js && node --check tests/print-agent.test.js && node --check tests/pwa.test.js",
+    "print:agent": "node scripts/print-agent.js",
+    "print:agent:ports": "node scripts/print-agent.js --list-ports",
+    "print:agent:test": "node scripts/print-agent.js --test-printer",
+    "print:simulate": "node scripts/print-simulator.js",
     "test": "node --test tests/*.test.js"
   },
   "dependencies": {
     "next": "16.2.11",
     "react": "19.2.6",
     "react-dom": "19.2.6",
+    "serialport": "13.0.0",
     "web-push": "3.6.7"
   },
   "overrides": {

@@ -8,15 +8,25 @@ const {
   preferencesToRow,
   validatePushSubscription
 } = require("./push-notification-service");
+const {
+  clearKioskCookies,
+  createKioskSession,
+  kioskCookies,
+  loadKioskConfiguration,
+  printJobDto,
+  validatePhysicalTicketInput,
+  verifyKioskRequest,
+  verifyKioskSession,
+  verifyPrintAgentRequest
+} = require("./print-kiosk-service");
 
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || "");
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
 const AUTH_SECRET = authSecret();
+const KIOSK_CONFIGURATION = loadKioskConfiguration(process.env);
 const AUTO_CONFIRM_PUBLIC_CUSTOMERS = process.env.SUPABASE_AUTO_CONFIRM_CUSTOMERS !== "0";
-const PRESENCE_CHECK_ENABLED = envFlag("PRESENCE_CHECK_ENABLED", process.env.NODE_ENV === "production");
-const QR_TOKENS = loadQrTokens();
-const STORE_LOCATION = loadStoreLocation();
+const PRESENCE_CHECK_ENABLED = false;
 const PUSH_CONFIGURATION = loadPushConfiguration(process.env);
 const pushNotificationService = new PushNotificationService({
   repository: createSupabasePushRepository(),
@@ -81,6 +91,11 @@ async function handleRequest(request) {
     if (request.method === "POST" && url.pathname === "/api/auth/register") return registerCustomer(request);
     if (request.method === "POST" && url.pathname === "/api/auth/logout") return logout(request);
     if (request.method === "GET" && url.pathname === "/api/auth/me") return me(request);
+    if (request.method === "GET" && url.pathname === "/api/kiosk/status") return kioskStatusRoute(request);
+    if (request.method === "POST" && url.pathname === "/api/kiosk/pair") return pairKioskRoute(request);
+    if (request.method === "POST" && url.pathname === "/api/kiosk/unpair") return unpairKioskRoute(request);
+    if (request.method === "POST" && url.pathname === "/api/kiosk/tickets") return createPhysicalTicketRoute(request);
+    if (request.method === "POST" && url.pathname === "/api/print/jobs/claim") return claimPrintJobRoute(request);
     if (request.method === "GET" && url.pathname === "/api/push/status") return pushStatusRoute(request);
     if (request.method === "POST" && url.pathname === "/api/push/subscribe") return pushSubscribeRoute(request);
     if (request.method === "DELETE" && url.pathname === "/api/push/unsubscribe") return pushUnsubscribeRoute(request);
@@ -104,6 +119,12 @@ async function handleRequest(request) {
 
     const confirmMatch = url.pathname.match(/^\/api\/tickets\/([^/]+)\/confirm$/);
     if (request.method === "POST" && confirmMatch) return confirmTicketRoute(request, confirmMatch[1]);
+
+    const kioskPrintJobMatch = url.pathname.match(/^\/api\/kiosk\/print-jobs\/([^/]+)$/);
+    if (request.method === "GET" && kioskPrintJobMatch) return kioskPrintJobRoute(request, kioskPrintJobMatch[1]);
+
+    const printFinishMatch = url.pathname.match(/^\/api\/print\/jobs\/([^/]+)\/finish$/);
+    if (request.method === "POST" && printFinishMatch) return finishPrintJobRoute(request, printFinishMatch[1]);
 
     const finishMatch = url.pathname.match(/^\/api\/tickets\/([^/]+)\/finish$/);
     if (request.method === "POST" && finishMatch) return finishTicketRoute(request, finishMatch[1]);
@@ -240,6 +261,138 @@ async function logout(request) {
 async function me(request) {
   const user = await getAuthUser(request);
   return json({ user, csrfToken: user?.csrf_token || null });
+}
+
+async function kioskStatusRoute(request, sessionOverride = null) {
+  const session = sessionOverride || verifyKioskSession(getCookie(request, "fz_kiosk"), AUTH_SECRET);
+  const [user, kioskRows, sectors] = await Promise.all([
+    getAuthUser(request),
+    session ? select("print_kiosks", `id=eq.${encodeURIComponent(session.kioskId)}&active=eq.true&limit=1`) : [],
+    getSectors()
+  ]);
+  const kiosk = kioskRows[0];
+  return json({
+    paired: Boolean(kiosk),
+    canPair: hasAnyRole(user, ADMIN_ROLES),
+    kiosk: kiosk ? kioskDto(kiosk) : null,
+    sectors: await mapAsync(sectors.filter((sector) => sector.status === "open"), sectorDto)
+  });
+}
+
+async function pairKioskRoute(request) {
+  const user = await requireUser(request, ADMIN_ROLES);
+  if (user.response) return user.response;
+  if (!(await verifyCsrf(request, user))) {
+    return json({ error: "Token de seguranca invalido. Recarregue a pagina e tente novamente." }, 403);
+  }
+  const body = await readJson(request);
+  if (body.kioskId && body.kioskId !== KIOSK_CONFIGURATION.id) {
+    return json({ error: "Totem nao encontrado." }, 400);
+  }
+  const now = isoNow();
+  await upsert("print_kiosks", {
+    id: KIOSK_CONFIGURATION.id,
+    name: KIOSK_CONFIGURATION.name,
+    active: true,
+    printer_name: KIOSK_CONFIGURATION.printerName,
+    printer_port: KIOSK_CONFIGURATION.printerPort,
+    paper_width_mm: KIOSK_CONFIGURATION.paperWidthMm,
+    install_url: KIOSK_CONFIGURATION.installUrl,
+    created_at: now,
+    updated_at: now
+  }, "id");
+  const session = createKioskSession(KIOSK_CONFIGURATION.id, AUTH_SECRET);
+  await registerEvent("totem_vinculado", "kiosk", KIOSK_CONFIGURATION.id, null, null, { userId: user.id });
+  const response = await kioskStatusRoute(request, session);
+  const payload = await response.json();
+  return json(payload, 200, { "set-cookie": kioskCookies(session, process.env.NODE_ENV === "production") });
+}
+
+async function unpairKioskRoute(request) {
+  const user = await requireUser(request, ADMIN_ROLES);
+  if (user.response) return user.response;
+  if (!(await verifyCsrf(request, user))) {
+    return json({ error: "Token de seguranca invalido. Recarregue a pagina e tente novamente." }, 403);
+  }
+  return json(
+    { ok: true },
+    200,
+    { "set-cookie": clearKioskCookies(process.env.NODE_ENV === "production") }
+  );
+}
+
+async function createPhysicalTicketRoute(request) {
+  const kiosk = verifyKioskRequest(request.headers, AUTH_SECRET);
+  if (kiosk.error) return json({ error: kiosk.error }, kiosk.status);
+  const input = validatePhysicalTicketInput(await readJson(request));
+  if (input.error) return json(input, 400);
+  const result = await rpc("issue_physical_ticket", {
+    p_kiosk_id: kiosk.kioskId,
+    p_sector_id: input.sectorId,
+    p_idempotency_key: input.idempotencyKey,
+    p_install_url: KIOSK_CONFIGURATION.installUrl,
+    p_auto_call_delay_seconds: AUTO_CALL_DELAY_SECONDS
+  });
+  if (!result || result.error || !result.ticket) {
+    return json({ error: "Nao foi possivel emitir a senha fisica agora." }, 400);
+  }
+  await registerEvent("senha_fisica_emitida", "ticket", result.ticket.id, null, result.ticket.sector_id, {
+    code: result.ticket.code,
+    kioskId: kiosk.kioskId,
+    printJobId: result.printJob?.id
+  });
+  return json({
+    ticket: await safeTicketDto(result.ticket),
+    printJob: printJobDto(result.printJob),
+    alreadyExists: Boolean(result.alreadyExists)
+  }, 201);
+}
+
+async function kioskPrintJobRoute(request, jobId) {
+  const kiosk = verifyKioskSession(getCookie(request, "fz_kiosk"), AUTH_SECRET);
+  if (!kiosk) return json({ error: "Totem nao vinculado." }, 401);
+  const row = (await select(
+    "print_jobs",
+    `id=eq.${encodeURIComponent(jobId)}&kiosk_id=eq.${encodeURIComponent(kiosk.kioskId)}&limit=1`
+  ))[0];
+  if (!row) return json({ error: "Trabalho de impressao nao encontrado." }, 404);
+  return json({ job: printJobDto(row) });
+}
+
+async function claimPrintJobRoute(request) {
+  const agent = verifyPrintAgentRequest(request.headers);
+  if (agent.error) return json({ error: agent.error }, agent.status);
+  const body = await readJson(request);
+  const kioskId = cleanId(body.kioskId) || KIOSK_CONFIGURATION.id;
+  const row = await rpc("claim_next_print_job", { p_kiosk_id: kioskId });
+  if (row?.error) return json({ error: "Nao foi possivel consultar a fila de impressao." }, 500);
+  return json({ job: printJobDto(row) });
+}
+
+async function finishPrintJobRoute(request, jobId) {
+  const agent = verifyPrintAgentRequest(request.headers);
+  if (agent.error) return json({ error: agent.error }, agent.status);
+  const body = await readJson(request);
+  const row = await rpc("finish_print_job", {
+    p_job_id: jobId,
+    p_kiosk_id: cleanId(body.kioskId) || KIOSK_CONFIGURATION.id,
+    p_success: body.success === true,
+    p_error: cleanLimitedText(body.error, 500) || null
+  });
+  if (!row || row.error) return json({ error: "Nao foi possivel concluir o trabalho de impressao." }, 400);
+  return json({ ok: true, job: printJobDto(row) });
+}
+
+function kioskDto(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    printerName: row.printer_name,
+    printerPort: row.printer_port,
+    paperWidthMm: Number(row.paper_width_mm),
+    installUrl: row.install_url,
+    lastSeenAt: row.last_seen_at
+  };
 }
 
 async function pushStatusRoute(request) {
@@ -735,6 +888,7 @@ async function cancelTicket(ticketId, customerId) {
 }
 
 async function releaseSmartWaitTicket(customerId) {
+  if (!customerId) return null;
   const rows = await select("tickets", `customer_id=eq.${encodeURIComponent(customerId)}&status=eq.espera_inteligente&order=smart_wait_since.asc,created_at.asc&limit=1`);
   const next = rows[0];
   if (!next) return null;
@@ -1190,6 +1344,8 @@ function staffTicketDto(row, sector, stats, current, sectorTickets, activeDelay)
     counterLabel: sector.counter_label,
     serviceLabel: sector.service_label,
     status: row.status,
+    source: row.source || "digital",
+    kioskId: row.kiosk_id || null,
     priority: Boolean(row.priority),
     priorityReason: row.priority_reason,
     position,
@@ -1544,6 +1700,8 @@ function fallbackTicketDto(row, sector) {
     counterLabel: sector?.counter_label || "",
     serviceLabel: sector?.service_label || "",
     status: row.status,
+    source: row.source || "digital",
+    kioskId: row.kiosk_id || null,
     priority: Boolean(row.priority),
     priorityReason: row.priority_reason,
     position: 1,
@@ -2132,62 +2290,8 @@ function envFlag(name, fallback = false) {
   return ["1", "true", "yes", "on"].includes(String(value).trim().toLowerCase());
 }
 
-function loadQrTokens() {
-  return {
-    acougue: String(process.env.QR_TOKEN_ACOUGUE || ""),
-    frios: String(process.env.QR_TOKEN_FRIOS || ""),
-    padaria: String(process.env.QR_TOKEN_PADARIA || "")
-  };
-}
-
-function loadStoreLocation() {
-  const latitude = Number(process.env.STORE_LATITUDE);
-  const longitude = Number(process.env.STORE_LONGITUDE);
-  const radiusMeters = Number(process.env.STORE_RADIUS_METERS);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(radiusMeters) || radiusMeters <= 0) return null;
-  return { latitude, longitude, radiusMeters };
-}
-
-function validatePresence(body, sectorId) {
-  if (!PRESENCE_CHECK_ENABLED) {
-    return { ok: true, qrVerified: false, locationVerified: false, location: null, distanceMeters: null };
-  }
-
-  const token = String(body.qrToken || "");
-  const expectedToken = QR_TOKENS[sectorId] || "";
-  const qrVerified = Boolean(token && expectedToken && safeEqual(token, expectedToken));
-  const location = normalizeLocation(body.location);
-  const distanceMeters = location && STORE_LOCATION
-    ? distanceBetweenMeters(location.latitude, location.longitude, STORE_LOCATION.latitude, STORE_LOCATION.longitude)
-    : null;
-  const locationVerified = Boolean(STORE_LOCATION && location && distanceMeters <= STORE_LOCATION.radiusMeters);
-
-  if (qrVerified || locationVerified) {
-    return { ok: true, qrVerified, locationVerified, location, distanceMeters };
-  }
-  if (token) return { ok: false, error: "QR Code do setor invalido." };
-  if (location && STORE_LOCATION) return { ok: false, error: "Voce precisa estar dentro ou perto da loja para solicitar senha." };
-  return { ok: false, error: "Use o QR Code do setor para solicitar senha." };
-}
-
-function normalizeLocation(location) {
-  if (!location) return null;
-  const latitude = Number(location.latitude);
-  const longitude = Number(location.longitude);
-  const accuracy = Number(location.accuracy || 0);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
-  return { latitude, longitude, accuracy: Number.isFinite(accuracy) ? Math.max(0, accuracy) : 0 };
-}
-
-function distanceBetweenMeters(latA, lngA, latB, lngB) {
-  const earthRadius = 6371000;
-  const toRadians = (value) => (value * Math.PI) / 180;
-  const deltaLat = toRadians(latB - latA);
-  const deltaLng = toRadians(lngB - lngA);
-  const a = Math.sin(deltaLat / 2) ** 2
-    + Math.cos(toRadians(latA)) * Math.cos(toRadians(latB)) * Math.sin(deltaLng / 2) ** 2;
-  return Math.round(earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+function validatePresence() {
+  return { ok: true, qrVerified: false, locationVerified: false, location: null, distanceMeters: null };
 }
 
 function validateCustomerRegistration(body) {

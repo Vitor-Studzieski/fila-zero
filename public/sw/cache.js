@@ -24,7 +24,7 @@
       url.pathname.startsWith("/assets/")
       || url.pathname.startsWith("/icons/")
       || url.pathname.startsWith("/data/")
-      || ["/styles.css", "/pwa.css", "/app.js", "/admin.js", "/attendant.js", "/login.js", "/pwa.js", "/pwa-utils.js"].includes(url.pathname)
+      || ["/styles.css", "/pwa.css", "/app.js", "/admin.js", "/attendant.js", "/login.js", "/install.js", "/totem.js", "/pwa.js", "/pwa-utils.js"].includes(url.pathname)
       || ["image", "style", "font"].includes(request.destination)
     );
   }

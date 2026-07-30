@@ -82,23 +82,21 @@ AUTH_SECRET
 BOOTSTRAP_ADMIN_EMAIL
 BOOTSTRAP_ADMIN_PASSWORD
 DEMO_USERS_JSON
-QR_TOKEN_ACOUGUE
-QR_TOKEN_FRIOS
-QR_TOKEN_PADARIA
-PRESENCE_CHECK_ENABLED
 PUSH_NOTIFICATIONS_ENABLED
 NEXT_PUBLIC_VAPID_PUBLIC_KEY
 VAPID_PRIVATE_KEY
 VAPID_SUBJECT
 ```
 
-Use `DATA_BACKEND=supabase` para rodar login, filas, carrinho, setores, metricas e usuarios no Supabase/Postgres. `AUTH_SECRET` precisa ser um segredo fixo com ao menos 32 caracteres. `SUPABASE_AUTO_CONFIRM_CUSTOMERS=1` libera cadastro publico sem confirmacao de e-mail para testes; em producao real, volte para `0`. `BOOTSTRAP_ADMIN_PASSWORD` precisa ter ao menos 12 caracteres quando o fallback local estiver em uso. Os tokens de QR devem ser longos, aleatorios e diferentes por setor.
+Use `DATA_BACKEND=supabase` para rodar login, filas, carrinho, setores, metricas e usuarios no Supabase/Postgres. `AUTH_SECRET` precisa ser um segredo fixo com ao menos 32 caracteres. `SUPABASE_AUTO_CONFIRM_CUSTOMERS=1` libera cadastro publico sem confirmacao de e-mail para testes; em producao real, volte para `0`. `BOOTSTRAP_ADMIN_PASSWORD` precisa ter ao menos 12 caracteres quando o fallback local estiver em uso.
 
-Em producao, mantenha `PRESENCE_CHECK_ENABLED=1`. Sem `STORE_LATITUDE`, `STORE_LONGITUDE` e `STORE_RADIUS_METERS`, a emissao exige um QR valido; configure os tres valores juntos somente quando a loja tambem aceitar geolocalizacao.
+Nesta fase, a emissao digital e direta e nao exige QR Code nem geolocalizacao. O unico QR Code do sistema direciona para `/instalar` e aparece somente na tela do totem.
 
 Para ativar as notificacoes Web Push, execute `npx web-push generate-vapid-keys`, cadastre o par gerado e um contato valido em `VAPID_SUBJECT`, e so entao defina `PUSH_NOTIFICATIONS_ENABLED=1`. A chave privada nunca deve chegar ao navegador ou ser versionada.
 
 O guia completo de instalacao, notificacoes, cache e testes da PWA esta em [docs/pwa-web-push.md](docs/pwa-web-push.md).
+
+O fluxo de emissao fisica, pareamento do totem e simulacao da impressao esta em [docs/totem-impressao.md](docs/totem-impressao.md).
 
 ## Banco de dados local
 

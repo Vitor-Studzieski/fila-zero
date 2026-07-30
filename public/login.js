@@ -190,7 +190,7 @@ function allowedNextForRole(role, next) {
   }[role] || "/";
   const normalizedRole = role === "admin" ? "manager" : role;
   if (!next) return home;
-  if (normalizedRole === "manager") return "/";
+  if (normalizedRole === "manager" && ["/", "/totem"].includes(next)) return next;
   if (role === "attendant" && next === "/attendant") return next;
   if (role === "customer" && next === "/") return next;
   return home;

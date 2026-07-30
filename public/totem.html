@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Totem - Fila Zero</title>
+  </head>
+  <body>
+    <main class="totem-stage">
+      <header class="totem-header">
+        <div class="totem-brand">
+          <img src="/icons/fila-zero-192.png" alt="" />
+          <div>
+            <span>Supermercado Pompeia</span>
+            <strong>Fila Zero</strong>
+          </div>
+        </div>
+        <div class="totem-connection" id="totemConnection" data-state="loading">
+          <span aria-hidden="true"></span>
+          <strong>Conectando</strong>
+        </div>
+      </header>
+
+      <section class="totem-loading" id="totemLoading" aria-live="polite">
+        <strong>Preparando o totem</strong>
+        <span>Carregando os setores disponiveis.</span>
+      </section>
+
+      <section class="totem-pair" id="totemPair" hidden>
+        <div>
+          <p class="totem-eyebrow">Configuracao necessaria</p>
+          <h1>Este computador ainda nao esta vinculado.</h1>
+          <p id="totemPairMessage">Entre como gestor para autorizar a emissao de senhas neste equipamento.</p>
+        </div>
+        <button class="totem-primary" id="pairKioskButton" type="button" hidden>Vincular este totem</button>
+        <a class="totem-primary" id="pairLoginLink" href="/login?next=%2Ftotem">Entrar como gestor</a>
+      </section>
+
+      <section class="totem-operation" id="totemOperation" hidden>
+        <div class="totem-heading">
+          <div>
+            <p class="totem-eyebrow">Retire sua senha</p>
+            <h1>Escolha o setor</h1>
+          </div>
+          <p>Selecione onde deseja ser atendido. Sua senha sera impressa logo em seguida.</p>
+        </div>
+
+        <div class="totem-operation-grid">
+          <div class="totem-sectors" id="totemSectors" aria-live="polite"></div>
+          <aside class="totem-install">
+            <div class="totem-install-qr" id="totemInstallQr" aria-label="QR Code para instalar o aplicativo"></div>
+            <div>
+              <strong>Ainda nao tem o aplicativo?</strong>
+              <span>Aponte a camera do celular e instale o Fila Zero.</span>
+            </div>
+          </aside>
+        </div>
+        <p class="totem-feedback" id="totemFeedback" role="alert" aria-live="assertive"></p>
+      </section>
+
+      <dialog class="totem-dialog" id="confirmDialog">
+        <form method="dialog">
+          <p class="totem-eyebrow">Confirmar setor</p>
+          <h2 id="confirmSectorName">Setor</h2>
+          <p>Sua senha entrara na fila e sera enviada para a impressora.</p>
+          <div class="totem-dialog-actions">
+            <button class="totem-secondary" value="cancel">Voltar</button>
+            <button class="totem-primary" id="issueTicketButton" value="default">Emitir senha</button>
+          </div>
+        </form>
+      </dialog>
+
+      <section class="totem-result" id="totemResult" hidden aria-live="assertive">
+        <p class="totem-eyebrow">Senha emitida</p>
+        <span id="resultSector">Setor</span>
+        <strong id="resultTicket">A000</strong>
+        <div class="totem-print-state" id="printState" data-state="pending">
+          <span aria-hidden="true"></span>
+          <p>Enviando para a impressora</p>
+        </div>
+        <button class="totem-secondary" id="newTicketButton" type="button">Retirar outra senha</button>
+      </section>
+    </main>
+  </body>
+</html>

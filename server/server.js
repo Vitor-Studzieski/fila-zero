@@ -12,6 +12,17 @@ const {
   preferencesToRow,
   validatePushSubscription
 } = require("./push-notification-service");
+const {
+  clearKioskCookies,
+  createKioskSession,
+  kioskCookies,
+  loadKioskConfiguration,
+  printJobDto,
+  validatePhysicalTicketInput,
+  verifyKioskRequest,
+  verifyKioskSession,
+  verifyPrintAgentRequest
+} = require("./print-kiosk-service");
 
 const ROOT = path.resolve(__dirname, "..");
 loadEnvFile(path.join(ROOT, ".env"));
@@ -37,9 +48,7 @@ const pushNotificationService = new PushNotificationService({
   configuration: PUSH_CONFIGURATION
 });
 
-const STORE_LOCATION = loadStoreLocation();
-const QR_TOKENS = loadQrTokens();
-const PRESENCE_CHECK_ENABLED = envFlag("PRESENCE_CHECK_ENABLED", !dev);
+const PRESENCE_CHECK_ENABLED = false;
 const MAX_ACTIVE_TICKETS_PER_CUSTOMER = 3;
 const AUTO_CALL_DELAY_SECONDS = 30;
 const CALL_ABSENCE_SECONDS = 10 * 60;
@@ -73,6 +82,7 @@ const SCHEDULED_JOBS_MIN_INTERVAL_MS = 1000;
 const STANDBY_WARNING_SECONDS = 2 * 60;
 const CSRF_EXEMPT_PATHS = new Set(["/api/auth/login"]);
 const AUTH_SECRET = authSecret();
+const KIOSK_CONFIGURATION = loadKioskConfiguration(process.env);
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || "");
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
@@ -232,6 +242,8 @@ function bootstrap() {
       location_verified INTEGER NOT NULL DEFAULT 0,
       qr_verified INTEGER NOT NULL DEFAULT 0,
       absence_count INTEGER NOT NULL DEFAULT 0,
+      source TEXT NOT NULL DEFAULT 'digital',
+      kiosk_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (customer_id) REFERENCES customers(id),
@@ -393,6 +405,37 @@ function bootstrap() {
       updated_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS print_kiosks (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      printer_name TEXT NOT NULL,
+      printer_port TEXT NOT NULL,
+      paper_width_mm INTEGER NOT NULL DEFAULT 80,
+      install_url TEXT NOT NULL,
+      last_seen_at TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS print_jobs (
+      id TEXT PRIMARY KEY,
+      ticket_id TEXT NOT NULL UNIQUE,
+      kiosk_id TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      status TEXT NOT NULL DEFAULT 'pending',
+      payload TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      claimed_at TEXT,
+      printed_at TEXT,
+      failed_at TEXT,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE,
+      FOREIGN KEY (kiosk_id) REFERENCES print_kiosks(id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_cart_items_created_at ON cart_items(created_at);
     CREATE INDEX IF NOT EXISTS idx_cart_items_product ON cart_items(product_id);
     CREATE INDEX IF NOT EXISTS idx_cart_items_customer_created ON cart_items(customer_id, created_at);
@@ -402,6 +445,7 @@ function bootstrap() {
     CREATE INDEX IF NOT EXISTS idx_push_notification_events_user_created ON push_notification_events(user_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_push_notification_events_ticket_type ON push_notification_events(ticket_id, event_type);
     CREATE INDEX IF NOT EXISTS idx_push_rate_limits_updated_at ON push_rate_limits(updated_at);
+    CREATE INDEX IF NOT EXISTS idx_print_jobs_kiosk_status_created ON print_jobs(kiosk_id, status, created_at);
 
     CREATE TABLE IF NOT EXISTS login_attempts (
       attempt_key TEXT PRIMARY KEY,
@@ -413,6 +457,7 @@ function bootstrap() {
   `);
 
   migrateSchema();
+  seedPrintKiosk();
 
   const existing = db.prepare("SELECT COUNT(*) AS count FROM sectors").get().count;
   if (existing > 0) {
@@ -452,7 +497,9 @@ function migrateSchema() {
     ["priority", "ALTER TABLE tickets ADD COLUMN priority INTEGER NOT NULL DEFAULT 0"],
     ["priority_reason", "ALTER TABLE tickets ADD COLUMN priority_reason TEXT"],
     ["standby_started_at", "ALTER TABLE tickets ADD COLUMN standby_started_at TEXT"],
-    ["standby_expires_at", "ALTER TABLE tickets ADD COLUMN standby_expires_at TEXT"]
+    ["standby_expires_at", "ALTER TABLE tickets ADD COLUMN standby_expires_at TEXT"],
+    ["source", "ALTER TABLE tickets ADD COLUMN source TEXT NOT NULL DEFAULT 'digital'"],
+    ["kiosk_id", "ALTER TABLE tickets ADD COLUMN kiosk_id TEXT"]
   ];
   migrations.forEach(([column, sql]) => {
     if (!columns.includes(column)) db.exec(sql);
@@ -462,6 +509,33 @@ function migrateSchema() {
   if (!sessionColumns.includes("csrf_token")) {
     db.exec("ALTER TABLE auth_sessions ADD COLUMN csrf_token TEXT");
   }
+}
+
+function seedPrintKiosk() {
+  const now = isoNow();
+  db.prepare(`
+    INSERT INTO print_kiosks (
+      id, name, active, printer_name, printer_port, paper_width_mm, install_url,
+      last_seen_at, created_at, updated_at
+    )
+    VALUES (?, ?, 1, ?, ?, ?, ?, NULL, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      name = excluded.name,
+      printer_name = excluded.printer_name,
+      printer_port = excluded.printer_port,
+      paper_width_mm = excluded.paper_width_mm,
+      install_url = excluded.install_url,
+      updated_at = excluded.updated_at
+  `).run(
+    KIOSK_CONFIGURATION.id,
+    KIOSK_CONFIGURATION.name,
+    KIOSK_CONFIGURATION.printerName,
+    KIOSK_CONFIGURATION.printerPort,
+    KIOSK_CONFIGURATION.paperWidthMm,
+    KIOSK_CONFIGURATION.installUrl,
+    now,
+    now
+  );
 }
 
 async function handleApi(req, res, url) {
@@ -507,6 +581,93 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/auth/me") {
     const user = getAuthUser(req);
     sendJson(res, 200, { user, csrfToken: user ? getSessionForRequest(req)?.csrf_token || null : null });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/kiosk/status") {
+    sendJson(res, 200, getKioskStatus(req));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/kiosk/pair") {
+    const user = requireAuth(req, res, ADMIN_ROLES);
+    if (!user) return;
+    if (!verifyCsrf(req, res, user)) return;
+    const body = await readBody(req);
+    if (body.kioskId && body.kioskId !== KIOSK_CONFIGURATION.id) {
+      sendJson(res, 400, { error: "Totem nao encontrado." });
+      return;
+    }
+    const session = createKioskSession(KIOSK_CONFIGURATION.id, AUTH_SECRET);
+    kioskCookies(session, !dev).forEach((cookie) => appendCookie(res, cookie));
+    registerEvent("totem_vinculado", "kiosk", KIOSK_CONFIGURATION.id, null, null, { userId: user.id });
+    sendJson(res, 200, getKioskStatus(req, session));
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/kiosk/unpair") {
+    const user = requireAuth(req, res, ADMIN_ROLES);
+    if (!user) return;
+    if (!verifyCsrf(req, res, user)) return;
+    clearKioskCookies(!dev).forEach((cookie) => appendCookie(res, cookie));
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/kiosk/tickets") {
+    const kiosk = verifyKioskRequest(req.headers, AUTH_SECRET);
+    if (kiosk.error) {
+      sendJson(res, kiosk.status, { error: kiosk.error });
+      return;
+    }
+    const result = createPhysicalTicket(kiosk, await readBody(req));
+    broadcast();
+    sendApiResult(res, 201, result);
+    return;
+  }
+
+  const kioskPrintJob = url.pathname.match(/^\/api\/kiosk\/print-jobs\/([^/]+)$/);
+  if (req.method === "GET" && kioskPrintJob) {
+    const kiosk = verifyKioskSession(getCookie(req, "fz_kiosk"), AUTH_SECRET);
+    if (!kiosk) {
+      sendJson(res, 401, { error: "Totem nao vinculado." });
+      return;
+    }
+    const row = db.prepare("SELECT * FROM print_jobs WHERE id = ? AND kiosk_id = ?").get(kioskPrintJob[1], kiosk.kioskId);
+    if (!row) {
+      sendJson(res, 404, { error: "Trabalho de impressao nao encontrado." });
+      return;
+    }
+    sendJson(res, 200, { job: printJobDto(row) });
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/print/jobs/claim") {
+    const agent = verifyPrintAgentRequest(req.headers);
+    if (agent.error) {
+      sendJson(res, agent.status, { error: agent.error });
+      return;
+    }
+    const body = await readBody(req);
+    sendJson(res, 200, { job: claimNextPrintJob(cleanId(body.kioskId) || KIOSK_CONFIGURATION.id) });
+    return;
+  }
+
+  const printFinish = url.pathname.match(/^\/api\/print\/jobs\/([^/]+)\/finish$/);
+  if (req.method === "POST" && printFinish) {
+    const agent = verifyPrintAgentRequest(req.headers);
+    if (agent.error) {
+      sendJson(res, agent.status, { error: agent.error });
+      return;
+    }
+    const body = await readBody(req);
+    const result = finishPrintJob(
+      printFinish[1],
+      cleanId(body.kioskId) || KIOSK_CONFIGURATION.id,
+      body.success === true,
+      body.error
+    );
+    sendApiResult(res, 200, result);
     return;
   }
 
@@ -1802,29 +1963,8 @@ function applySecurityHeaders(req, res) {
   }
 }
 
-function validatePresence(body, sectorId) {
-  if (!PRESENCE_CHECK_ENABLED) {
-    return { ok: true, qrVerified: false, locationVerified: false, location: null, distanceMeters: null };
-  }
-
-  const token = String(body.qrToken || "");
-  const expectedToken = QR_TOKENS[sectorId] || "";
-  const qrVerified = Boolean(token && expectedToken && safeEqual(token, expectedToken));
-  const location = normalizeLocation(body.location);
-  const distanceMeters = location && STORE_LOCATION
-    ? distanceBetweenMeters(location.latitude, location.longitude, STORE_LOCATION.latitude, STORE_LOCATION.longitude)
-    : null;
-  const locationVerified = Boolean(location && STORE_LOCATION && distanceMeters <= STORE_LOCATION.radiusMeters);
-
-  if (qrVerified || locationVerified) {
-    return { ok: true, qrVerified, locationVerified, location, distanceMeters };
-  }
-
-  if (location && STORE_LOCATION) {
-    return { ok: false, error: "Você precisa estar dentro ou perto da loja para solicitar senha." };
-  }
-  if (token) return { ok: false, error: "QR Code do setor inválido." };
-  return { ok: false, error: "Use o QR Code do setor para solicitar senha." };
+function validatePresence() {
+  return { ok: true, qrVerified: false, locationVerified: false, location: null, distanceMeters: null };
 }
 
 function normalizePriority(body = {}) {
@@ -1838,29 +1978,6 @@ function normalizePriority(body = {}) {
 function cleanPriorityReason(value) {
   const reason = cleanId(value);
   return PRIORITY_CATEGORIES.has(reason) ? reason : null;
-}
-
-function loadQrTokens() {
-  const fromJson = parseJsonEnv("QR_TOKENS");
-  const tokens = fromJson && typeof fromJson === "object" ? fromJson : {
-    acougue: process.env.QR_TOKEN_ACOUGUE,
-    frios: process.env.QR_TOKEN_FRIOS,
-    padaria: process.env.QR_TOKEN_PADARIA
-  };
-
-  return {
-    acougue: tokens.acougue || "",
-    frios: tokens.frios || "",
-    padaria: tokens.padaria || ""
-  };
-}
-
-function loadStoreLocation() {
-  const latitude = Number(process.env.STORE_LATITUDE);
-  const longitude = Number(process.env.STORE_LONGITUDE);
-  const radiusMeters = Number(process.env.STORE_RADIUS_METERS);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude) || !Number.isFinite(radiusMeters) || radiusMeters <= 0) return null;
-  return { latitude, longitude, radiusMeters };
 }
 
 function envFlag(name, fallback = false) {
@@ -1879,25 +1996,6 @@ function parseJsonEnv(name) {
   }
 }
 
-function normalizeLocation(location) {
-  if (!location) return null;
-  const latitude = Number(location.latitude);
-  const longitude = Number(location.longitude);
-  const accuracy = Number(location.accuracy || 0);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
-  if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) return null;
-  return { latitude, longitude, accuracy: Number.isFinite(accuracy) ? Math.max(0, accuracy) : 0 };
-}
-
-function distanceBetweenMeters(latA, lngA, latB, lngB) {
-  const earthRadius = 6371000;
-  const toRad = (value) => (value * Math.PI) / 180;
-  const deltaLat = toRad(latB - latA);
-  const deltaLng = toRad(lngB - lngA);
-  const a = Math.sin(deltaLat / 2) ** 2 + Math.cos(toRad(latA)) * Math.cos(toRad(latB)) * Math.sin(deltaLng / 2) ** 2;
-  return Math.round(earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
-}
-
 function upsertSession(body, userAgent) {
   const now = isoNow();
   const customerId = cleanId(body.customerId) || `cliente-${crypto.randomUUID()}`;
@@ -1911,6 +2009,164 @@ function upsertSession(body, userAgent) {
   `).run(deviceId, customerId, userAgent, now);
 
   return { customerId, deviceId };
+}
+
+function getKioskStatus(req, sessionOverride = null) {
+  const session = sessionOverride || verifyKioskSession(getCookie(req, "fz_kiosk"), AUTH_SECRET);
+  const user = getAuthUser(req);
+  const row = session
+    ? db.prepare("SELECT * FROM print_kiosks WHERE id = ? AND active = 1").get(session.kioskId)
+    : null;
+  return {
+    paired: Boolean(row),
+    canPair: hasAnyRole(user, ADMIN_ROLES),
+    kiosk: row ? kioskDto(row) : null,
+    sectors: getSectors().filter((sector) => sector.status === "open").map(sectorDto)
+  };
+}
+
+function kioskDto(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    printerName: row.printer_name,
+    printerPort: row.printer_port,
+    paperWidthMm: Number(row.paper_width_mm),
+    installUrl: row.install_url,
+    lastSeenAt: row.last_seen_at
+  };
+}
+
+function createPhysicalTicket(kioskSession, body) {
+  const input = validatePhysicalTicketInput(body);
+  if (input.error) return input;
+  const kiosk = db.prepare("SELECT * FROM print_kiosks WHERE id = ? AND active = 1").get(kioskSession.kioskId);
+  if (!kiosk) return fail("Totem indisponivel.");
+  const sector = getSector(input.sectorId);
+  if (!sector) return fail("Setor nao encontrado.");
+  if (sector.status !== "open") return fail("Setor fechado para novas senhas.");
+
+  const previous = db.prepare("SELECT * FROM print_jobs WHERE idempotency_key = ?").get(input.idempotencyKey);
+  if (previous) {
+    return {
+      ticket: ticketDto(getTicket(previous.ticket_id)),
+      printJob: printJobDto(previous),
+      alreadyExists: true
+    };
+  }
+
+  const result = runInTransaction(() => {
+    const now = isoNow();
+    const customerId = `walkin-${crypto.randomUUID()}`;
+    const deviceId = `totem-${crypto.randomUUID()}`;
+    const ticketId = `ticket-${crypto.randomUUID()}`;
+    const jobId = `print-${crypto.randomUUID()}`;
+    const nextNumber = nextTicketNumber(sector.id, now);
+    const queueOrder = nextQueueOrder(sector.id);
+    const code = formatTicket(sector.prefix, nextNumber);
+    const eligibleAt = new Date(Date.now() + AUTO_CALL_DELAY_SECONDS * 1000).toISOString();
+    const payload = {
+      ticketCode: code,
+      ticketNumber: nextNumber,
+      sectorId: sector.id,
+      sectorName: sector.name,
+      issuedAt: now,
+      installUrl: kiosk.install_url,
+      paperWidthMm: Number(kiosk.paper_width_mm),
+      printerName: kiosk.printer_name,
+      printerPort: kiosk.printer_port
+    };
+
+    db.prepare("INSERT INTO customers (id, created_at) VALUES (?, ?)").run(customerId, now);
+    db.prepare(`
+      INSERT INTO tickets (
+        id, customer_id, device_id, sector_id, customer_name, number, code, status,
+        queue_order, eligible_at, priority, location_verified, qr_verified, source,
+        kiosk_id, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'aguardando', ?, ?, 0, 0, 1, 'physical', ?, ?, ?)
+    `).run(
+      ticketId,
+      customerId,
+      deviceId,
+      sector.id,
+      "Cliente do totem",
+      nextNumber,
+      code,
+      queueOrder,
+      eligibleAt,
+      kiosk.id,
+      now,
+      now
+    );
+    db.prepare(`
+      INSERT INTO print_jobs (
+        id, ticket_id, kiosk_id, idempotency_key, status, payload, attempts,
+        claimed_at, printed_at, failed_at, last_error, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, 'pending', ?, 0, NULL, NULL, NULL, NULL, ?, ?)
+    `).run(jobId, ticketId, kiosk.id, input.idempotencyKey, JSON.stringify(payload), now, now);
+    registerEvent("senha_fisica_emitida", "ticket", ticketId, null, sector.id, {
+      code,
+      kioskId: kiosk.id,
+      printJobId: jobId
+    });
+    return { ticketId, jobId };
+  });
+
+  notifyQueueMilestones(sector.id);
+  return {
+    ticket: ticketDto(getTicket(result.ticketId)),
+    printJob: printJobDto(db.prepare("SELECT * FROM print_jobs WHERE id = ?").get(result.jobId)),
+    alreadyExists: false
+  };
+}
+
+function claimNextPrintJob(kioskId) {
+  const kiosk = db.prepare("SELECT * FROM print_kiosks WHERE id = ? AND active = 1").get(kioskId);
+  if (!kiosk) return null;
+  return runInTransaction(() => {
+    const staleBefore = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+    const row = db.prepare(`
+      SELECT * FROM print_jobs
+      WHERE kiosk_id = ?
+        AND attempts < 5
+        AND (
+          status IN ('pending', 'failed')
+          OR (status = 'printing' AND claimed_at < ?)
+        )
+      ORDER BY created_at ASC
+      LIMIT 1
+    `).get(kioskId, staleBefore);
+    const now = isoNow();
+    db.prepare("UPDATE print_kiosks SET last_seen_at = ?, updated_at = ? WHERE id = ?").run(now, now, kioskId);
+    if (!row) return null;
+    db.prepare(`
+      UPDATE print_jobs
+      SET status = 'printing', attempts = attempts + 1, claimed_at = ?,
+          failed_at = NULL, last_error = NULL, updated_at = ?
+      WHERE id = ?
+    `).run(now, now, row.id);
+    return printJobDto(db.prepare("SELECT * FROM print_jobs WHERE id = ?").get(row.id));
+  });
+}
+
+function finishPrintJob(jobId, kioskId, success, errorMessage) {
+  const row = db.prepare("SELECT * FROM print_jobs WHERE id = ? AND kiosk_id = ?").get(jobId, kioskId);
+  if (!row) return fail("Trabalho de impressao nao encontrado.");
+  if (row.status !== "printing") return fail("O trabalho precisa estar em impressao.");
+  const now = isoNow();
+  const error = success ? null : cleanLimitedText(errorMessage, 500) || "Falha de impressao.";
+  db.prepare(`
+    UPDATE print_jobs
+    SET status = ?, printed_at = ?, failed_at = ?, last_error = ?, updated_at = ?
+    WHERE id = ? AND kiosk_id = ? AND status = 'printing'
+  `).run(success ? "printed" : "failed", success ? now : null, success ? null : now, error, now, jobId, kioskId);
+  db.prepare("UPDATE print_kiosks SET last_seen_at = ?, updated_at = ? WHERE id = ?").run(now, now, kioskId);
+  return {
+    ok: true,
+    job: printJobDto(db.prepare("SELECT * FROM print_jobs WHERE id = ?").get(jobId))
+  };
 }
 
 function createTicket(body) {
@@ -2938,6 +3194,8 @@ function ticketDto(row) {
     counterLabel: sector.counter_label,
     serviceLabel: sector.service_label,
     status: row.status,
+    source: row.source || "digital",
+    kioskId: row.kiosk_id || null,
     priority: Boolean(row.priority),
     priorityReason: row.priority_reason,
     position,

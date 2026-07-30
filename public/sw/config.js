@@ -1,9 +1,9 @@
 self.FZ_SW_CONFIG = Object.freeze({
-  version: "2026.07.24.1",
+  version: "2026.07.30.1",
   cachePrefix: "fila-zero",
-  precacheName: "fila-zero-precache-2026.07.24.1",
-  staticCacheName: "fila-zero-static-2026.07.24.1",
-  visualCacheName: "fila-zero-visual-2026.07.24.1",
+  precacheName: "fila-zero-precache-2026.07.30.1",
+  staticCacheName: "fila-zero-static-2026.07.30.1",
+  visualCacheName: "fila-zero-visual-2026.07.30.1",
   maxStaticEntries: 80,
   maxVisualEntries: 60,
   navigationTimeoutMs: 6000,

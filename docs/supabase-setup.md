@@ -42,10 +42,6 @@ SUPABASE_AUTH_ENABLED=1
 DATA_BACKEND=supabase
 SUPABASE_AUTO_CONFIRM_CUSTOMERS=0
 AUTH_SECRET=
-QR_TOKEN_ACOUGUE=
-QR_TOKEN_FRIOS=
-QR_TOKEN_PADARIA=
-PRESENCE_CHECK_ENABLED=1
 PUSH_NOTIFICATIONS_ENABLED=0
 NEXT_PUBLIC_VAPID_PUBLIC_KEY=
 VAPID_PRIVATE_KEY=
@@ -54,7 +50,7 @@ VAPID_SUBJECT=mailto:contato@seu-dominio.com
 
 `AUTH_SECRET` voce cria. Use um valor fixo, aleatorio e com 32 ou mais caracteres.
 
-Os `QR_TOKEN_*` voce tambem cria. Use valores longos e diferentes por setor. Em producao, mantenha `PRESENCE_CHECK_ENABLED=1` e `SUPABASE_AUTO_CONFIRM_CUSTOMERS=0`. Geolocalizacao so e aceita quando `STORE_LATITUDE`, `STORE_LONGITUDE` e `STORE_RADIUS_METERS` tambem estiverem configurados; sem eles, um QR valido e obrigatorio.
+Em producao, mantenha `SUPABASE_AUTO_CONFIRM_CUSTOMERS=0`. A emissao digital nao exige QR Code nem geolocalizacao nesta fase; variaveis antigas `PRESENCE_CHECK_ENABLED`, `QR_TOKEN_*` e `STORE_*` podem ser removidas da Vercel.
 
 ## Como criar as tabelas
 
@@ -76,6 +72,13 @@ supabase/migrations/0001_initial_schema.sql
 supabase/migrations/20260724182303_pwa_push_notifications.sql
 ```
 
+6. Para habilitar o totem e a fila de impressao, execute na ordem:
+
+```text
+supabase/migrations/20260729154028_print_kiosk_jobs.sql
+supabase/migrations/20260729175827_index_tickets_kiosk_id.sql
+```
+
 Isso cria:
 
 - `profiles`
@@ -94,6 +97,8 @@ Isso cria:
 - `push_notification_preferences`
 - `push_notification_events`
 - `push_rate_limits`
+- `print_kiosks`
+- `print_jobs`
 
 Tambem cria os setores iniciais:
 

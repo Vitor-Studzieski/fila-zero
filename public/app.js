@@ -1,5 +1,4 @@
 const screens = {
-  qr: "Supermercado Pompeia",
   home: "Supermercado Pompeia",
   sectors: "Fila virtual",
   ticket: "Minha senha",
@@ -14,9 +13,6 @@ const screens = {
 
 const SMART_WAIT_STATUS = "espera_inteligente";
 const CANCELABLE_STATUSES = new Set(["aguardando", "proximo", "chamado", SMART_WAIT_STATUS, "standby"]);
-const QR_SECTORS = new Set(["acougue", "frios", "padaria"]);
-const LOCATION_CACHE_MS = 5 * 60 * 1000;
-let presenceCheckEnabled = true;
 const PRIORITY_LABELS = {
   deficiencia_ou_mobilidade_reduzida: "Deficiencia ou mobilidade reduzida",
   tea: "TEA",
@@ -29,11 +25,10 @@ const shoppingList = new Set();
 let cartItems = [];
 const identity = getOrCreateIdentity();
 let currentUser = null;
-let presenceCheckins = safeJsonParse(sessionStorage.getItem("filaZeroPresenceCheckins"), {});
 let alertPreferences = loadAlertPreferences();
 let queueTutorialSeen = localStorage.getItem("filaZeroQueueTutorialSeen") === "1";
 
-let activeScreen = "qr";
+let activeScreen = "home";
 let currentSector = null;
 let activeQueues = {};
 let sectors = {};
@@ -47,14 +42,6 @@ const STATE_POLL_INTERVAL_MS = 12000;
 let queueAlertHistory = new Set();
 let visibleQueueAlert = null;
 let productsRendered = false;
-let locationState = {
-  status: "idle",
-  value: null,
-  checkedAt: 0,
-  promise: null,
-  error: ""
-};
-
 const productPhotoQueries = {};
 const productCatalog = [];
 const productGroups = [];
@@ -170,8 +157,6 @@ async function init() {
   bindEvents();
   syncPriorityControls();
   syncAlertControls();
-  await loadRuntimeConfig();
-  syncPresenceStatus();
   navigate("home");
   currentUser = await requireSession(["customer", "manager", "admin"]);
   syncAccessArea();
@@ -184,16 +169,6 @@ async function init() {
   applyRequestedView();
   connectRealtime();
   startCountdownTimer();
-  if (presenceCheckEnabled) warmupLocation();
-}
-
-async function loadRuntimeConfig() {
-  try {
-    const config = await api("/api/config");
-    presenceCheckEnabled = config.presenceCheckEnabled !== false;
-  } catch {
-    presenceCheckEnabled = true;
-  }
 }
 
 function simplifyStatusDetails() {
@@ -344,7 +319,6 @@ function applyState(state) {
   previousTicketStatuses = nextStatuses;
   pruneQueueAlertHistory(state.tickets);
   if (!currentSector || !activeQueues[currentSector]) currentSector = Object.keys(activeQueues)[0] || null;
-  syncPresenceStatus();
   syncQueue();
 }
 
@@ -566,7 +540,7 @@ async function joinQueue(sectorId) {
   activeJoinSector = sectorId;
   syncActionButtons();
   try {
-    const result = await createTicketWithPresence(sectorId);
+    const result = await createDigitalTicket(sectorId);
     currentSector = result.ticket.sectorId;
     activeQueues[result.ticket.sectorId] = withLiveCountdown(result.ticket);
     syncQueue();
@@ -579,22 +553,11 @@ async function joinQueue(sectorId) {
   }
 }
 
-async function createTicketWithPresence(sectorId) {
-  try {
-    const presence = await getPresencePayload(sectorId);
-    return await api("/api/tickets", {
-      method: "POST",
-      body: { ...identity, sectorId, ...presence, ...priorityPayload() }
-    });
-  } catch (exception) {
-    if (!isInvalidQrError(exception) || !presenceCheckins[sectorId]) throw exception;
-    clearSectorPresence(sectorId);
-    const location = await ensureLocation({ force: true });
-    return api("/api/tickets", {
-      method: "POST",
-      body: { ...identity, sectorId, location, ...priorityPayload() }
-    });
-  }
+function createDigitalTicket(sectorId) {
+  return api("/api/tickets", {
+    method: "POST",
+    body: { ...identity, sectorId, ...priorityPayload() }
+  });
 }
 
 function priorityPayload() {
@@ -604,11 +567,6 @@ function priorityPayload() {
   if (!priority) return { priority: false, priorityReason: "" };
   if (!reason) throw new Error("Selecione a categoria da fila preferencial.");
   return { priority: true, priorityReason: reason };
-}
-
-function isInvalidQrError(exception) {
-  return String(exception?.message || "").toLowerCase().includes("qr code do setor invalido")
-    || String(exception?.message || "").toLowerCase().includes("qr code do setor inválido");
 }
 
 function syncQueue() {
@@ -1182,147 +1140,6 @@ function bindCartItemActions() {
   document.querySelectorAll("[data-cart-remove]").forEach((button) => button.addEventListener("click", () => removeCartItemFromList(button.dataset.cartRemove)));
 }
 
-async function getPresencePayload(sectorId) {
-  if (!presenceCheckEnabled) return {};
-
-  const qrToken = new URLSearchParams(location.search).get("qr");
-  const storedToken = presenceCheckins[sectorId];
-  if (qrToken) {
-    registerSectorPresence(sectorId, qrToken);
-    const cleanUrl = new URL(location.href);
-    cleanUrl.searchParams.delete("qr");
-    history.replaceState(null, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
-    return { qrToken };
-  }
-  try {
-    const currentLocation = await ensureLocation();
-    return storedToken ? { qrToken: storedToken, location: currentLocation } : { location: currentLocation };
-  } catch (exception) {
-    if (storedToken) return { qrToken: storedToken };
-    throw exception;
-  }
-}
-
-async function confirmSectorPresence(sectorId) {
-  if (!presenceCheckEnabled) {
-    navigate("sectors");
-    return;
-  }
-
-  try {
-    await ensureLocation({ force: true });
-    navigate("sectors");
-  } catch (exception) {
-    alert(exception.message);
-  }
-}
-
-function registerSectorPresence(sectorId, token = null) {
-  if (!QR_SECTORS.has(sectorId) || !token) return;
-  presenceCheckins = { ...presenceCheckins, [sectorId]: token };
-  sessionStorage.setItem("filaZeroPresenceCheckins", JSON.stringify(presenceCheckins));
-  syncPresenceStatus();
-}
-
-function clearSectorPresence(sectorId) {
-  if (!presenceCheckins[sectorId]) return;
-  const nextCheckins = { ...presenceCheckins };
-  delete nextCheckins[sectorId];
-  presenceCheckins = nextCheckins;
-  sessionStorage.setItem("filaZeroPresenceCheckins", JSON.stringify(presenceCheckins));
-  syncPresenceStatus();
-}
-
-function syncPresenceStatus() {
-  const status = document.querySelector("#presenceStatus");
-  if (!status) return;
-  const confirmed = Object.keys(presenceCheckins)
-    .filter((sectorId) => QR_SECTORS.has(sectorId) && presenceCheckins[sectorId])
-    .map((sectorId) => sectors[sectorId]?.name || sectorNameFallback(sectorId));
-
-  status.textContent = confirmed.length
-    ? `Confirmado: ${confirmed.join(", ")}`
-    : locationStatusText();
-
-  document.querySelectorAll("[data-qr-checkin]").forEach((button) => {
-    const sectorId = button.dataset.qrCheckin;
-    button.classList.toggle("checked", Boolean(presenceCheckins[sectorId]));
-  });
-}
-
-function sectorNameFallback(sectorId) {
-  return { acougue: "Açougue", frios: "Frios", padaria: "Padaria" }[sectorId] || sectorId;
-}
-
-function warmupLocation() {
-  ensureLocation().catch(() => {});
-}
-
-async function ensureLocation(options = {}) {
-  if (hasFreshLocation() && !options.force) return locationState.value;
-  if (locationState.promise && !options.force) return locationState.promise;
-
-  locationState.status = "loading";
-  locationState.error = "";
-  syncPresenceStatus();
-
-  locationState.promise = requestLocation()
-    .then((value) => {
-      locationState.status = "ready";
-      locationState.value = value;
-      locationState.checkedAt = Date.now();
-      locationState.error = "";
-      return value;
-    })
-    .catch((error) => {
-      locationState.status = "error";
-      locationState.error = error.message;
-      throw error;
-    })
-    .finally(() => {
-      locationState.promise = null;
-      syncPresenceStatus();
-    });
-
-  return locationState.promise;
-}
-
-function hasFreshLocation() {
-  return Boolean(locationState.value && Date.now() - locationState.checkedAt < LOCATION_CACHE_MS);
-}
-
-function locationStatusText() {
-  if (!presenceCheckEnabled) return "Localizacao desativada durante os testes.";
-  if (hasFreshLocation()) return "Localizacao confirmada automaticamente.";
-  if (locationState.status === "loading") return "Confirmando localizacao automaticamente...";
-  if (locationState.status === "error") return locationState.error || "Nao foi possivel confirmar a localizacao.";
-  return "Localizacao sera confirmada automaticamente ao solicitar senha.";
-}
-
-function requestLocation() {
-  if (!("geolocation" in navigator)) {
-    return Promise.reject(new Error("Seu navegador nao permite localizacao automatica."));
-  }
-  return new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(
-      (position) => resolve({
-        latitude: position.coords.latitude,
-        longitude: position.coords.longitude,
-        accuracy: position.coords.accuracy
-      }),
-      (error) => {
-        const messages = {
-          1: "Autorize a localizacao do navegador para solicitar senha automaticamente.",
-          2: "Nao foi possivel encontrar sua localizacao agora.",
-          3: "A localizacao demorou para responder. Tente novamente."
-        };
-        reject(new Error(messages[error.code] || "Nao foi possivel confirmar sua localizacao."));
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: LOCATION_CACHE_MS }
-    );
-  });
-}
-
 function renderProducts() {
   productsRendered = true;
   const groups = personalizedProductGroups();
@@ -1822,7 +1639,6 @@ function bindEvents() {
   document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.tab)));
   document.querySelectorAll("[data-join]").forEach((button) => button.addEventListener("click", () => joinQueue(button.dataset.join)));
   document.querySelectorAll("[data-quick-join]").forEach((button) => button.addEventListener("click", () => joinQueue(button.dataset.quickJoin)));
-  document.querySelectorAll("[data-qr-checkin]").forEach((button) => button.addEventListener("click", () => confirmSectorPresence(button.dataset.qrCheckin)));
   document.querySelector("#backButton").addEventListener("click", () => navigate("home"));
   document.querySelector("#notifyButton").addEventListener("click", handleNotifyButton);
   document.querySelector("#floatingQueue").addEventListener("click", () => navigate("status"));

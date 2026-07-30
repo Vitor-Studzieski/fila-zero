@@ -3551,6 +3551,683 @@ textarea:focus {
   }
 }
 
+/* PWA installation page */
+.install-stage {
+  min-height: 100vh;
+  background: #f4f7fb;
+  color: #142238;
+}
+
+.install-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 76px;
+  border-bottom: 1px solid #d7e0e9;
+  padding: 12px max(24px, calc((100vw - 1120px) / 2));
+  background: #fff;
+}
+
+.install-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #06466f;
+  font-size: 20px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.install-brand img {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+}
+
+.install-secure {
+  color: #526277;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.install-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(320px, 0.92fr);
+  gap: 72px;
+  width: min(1120px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 72px 0 84px;
+}
+
+.install-copy {
+  align-self: center;
+  max-width: 600px;
+}
+
+.install-kicker,
+.totem-eyebrow {
+  margin: 0 0 10px;
+  color: #087f8c;
+  font-size: 13px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.install-copy h1 {
+  margin: 0;
+  color: #06466f;
+  font-size: 58px;
+  line-height: 1.02;
+  letter-spacing: 0;
+}
+
+.install-lead {
+  max-width: 560px;
+  margin: 18px 0 28px;
+  color: #526277;
+  font-size: 21px;
+  line-height: 1.5;
+}
+
+.install-state {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 18px;
+  border-left: 4px solid #087f8c;
+  padding: 12px 14px;
+  background: #eaf5f6;
+}
+
+.install-state span {
+  color: #526277;
+  line-height: 1.4;
+}
+
+.install-primary,
+.install-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 52px;
+  border-radius: 6px;
+  padding: 12px 20px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.install-primary {
+  margin-right: 8px;
+  background: #ffca0a;
+  color: #142238;
+}
+
+.install-secondary {
+  border: 1px solid #b8c7d5;
+  background: #fff;
+  color: #06466f;
+}
+
+.install-guide {
+  align-self: start;
+  border: 1px solid #c9d7e4;
+  border-radius: 8px;
+  padding: 28px;
+  background: #fff;
+  box-shadow: 0 16px 36px rgb(5 46 73 / 12%);
+}
+
+.install-guide h2 {
+  margin: 0 0 20px;
+  color: #06466f;
+  font-size: 26px;
+}
+
+.install-guide ol {
+  display: grid;
+  gap: 18px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.install-guide li {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  align-items: start;
+  gap: 12px;
+}
+
+.install-guide li > span {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 50%;
+  background: #06466f;
+  color: #fff;
+  font-weight: 900;
+}
+
+.install-guide li p {
+  margin: 5px 0 0;
+  color: #435268;
+  line-height: 1.45;
+}
+
+.install-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 28px;
+  border-top: 1px solid #e1e8ef;
+  padding-top: 20px;
+  color: #142238;
+  font-weight: 900;
+}
+
+.install-preview img {
+  width: 58px;
+  height: 58px;
+  border-radius: 8px;
+}
+
+/* Physical ticket kiosk */
+.totem-stage {
+  min-height: 100vh;
+  background: #edf2f7;
+  color: #142238;
+}
+
+.totem-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 88px;
+  padding: 14px 32px;
+  background: #06466f;
+  color: #fff;
+}
+
+.totem-brand {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+
+.totem-brand img {
+  width: 54px;
+  height: 54px;
+  border-radius: 8px;
+}
+
+.totem-brand div {
+  display: grid;
+}
+
+.totem-brand span {
+  color: #d7e7f1;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.totem-brand strong {
+  font-size: 24px;
+}
+
+.totem-connection {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 38px;
+  border: 1px solid rgb(255 255 255 / 34%);
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-size: 13px;
+}
+
+.totem-connection > span,
+.totem-print-state > span {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #ffca0a;
+}
+
+.totem-connection[data-state="online"] > span,
+.totem-print-state[data-state="printed"] > span {
+  background: #31c66b;
+}
+
+.totem-connection[data-state="offline"] > span,
+.totem-print-state[data-state="failed"] > span {
+  background: #e5484d;
+}
+
+.totem-loading,
+.totem-pair,
+.totem-operation,
+.totem-result {
+  width: min(1180px, calc(100% - 64px));
+  margin: 0 auto;
+}
+
+.totem-loading {
+  display: grid;
+  min-height: calc(100vh - 88px);
+  place-content: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.totem-loading strong {
+  color: #06466f;
+  font-size: 30px;
+}
+
+.totem-loading span {
+  color: #526277;
+}
+
+.totem-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 44px;
+  min-height: calc(100vh - 88px);
+}
+
+.totem-pair h1,
+.totem-heading h1 {
+  margin: 0;
+  color: #06466f;
+  font-size: 44px;
+  line-height: 1.08;
+  letter-spacing: 0;
+}
+
+.totem-pair > div > p:last-child {
+  max-width: 680px;
+  margin: 18px 0 0;
+  color: #526277;
+  font-size: 19px;
+  line-height: 1.5;
+}
+
+.totem-primary,
+.totem-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 56px;
+  border-radius: 6px;
+  padding: 13px 22px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.totem-primary {
+  background: #ffca0a;
+  color: #142238;
+}
+
+.totem-secondary {
+  border: 1px solid #aebfce;
+  background: #fff;
+  color: #06466f;
+}
+
+.totem-operation {
+  padding: 54px 0 72px;
+}
+
+.totem-heading {
+  display: grid;
+  grid-template-columns: 1fr minmax(300px, 500px);
+  align-items: end;
+  gap: 32px;
+  margin-bottom: 34px;
+}
+
+.totem-heading > p {
+  margin: 0;
+  color: #526277;
+  font-size: 18px;
+  line-height: 1.5;
+}
+
+.totem-sectors {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.totem-operation-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 270px;
+  align-items: start;
+  gap: 24px;
+}
+
+.totem-install {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #c4d2df;
+  border-radius: 6px;
+  padding: 18px;
+  background: #fff;
+  text-align: center;
+}
+
+.totem-install-qr {
+  width: 100%;
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: #fff;
+}
+
+.totem-install-qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.totem-install div:last-child {
+  display: grid;
+  gap: 5px;
+}
+
+.totem-install strong {
+  color: #06466f;
+  font-size: 18px;
+}
+
+.totem-install span {
+  color: #526277;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.totem-sector {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) 34px;
+  align-items: center;
+  gap: 16px;
+  min-height: 150px;
+  border: 1px solid #c4d2df;
+  border-radius: 8px;
+  padding: 22px;
+  background: #fff;
+  color: #142238;
+  text-align: left;
+  box-shadow: 0 12px 28px rgb(5 46 73 / 9%);
+  transition: border-color 140ms ease, transform 140ms ease;
+}
+
+.totem-sector:hover,
+.totem-sector:focus-visible {
+  border-color: #087f8c;
+  transform: translateY(-2px);
+}
+
+.totem-sector:focus-visible,
+.totem-primary:focus-visible,
+.totem-secondary:focus-visible,
+.install-primary:focus-visible,
+.install-secondary:focus-visible {
+  outline: 3px solid rgb(255 202 10 / 75%);
+  outline-offset: 3px;
+}
+
+.totem-sector-prefix {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  border-radius: 8px;
+  background: #e7f2f4;
+  color: #087f8c;
+  font-size: 30px;
+  font-weight: 900;
+}
+
+.totem-sector-copy {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.totem-sector-copy strong {
+  color: #06466f;
+  font-size: 23px;
+  line-height: 1.15;
+}
+
+.totem-sector-copy small {
+  color: #5e6d81;
+  font-size: 14px;
+}
+
+.totem-sector-arrow {
+  color: #06466f;
+  font-size: 28px;
+}
+
+.totem-feedback {
+  min-height: 24px;
+  margin: 24px 0 0;
+  color: #a52a2f;
+  font-weight: 800;
+  text-align: center;
+}
+
+.totem-dialog {
+  width: min(520px, calc(100% - 32px));
+  border: 1px solid #c4d2df;
+  border-radius: 8px;
+  padding: 0;
+  color: #142238;
+  box-shadow: 0 24px 64px rgb(5 30 48 / 28%);
+}
+
+.totem-dialog::backdrop {
+  background: rgb(5 30 48 / 62%);
+}
+
+.totem-dialog form {
+  padding: 30px;
+}
+
+.totem-dialog h2 {
+  margin: 0 0 10px;
+  color: #06466f;
+  font-size: 34px;
+}
+
+.totem-dialog form > p:not(.totem-eyebrow) {
+  color: #526277;
+  line-height: 1.5;
+}
+
+.totem-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 28px;
+}
+
+.totem-result {
+  display: grid;
+  min-height: calc(100vh - 88px);
+  place-content: center;
+  justify-items: center;
+  text-align: center;
+}
+
+.totem-result > span {
+  color: #526277;
+  font-size: 25px;
+  font-weight: 800;
+}
+
+.totem-result > strong {
+  margin: 8px 0 26px;
+  color: #06466f;
+  font-size: 96px;
+  line-height: 1;
+  letter-spacing: 0;
+}
+
+.totem-print-state {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 50px;
+  margin-bottom: 24px;
+  border: 1px solid #c4d2df;
+  border-radius: 6px;
+  padding: 10px 16px;
+  background: #fff;
+}
+
+.totem-print-state p {
+  margin: 0;
+  font-weight: 800;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+@media (max-width: 900px) {
+  .install-main {
+    grid-template-columns: 1fr;
+    gap: 42px;
+    padding-top: 48px;
+  }
+
+  .install-copy {
+    max-width: none;
+  }
+
+  .totem-heading {
+    grid-template-columns: 1fr;
+  }
+
+  .totem-sectors {
+    grid-template-columns: 1fr;
+  }
+
+  .totem-operation-grid {
+    grid-template-columns: minmax(0, 1fr) 220px;
+  }
+
+  .totem-sector {
+    min-height: 118px;
+  }
+}
+
+@media (max-width: 600px) {
+  .install-header {
+    min-height: 66px;
+    padding: 10px 16px;
+  }
+
+  .install-secure {
+    display: none;
+  }
+
+  .install-main {
+    width: min(100% - 28px, 560px);
+    padding: 38px 0 60px;
+  }
+
+  .install-copy h1 {
+    font-size: 44px;
+  }
+
+  .install-lead {
+    font-size: 18px;
+  }
+
+  .install-primary,
+  .install-secondary {
+    width: 100%;
+    margin: 0 0 9px;
+  }
+
+  .install-guide {
+    padding: 22px 18px;
+  }
+
+  .totem-header {
+    min-height: 76px;
+    padding: 11px 16px;
+  }
+
+  .totem-brand img {
+    width: 46px;
+    height: 46px;
+  }
+
+  .totem-brand span,
+  .totem-connection strong {
+    display: none;
+  }
+
+  .totem-loading,
+  .totem-pair,
+  .totem-operation,
+  .totem-result {
+    width: min(100% - 28px, 560px);
+  }
+
+  .totem-pair {
+    grid-template-columns: 1fr;
+    align-content: center;
+    gap: 28px;
+  }
+
+  .totem-pair h1,
+  .totem-heading h1 {
+    font-size: 36px;
+  }
+
+  .totem-operation {
+    padding-top: 38px;
+  }
+
+  .totem-operation-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .totem-install {
+    grid-template-columns: 120px minmax(0, 1fr);
+    align-items: center;
+    text-align: left;
+  }
+
+  .totem-sector {
+    grid-template-columns: 56px minmax(0, 1fr) 24px;
+    min-height: 108px;
+    padding: 16px;
+  }
+
+  .totem-sector-prefix {
+    width: 56px;
+    height: 56px;
+  }
+
+  .totem-result > strong {
+    font-size: 72px;
+  }
+
+  .totem-dialog-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 430px) {
   .login-stage {
     display: block;

@@ -38,8 +38,10 @@
     markCriticalOperation,
     openNotificationSettings,
     prepareLogout,
+    requestInstallation,
     reportNetworkFailure,
-    reportNetworkSuccess
+    reportNetworkSuccess,
+    isInstalled: () => utils.isStandaloneDisplay()
   };
 
   function initializeDom() {
