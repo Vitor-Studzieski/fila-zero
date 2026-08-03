@@ -229,11 +229,31 @@ async function loadState() {
 async function loadCart() {
   const result = await api(`/api/cart?customer_id=${encodeURIComponent(identity.customerId)}`);
   cartItems = result.items;
+  syncCartViews();
+}
+
+function syncCartViews() {
   shoppingList.clear();
   cartItems.forEach((item) => shoppingList.add(item.productId));
   renderCart();
   renderClub();
   if (productsRendered) renderProducts();
+}
+
+function upsertLocalCartItem(item) {
+  if (!item?.id) return;
+  const index = cartItems.findIndex((entry) => entry.id === item.id);
+  if (index === -1) cartItems.push(item);
+  else cartItems[index] = item;
+  syncCartViews();
+}
+
+function refreshShoppingAgentInBackground() {
+  loadShoppingAgent()
+    .then(() => {
+      if (productsRendered) renderProducts();
+    })
+    .catch((error) => console.warn("shopping_agent_refresh_failed", error));
 }
 
 async function loadProductCatalog() {
@@ -1523,7 +1543,7 @@ async function addCurrentProduct() {
   if (!productId) return;
   const item = findProduct(productId);
   try {
-    await api("/api/cart/items", {
+    const result = await api("/api/cart/items", {
       method: "POST",
       body: {
         customerId: identity.customerId,
@@ -1533,10 +1553,8 @@ async function addCurrentProduct() {
         price: item.price
       }
     });
-    await loadCart();
-    await loadShoppingAgent();
-    shoppingList.add(productId);
-    renderProducts();
+    upsertLocalCartItem(result.item);
+    refreshShoppingAgentInBackground();
     document.querySelector("#addProduct").textContent = "Produto na lista";
     document.querySelector("#toast").classList.add("visible");
     updateProductCard(productId);
@@ -1554,11 +1572,12 @@ async function changeCartItemQuantity(itemId, delta) {
     return;
   }
   try {
-    await api(`/api/cart/items/${encodeURIComponent(itemId)}`, {
+    const result = await api(`/api/cart/items/${encodeURIComponent(itemId)}`, {
       method: "PATCH",
       body: { quantity: nextQuantity }
     });
-    await refreshShoppingListAfterEdit();
+    upsertLocalCartItem(result.item);
+    refreshShoppingAgentInBackground();
   } catch (exception) {
     alert(exception.message);
   }
@@ -1569,16 +1588,12 @@ async function removeCartItemFromList(itemId) {
     await api(`/api/cart/items/${encodeURIComponent(itemId)}`, {
       method: "DELETE"
     });
-    await refreshShoppingListAfterEdit();
+    cartItems = cartItems.filter((item) => item.id !== itemId);
+    syncCartViews();
+    refreshShoppingAgentInBackground();
   } catch (exception) {
     alert(exception.message);
   }
-}
-
-async function refreshShoppingListAfterEdit() {
-  await loadCart();
-  await loadShoppingAgent();
-  if (productsRendered) renderProducts();
 }
 
 function recordShoppingSignal(signal) {

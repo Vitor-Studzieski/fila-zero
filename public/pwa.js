@@ -14,6 +14,7 @@
     updateApplying: false,
     lastNetworkSuccessAt: Number(localStorage.getItem("filaZeroLastNetworkSuccessAt") || 0),
     pushStatus: null,
+    pushStatusPromise: null,
     currentSubscription: null
   };
 
@@ -348,7 +349,15 @@
     state.criticalOperations = Math.max(0, state.criticalOperations + (active ? 1 : -1));
   }
 
-  async function refreshPushStatus() {
+  function refreshPushStatus() {
+    if (state.pushStatusPromise) return state.pushStatusPromise;
+    state.pushStatusPromise = loadPushStatus().finally(() => {
+      state.pushStatusPromise = null;
+    });
+    return state.pushStatusPromise;
+  }
+
+  async function loadPushStatus() {
     const settings = document.querySelector("#notificationSettings");
     if (!settings) return;
     const compatibility = pushCompatibility();

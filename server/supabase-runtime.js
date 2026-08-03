@@ -271,11 +271,12 @@ async function kioskStatusRoute(request, sessionOverride = null) {
     getSectors()
   ]);
   const kiosk = kioskRows[0];
+  const openSectors = await customerSectorDtos(sectors.filter((sector) => sector.status === "open"));
   return json({
     paired: Boolean(kiosk),
     canPair: hasAnyRole(user, ADMIN_ROLES),
     kiosk: kiosk ? kioskDto(kiosk) : null,
-    sectors: await mapAsync(sectors.filter((sector) => sector.status === "open"), sectorDto)
+    sectors: openSectors
   });
 }
 
@@ -929,12 +930,14 @@ async function updateSector(sectorId, body) {
 }
 
 async function getCustomerState(customerId) {
-  const sectorRows = await getSectors();
+  const [sectorRows, tickets, profile] = await Promise.all([
+    getSectors(),
+    customerId
+      ? select("tickets", `customer_id=eq.${encodeURIComponent(customerId)}&status=in.(${ACTIVE_STATUSES.join(",")})&order=created_at.asc`)
+      : [],
+    customerId ? getProfile(customerId).catch(() => null) : null
+  ]);
   const sectors = await customerSectorDtos(sectorRows);
-  const tickets = customerId
-    ? await select("tickets", `customer_id=eq.${encodeURIComponent(customerId)}&status=in.(${ACTIVE_STATUSES.join(",")})&order=created_at.asc`)
-    : [];
-  const profile = customerId ? await getProfile(customerId).catch(() => null) : null;
   return { serverTime: isoNow(), sectors, tickets: await mapAsync(hydrateTicketNames(tickets, new Map(profile ? [[profile.id, profile.name]] : [])), ticketDto) };
 }
 
@@ -1241,12 +1244,21 @@ async function customerSectorDtos(sectors) {
 }
 
 async function staffAverageStats(sectorIds) {
-  const map = new Map();
-  await Promise.all(sectorIds.map(async (sectorId) => {
-    const rows = await select("tickets", `sector_id=eq.${encodeURIComponent(sectorId)}&service_started_at=not.is.null&finished_at=not.is.null&select=service_started_at,finished_at&order=finished_at.desc&limit=20`);
-    const durations = rows.map((row) => secondsBetween(row.service_started_at, row.finished_at)).filter((seconds) => Number.isFinite(seconds) && seconds > 0);
+  const uniqueSectorIds = [...new Set(sectorIds.filter(Boolean))];
+  const map = new Map(uniqueSectorIds.map((sectorId) => [sectorId, { seconds: 0, samples: 0 }]));
+  if (!uniqueSectorIds.length) return map;
+  const rows = await select(
+    "tickets",
+    `sector_id=in.(${uniqueSectorIds.map(encodeURIComponent).join(",")})&service_started_at=not.is.null&finished_at=not.is.null&select=sector_id,service_started_at,finished_at&order=finished_at.desc&limit=${uniqueSectorIds.length * 20}`
+  );
+  const grouped = groupBy(rows, "sector_id");
+  uniqueSectorIds.forEach((sectorId) => {
+    const durations = (grouped.get(sectorId) || [])
+      .slice(0, 20)
+      .map((row) => secondsBetween(row.service_started_at, row.finished_at))
+      .filter((seconds) => Number.isFinite(seconds) && seconds > 0);
     map.set(sectorId, { seconds: average(durations), samples: durations.length });
-  }));
+  });
   return map;
 }
 
@@ -1455,12 +1467,12 @@ async function createShoppingSignal(customerId, body = {}) {
 }
 
 async function getShoppingAgent(customerId) {
-  const [cartRows, signalRows, ticketRows] = await Promise.all([
+  const [cartRows, signalRows, ticketRows, sectors] = await Promise.all([
     select("cart_items", `customer_id=eq.${encodeURIComponent(customerId)}&order=updated_at.desc&limit=200`),
     select("shopping_signals", `customer_id=eq.${encodeURIComponent(customerId)}&order=created_at.desc&limit=200`),
-    select("tickets", `customer_id=eq.${encodeURIComponent(customerId)}&order=created_at.desc&limit=100`)
+    select("tickets", `customer_id=eq.${encodeURIComponent(customerId)}&order=created_at.desc&limit=100`),
+    getSectors()
   ]);
-  const sectors = await getSectors();
   const sectorNames = new Map(sectors.map((sector) => [sector.id, sector.name]));
   return buildShoppingAgentProfile(
     cartRows,
@@ -1783,9 +1795,11 @@ async function upsertSession(body, userAgent) {
 }
 
 async function runScheduledJobs() {
-  await expireAbsentCalls();
-  await notifyStandbyExpiringTickets();
-  await expireExpiredStandbyTickets();
+  await Promise.all([
+    expireAbsentCalls(),
+    notifyStandbyExpiringTickets(),
+    expireExpiredStandbyTickets()
+  ]);
   await autoCallReadyTickets();
 }
 
@@ -2005,9 +2019,12 @@ async function getProfile(userId, fallbackEmail = "") {
   if (cached && cached.expiresAt > Date.now()) {
     return { ...cached.profile, email: cached.profile.email || fallbackEmail };
   }
-  const profile = (await select("profiles", `id=eq.${encodeURIComponent(userId)}&limit=1`))[0];
+  const [profileRows, permissions] = await Promise.all([
+    select("profiles", `id=eq.${encodeURIComponent(userId)}&limit=1`),
+    select("profile_sector_permissions", `profile_id=eq.${encodeURIComponent(userId)}&select=sector_id`)
+  ]);
+  const profile = profileRows[0];
   if (!profile) return null;
-  const permissions = await select("profile_sector_permissions", `profile_id=eq.${encodeURIComponent(userId)}&select=sector_id`);
   const dto = userDto({ ...profile, email: profile.email || fallbackEmail, sectorIds: permissions.map((item) => item.sector_id) });
   profileCache.set(userId, { profile: dto, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS });
   return dto;
@@ -2195,7 +2212,7 @@ async function insert(table, body, returning = true) {
     headers: { Prefer: returning ? "return=representation" : "return=minimal" },
     body
   });
-  if (result.error) throw new Error(result.error);
+  if (result?.error) throw new Error(result.error);
   return Array.isArray(result) ? result[0] : result;
 }
 
