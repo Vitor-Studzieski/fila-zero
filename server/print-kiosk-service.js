@@ -100,7 +100,9 @@ function validatePhysicalTicketInput(body = {}) {
 }
 
 function printJobDto(row) {
-  if (!row) return null;
+  // PostgREST can represent a NULL composite value returned by an RPC as an
+  // empty object. It means there is no job to claim, not a printable job.
+  if (!row || !row.id) return null;
   const payload = parsePayload(row.payload);
   return {
     id: row.id,

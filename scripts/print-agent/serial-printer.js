@@ -2,7 +2,9 @@ const { SerialPort } = require("serialport");
 
 class SerialPrinter {
   constructor(options = {}) {
-    this.path = String(options.path || "COM3");
+    // The agent configuration exposes this as printerPort. Accept path as
+    // well so the class remains reusable with serialport-like options.
+    this.path = String(options.printerPort || options.path || "COM3").trim();
     this.baudRate = positiveInteger(options.baudRate, 115200);
     this.dataBits = options.dataBits === 7 ? 7 : 8;
     this.stopBits = options.stopBits === 2 ? 2 : 1;

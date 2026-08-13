@@ -79,16 +79,24 @@ async function main() {
 }
 
 async function processJob(job, config, printer, journal, logger, signal, finish = finishJob) {
+  assertPrintableJob(job);
   if (journal.has(job.id)) {
     await finish(config, job.id, true, null, signal);
     logger.info("Trabalho ja impresso confirmado novamente na API.", { jobId: job.id });
     return;
   }
 
-  const receipt = buildTicketReceipt(job.payload);
+  const payload = receiptPayload(job, logger);
+  let receipt;
+  try {
+    receipt = buildTicketReceipt(payload);
+  } catch (error) {
+    await reportPrintFailure(config, job.id, error, logger, signal, finish);
+    throw error;
+  }
   logger.info("Enviando senha para a impressora.", {
     jobId: job.id,
-    ticketCode: job.payload?.ticketCode,
+    ticketCode: payload.ticketCode,
     bytes: receipt.length
   });
 
@@ -96,19 +104,52 @@ async function processJob(job, config, printer, journal, logger, signal, finish 
     await printer.print(receipt);
     journal.add(job.id);
   } catch (error) {
-    try {
-      await finish(config, job.id, false, error.message, signal);
-    } catch (finishError) {
-      logger.error("Nao foi possivel registrar a falha na API.", {
-        jobId: job.id,
-        error: finishError.message
-      });
-    }
+    await reportPrintFailure(config, job.id, error, logger, signal, finish);
     throw error;
   }
 
   await finish(config, job.id, true, null, signal);
-  logger.info("Impressao concluida.", { jobId: job.id, ticketCode: job.payload?.ticketCode });
+  logger.info("Impressao concluida.", { jobId: job.id, ticketCode: payload.ticketCode });
+}
+
+function receiptPayload(job, logger) {
+  const payload = { ...(job?.payload || {}) };
+  if (validDate(payload.issuedAt)) return payload;
+  const fallback = [job?.createdAt, job?.claimedAt]
+    .find(validDate);
+  if (!fallback) {
+    throw new Error("Horario de emissao invalido no trabalho de impressao.");
+  }
+  payload.issuedAt = fallback;
+  logger.info("Horario invalido no trabalho; usando horario de criacao como reserva.", {
+    jobId: job?.id,
+    ticketCode: payload.ticketCode
+  });
+  return payload;
+}
+
+function assertPrintableJob(job) {
+  if (!job || !String(job.id || "").trim()) {
+    throw new Error("Trabalho de impressao invalido recebido da API: ID ausente.");
+  }
+  if (!String(job.payload?.ticketCode || "").trim()) {
+    throw new Error("Trabalho de impressao invalido recebido da API: senha ausente.");
+  }
+}
+
+async function reportPrintFailure(config, jobId, error, logger, signal, finish) {
+  try {
+    await finish(config, jobId, false, error.message, signal);
+  } catch (finishError) {
+    logger.error("Nao foi possivel registrar a falha na API.", {
+      jobId,
+      error: finishError.message
+    });
+  }
+}
+
+function validDate(value) {
+  return Number.isFinite(new Date(value).getTime());
 }
 
 async function claimJob(config, signal) {
@@ -156,5 +197,7 @@ function delay(milliseconds, signal) {
 
 module.exports = {
   agentFetch,
-  processJob
+  processJob,
+  receiptPayload,
+  assertPrintableJob
 };

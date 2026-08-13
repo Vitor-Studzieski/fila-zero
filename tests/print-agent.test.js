@@ -6,8 +6,9 @@ const path = require("node:path");
 const test = require("node:test");
 
 const { buildTicketReceipt } = require("../server/escpos-receipt");
-const { processJob } = require("../scripts/print-agent");
-const { queryStatus } = require("../scripts/print-agent/serial-printer");
+const { printJobDto } = require("../server/print-kiosk-service");
+const { assertPrintableJob, processJob, receiptPayload } = require("../scripts/print-agent");
+const { SerialPrinter, queryStatus } = require("../scripts/print-agent/serial-printer");
 const {
   PrintedJobJournal,
   loadAgentEnvironment,
@@ -62,6 +63,11 @@ test("carrega configuracao local sem sobrescrever variaveis do processo", () => 
     process.env = previous;
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("usa a porta configurada pelo agente ao criar a impressora", () => {
+  const printer = new SerialPrinter({ printerPort: "COM9" });
+  assert.equal(printer.path, "COM9");
 });
 
 test("journal impede reimpressao de trabalho ja enviado", () => {
@@ -124,6 +130,29 @@ test("nao marca impressao como falha se apenas a confirmacao da API cair", async
   assert.equal(printed, true);
   assert.equal(journaled, true);
   assert.deepEqual(calls, [{ jobId: job.id, success: true }]);
+});
+
+test("usa a data de criacao quando um trabalho antigo nao possui horario valido", () => {
+  const payload = receiptPayload({
+    id: "job-antigo",
+    createdAt: "2026-08-12T14:00:00.000Z",
+    payload: { ticketCode: "A002", sectorName: "Acougue", issuedAt: "invalido" }
+  }, { info: () => {} });
+
+  assert.equal(payload.issuedAt, "2026-08-12T14:00:00.000Z");
+  assert.ok(buildTicketReceipt(payload).includes(Buffer.from("A002", "ascii")));
+});
+
+test("recusa trabalho sem identificador para nunca imprimir um cupom sem senha", () => {
+  assert.throws(
+    () => assertPrintableJob({ payload: { ticketCode: "A002" } }),
+    /ID ausente/
+  );
+});
+
+test("interpreta retorno vazio da RPC como fila sem trabalho", () => {
+  assert.equal(printJobDto({}), null);
+  assert.equal(printJobDto(null), null);
 });
 
 function sampleJob() {
