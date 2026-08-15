@@ -176,7 +176,7 @@ notepad .env.print-agent
 Preencha:
 
 ```env
-PRINT_API_URL=https://senhahub-mauve.vercel.app
+PRINT_API_URL=https://senhahub.vercel.app
 PRINT_AGENT_TOKEN=cole-o-mesmo-segredo-configurado-no-servidor
 KIOSK_ID=totem-pompeia-01
 
@@ -466,7 +466,7 @@ Remover a tarefa não apaga automaticamente os logs nem o journal.
 O simulador valida a fila sem Bematech física:
 
 ```powershell
-$env:PRINT_API_URL="https://senhahub-mauve.vercel.app"
+$env:PRINT_API_URL="https://senhahub.vercel.app"
 $env:PRINT_AGENT_TOKEN="o-mesmo-token-do-servidor"
 $env:KIOSK_ID="totem-pompeia-01"
 npm run print:simulate -- --once

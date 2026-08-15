@@ -1,5 +1,5 @@
 (function initializeTotem() {
-  const GENERAL_QR_URL = "https://senhahub-mauve.vercel.app/login?next=%2F";
+  const GENERAL_QR_URL = "https://senhahub.vercel.app/login?next=%2F";
   const PRIORITY_CATEGORIES = [
     { id: "deficiencia_ou_mobilidade_reduzida", label: "Pessoa com deficiência ou mobilidade reduzida", icon: "♿" },
     { id: "tea", label: "Pessoa com transtorno do espectro autista", icon: "♢" },

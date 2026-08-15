@@ -89,7 +89,7 @@ values (
   'Bematech MP - 4200 TH',
   'COM3',
   80,
-  'https://senhahub-mauve.vercel.app/instalar'
+  'https://senhahub.vercel.app/instalar'
 )
 on conflict (id) do nothing;
 

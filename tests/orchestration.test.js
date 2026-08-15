@@ -398,7 +398,7 @@ test("totem emite senha fisica na fila unica e conclui a impressao sem duplicar"
   assert.equal(first.ticket.priorityReason, "tea");
   assert.equal(first.printJob.status, "pending");
   assert.equal(first.printJob.payload.paperWidthMm, 80);
-  assert.equal(first.printJob.payload.installUrl, "https://senhahub-mauve.vercel.app/instalar");
+  assert.equal(first.printJob.payload.installUrl, "https://senhahub.vercel.app/instalar");
   assert.match(first.printJob.payload.trackUrl, /\/acompanhar\/[A-Za-z0-9_-]+$/);
 
   const trackingToken = new URL(first.printJob.payload.trackUrl).pathname.split("/").pop();

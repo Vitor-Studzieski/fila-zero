@@ -20,8 +20,8 @@ test("gera cupom ESC/POS sem QR e com corte para a Bematech", () => {
     ticketCode: "A042",
     sectorName: "Acougue",
     issuedAt: "2026-07-29T20:00:00.000Z",
-    installUrl: "https://senhahub-mauve.vercel.app/instalar",
-    trackUrl: "https://senhahub-mauve.vercel.app/acompanhar/token-de-teste-1234567890",
+    installUrl: "https://senhahub.vercel.app/instalar",
+    trackUrl: "https://senhahub.vercel.app/acompanhar/token-de-teste-1234567890",
     paperWidthMm: 80
   });
 
@@ -44,7 +44,7 @@ test("totem exibe o QR geral separado do QR individual da senha", () => {
   assert.match(html, /Confirme sua escolha/);
   assert.doesNotMatch(html, /id="totemStepConfirm"/);
   assert.match(script, /kiosk\?\.appUrl/);
-  assert.match(script, /senhahub-mauve\.vercel\.app\/login\?next=%2F/);
+  assert.match(script, /senhahub\.vercel\.app\/login\?next=%2F/);
   assert.match(script, /trackUrl/);
   assert.match(script, /setStep\(state\.serviceType === "preferencial" \? "priority" : "type"\)/);
 });
@@ -53,7 +53,7 @@ test("carrega configuracao local sem sobrescrever variaveis do processo", () => 
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "senhahub-agent-"));
   const configFile = path.join(directory, ".env.print-agent");
   fs.writeFileSync(configFile, [
-    "PRINT_API_URL=https://senhahub-mauve.vercel.app",
+    "PRINT_API_URL=https://senhahub.vercel.app",
     "PRINT_AGENT_TOKEN=abcdefghijklmnopqrstuvwxyz1234567890",
     "KIOSK_PRINTER_PORT=COM9",
     "PRINT_SERIAL_BAUD_RATE=9600"
@@ -172,7 +172,7 @@ function sampleJob() {
       ticketCode: "A001",
       sectorName: "Acougue",
       issuedAt: "2026-07-29T20:00:00.000Z",
-      installUrl: "https://senhahub-mauve.vercel.app/instalar",
+      installUrl: "https://senhahub.vercel.app/instalar",
       paperWidthMm: 80
     }
   };

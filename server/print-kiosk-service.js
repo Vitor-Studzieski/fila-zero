@@ -2,11 +2,11 @@ const crypto = require("node:crypto");
 
 const KIOSK_SESSION_SECONDS = 60 * 60 * 24 * 30;
 const DEFAULT_KIOSK_ID = "totem-pompeia-01";
-const DEFAULT_INSTALL_URL = "https://senhahub-mauve.vercel.app/instalar";
-const DEFAULT_APP_URL = "https://senhahub-mauve.vercel.app";
+const DEFAULT_INSTALL_URL = "https://senhahub.vercel.app/instalar";
+const DEFAULT_APP_URL = "https://senhahub.vercel.app";
 
 function loadKioskConfiguration(env = process.env) {
-  const appUrl = normalizeHttpsUrl(env.PUBLIC_APP_URL) || "https://senhahub-mauve.vercel.app";
+  const appUrl = normalizeHttpsUrl(env.PUBLIC_APP_URL) || "https://senhahub.vercel.app";
   const mode = ["central", "sector"].includes(String(env.KIOSK_MODE || "").trim().toLowerCase())
     ? String(env.KIOSK_MODE).trim().toLowerCase()
     : "central";
