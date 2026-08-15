@@ -6,6 +6,8 @@ function buildTicketReceipt(payload = {}) {
   const ticketCode = cleanText(payload.ticketCode, 16) || "---";
   const sectorName = cleanText(payload.sectorName, 60) || "SETOR";
   const issuedAt = formatIssuedAt(payload.issuedAt);
+  const trackingUrl = cleanUrl(payload.trackUrl || payload.installUrl);
+  const priorityLabel = payload.priority ? "ATENDIMENTO PREFERENCIAL" : "ATENDIMENTO NORMAL";
 
   return Buffer.concat([
     command(ESC, 0x40),
@@ -23,10 +25,29 @@ function buildTicketReceipt(payload = {}) {
     asciiLine(ticketCode),
     command(GS, 0x21, 0),
     command(ESC, 0x45, 0),
+    asciiLine(priorityLabel),
     command(ESC, 0x64, 1),
     asciiLine(`Emitida em ${issuedAt}`),
-    command(ESC, 0x64, 4),
+    command(ESC, 0x64, 2),
+    asciiLine("Acompanhe sua senha pelo celular"),
+    qrCode(trackingUrl),
+    asciiLine("Escaneie o QR Code para acompanhar"),
+    command(ESC, 0x64, 3),
     command(GS, 0x56, 66, 4)
+  ]);
+}
+
+function qrCode(value) {
+  if (!value) return asciiLine("QR Code indisponivel");
+  const data = Buffer.from(value, "utf8");
+  const length = data.length + 3;
+  return Buffer.concat([
+    command(GS, 0x28, 0x6b, 4, 0, 49, 65, 50, 0),
+    command(GS, 0x28, 0x6b, 3, 0, 49, 67, 6),
+    command(GS, 0x28, 0x6b, 3, 0, 49, 69, 49),
+    command(GS, 0x28, 0x6b, length & 0xff, (length >> 8) & 0xff, 49, 80, 48),
+    data,
+    command(GS, 0x28, 0x6b, 3, 0, 49, 81, 48)
   ]);
 }
 
@@ -50,6 +71,13 @@ function cleanText(value, maxLength) {
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, maxLength);
+}
+
+function cleanUrl(value) {
+  return String(value || "")
+    .replace(/[\u0000-\u001f\u007f]/g, "")
+    .trim()
+    .slice(0, 512);
 }
 
 function asciiLine(value) {

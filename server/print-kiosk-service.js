@@ -3,12 +3,19 @@ const crypto = require("node:crypto");
 const KIOSK_SESSION_SECONDS = 60 * 60 * 24 * 30;
 const DEFAULT_KIOSK_ID = "totem-pompeia-01";
 const DEFAULT_INSTALL_URL = "https://fila-zero-mauve.vercel.app/instalar";
+const DEFAULT_APP_URL = "https://fila-zero-mauve.vercel.app";
 
 function loadKioskConfiguration(env = process.env) {
   const appUrl = normalizeHttpsUrl(env.PUBLIC_APP_URL) || "https://fila-zero-mauve.vercel.app";
+  const mode = ["central", "sector"].includes(String(env.KIOSK_MODE || "").trim().toLowerCase())
+    ? String(env.KIOSK_MODE).trim().toLowerCase()
+    : "central";
   return {
     id: cleanId(env.KIOSK_ID) || DEFAULT_KIOSK_ID,
     name: cleanText(env.KIOSK_NAME, 120) || "Totem Supermercado Pompeia",
+    appUrl: appUrl || DEFAULT_APP_URL,
+    mode,
+    sectorId: mode === "sector" ? cleanId(env.KIOSK_SECTOR_ID) : "",
     printerName: cleanText(env.KIOSK_PRINTER_NAME, 160) || "Bematech MP - 4200 TH",
     printerPort: cleanText(env.KIOSK_PRINTER_PORT, 40) || "COM3",
     paperWidthMm: Number(env.KIOSK_PAPER_WIDTH_MM) === 58 ? 58 : 80,

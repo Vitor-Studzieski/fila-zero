@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Usuários - Fila Zero</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="manager-page">
+    <div class="manager-shell">
+      <aside class="manager-sidebar">
+        <div class="manager-brand"><div class="manager-brand-mark">FZ</div><div><strong>Fila Zero</strong><span>Painel do gestor</span></div></div>
+        <nav class="manager-nav" aria-label="Navegação do gestor">
+          <a href="/admin"><span>Visão geral</span><small>01</small></a>
+          <a href="/admin/operacao"><span>Operação</span><small>02</small></a>
+          <a href="/admin/setores"><span>Setores</span><small>03</small></a>
+          <a href="/admin/totens"><span>Totens e impressão</span><small>04</small></a>
+          <a href="/iccf"><span>Inteligência</span><small>05</small></a>
+          <a class="active" href="/admin/usuarios"><span>Usuários</span><small>06</small></a>
+        </nav>
+        <div class="manager-sidebar-note">Gerencie acessos, perfis e permissões por setor.</div>
+      </aside>
+
+      <main class="manager-main">
+        <header class="manager-topbar">
+          <div><p class="manager-eyebrow">Acesso</p><h1>Usuários</h1><p>Crie e acompanhe os acessos da equipe e dos clientes.</p></div>
+          <div class="manager-actions">
+            <span class="manager-live-state"><span class="manager-status-dot"></span><span>Atualização automática</span></span>
+            <a class="manager-button secondary" href="/admin">Visão geral</a>
+            <button class="manager-button warning" id="logoutButton" type="button">Sair</button>
+          </div>
+        </header>
+        <section class="manager-section-title">
+          <div><p class="manager-eyebrow">Permissões</p><h2>Usuários e permissões</h2><p>Defina o perfil e, quando necessário, os setores aos quais o atendente terá acesso.</p></div>
+        </section>
+        <section class="manager-management-grid">
+          <article class="manager-panel">
+            <div class="manager-panel-header"><div><h3>Novo usuário</h3><p>Cadastro administrativo separado da visão operacional.</p></div></div>
+            <div class="manager-panel-body">
+              <form class="manager-form" id="userForm" data-online-required>
+                <label>Nome<input name="name" required /></label>
+                <label>E-mail<input type="email" name="email" required /></label>
+                <label>Senha<input type="password" name="password" minlength="12" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{12,}" title="Use ao menos 12 caracteres com letras maiusculas, minusculas e numeros." required /></label>
+                <label>Perfil<select name="role"><option value="customer">Cliente</option><option value="attendant">Funcionário</option><option value="manager">Gestor</option></select></label>
+                <fieldset class="manager-checks"><legend>Setores do atendente</legend><label><input type="checkbox" name="sectorIds" value="acougue" /> Açougue</label><label><input type="checkbox" name="sectorIds" value="frios" /> Frios</label><label><input type="checkbox" name="sectorIds" value="padaria" /> Padaria</label></fieldset>
+                <button class="manager-button" type="submit">Criar usuário</button>
+              </form>
+            </div>
+          </article>
+          <article class="manager-panel">
+            <div class="manager-panel-header"><div><h3>Usuários cadastrados</h3><p>Perfis ativos e permissões por setor.</p></div></div>
+            <div class="manager-panel-body"><div class="manager-user-list" id="adminUsers"></div></div>
+          </article>
+        </section>
+      </main>
+    </div>
+    <script src="admin.js"></script>
+  </body>
+</html>

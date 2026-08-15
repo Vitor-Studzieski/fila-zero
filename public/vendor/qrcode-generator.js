@@ -2295,3 +2295,8 @@ var qrcode = function() {
 }(function () {
     return qrcode;
 }));
+
+// Expose the browser build explicitly for pages loaded through Next Script.
+if (typeof globalThis !== 'undefined' && typeof globalThis.qrcode !== 'function' && typeof qrcode === 'function') {
+    globalThis.qrcode = qrcode;
+}

@@ -24,6 +24,7 @@ const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || "");
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
 const AUTH_SECRET = authSecret();
+const CRON_SECRET = String(process.env.CRON_SECRET || "");
 const KIOSK_CONFIGURATION = loadKioskConfiguration(process.env);
 const AUTO_CONFIRM_PUBLIC_CUSTOMERS = process.env.SUPABASE_AUTO_CONFIRM_CUSTOMERS !== "0";
 const PRESENCE_CHECK_ENABLED = false;
@@ -44,6 +45,7 @@ const TICKET_MIN_NUMBER = 0;
 const TICKET_MAX_NUMBER = 999;
 const ACTIVE_STATUSES = ["aguardando", "proximo", "chamado", "em_atendimento", "espera_inteligente", "standby"];
 const CALL_ELIGIBLE_STATUSES = ["aguardando", "proximo", "standby"];
+const QUEUE_WAITING_STATUSES = ["aguardando", "proximo", "espera_inteligente", "standby"];
 const CALL_BLOCKING_STATUSES = ["chamado", "em_atendimento"];
 const CUSTOMER_CANCELABLE_STATUSES = ["aguardando", "proximo", "chamado", "espera_inteligente", "standby"];
 const STAFF_SKIPPABLE_STATUSES = ["aguardando", "proximo", "chamado", "standby", "espera_inteligente"];
@@ -79,6 +81,7 @@ async function handleRequest(request) {
     if (!isSupabaseReady()) {
       return json({ error: "Supabase nao configurado." }, 500);
     }
+    if (request.method === "GET" && url.pathname === "/api/internal/jobs") return internalJobsRoute(request);
     if (request.method === "GET" && url.pathname === "/api/config") {
       return json({ presenceCheckEnabled: PRESENCE_CHECK_ENABLED });
     }
@@ -88,10 +91,14 @@ async function handleRequest(request) {
 
     if (request.method === "POST" && url.pathname === "/api/auth/login") return login(request);
     if (request.method === "POST" && url.pathname === "/api/auth/change-password") return changePassword(request);
+    if (request.method === "POST" && url.pathname === "/api/auth/forgot-password") return forgotPassword(request);
+    if (request.method === "POST" && url.pathname === "/api/auth/reset-password") return resetPassword(request);
     if (request.method === "POST" && url.pathname === "/api/auth/register") return registerCustomer(request);
     if (request.method === "POST" && url.pathname === "/api/auth/logout") return logout(request);
     if (request.method === "GET" && url.pathname === "/api/auth/me") return me(request);
     if (request.method === "GET" && url.pathname === "/api/kiosk/status") return kioskStatusRoute(request);
+    const trackedTicket = url.pathname.match(/^\/api\/tickets\/track\/([A-Za-z0-9_-]{20,100})$/);
+    if (request.method === "GET" && trackedTicket) return ticketTrackingRoute(request, decodeURIComponent(trackedTicket[1]));
     if (request.method === "POST" && url.pathname === "/api/kiosk/pair") return pairKioskRoute(request);
     if (request.method === "POST" && url.pathname === "/api/kiosk/unpair") return unpairKioskRoute(request);
     if (request.method === "POST" && url.pathname === "/api/kiosk/tickets") return createPhysicalTicketRoute(request);
@@ -179,7 +186,9 @@ async function login(request) {
   await clearLoginFailures(attemptKey);
   const csrfToken = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000).toISOString();
-  const sessionToken = signSessionToken({ provider: "supabase", email: profile.email, user: profile, csrfToken, expiresAt });
+  const sessionId = crypto.randomUUID();
+  await createAuthSession(sessionId, profile.id, csrfToken, expiresAt);
+  const sessionToken = signSessionToken({ sessionId, provider: "supabase", email: profile.email, user: profile, csrfToken, expiresAt });
   return json({ user: profile, csrfToken }, 200, authCookies(sessionToken, csrfToken));
 }
 
@@ -188,8 +197,8 @@ async function changePassword(request) {
   const email = String(body.email || "").trim().toLowerCase();
   const currentPassword = String(body.currentPassword || "");
   const newPassword = String(body.newPassword || "");
-  if (!email || !currentPassword || newPassword.length < 8) {
-    return json({ error: "Informe e-mail, senha atual e nova senha com ao menos 8 caracteres." }, 400);
+  if (!email || !currentPassword || !validateStrongPassword(newPassword)) {
+    return json({ error: "Informe e-mail, senha atual e uma nova senha forte com ao menos 12 caracteres, letras maiusculas, minusculas e numeros." }, 400);
   }
 
   const attemptKey = `${clientIp(request)}:${email || "unknown"}:change-password`;
@@ -214,8 +223,64 @@ async function changePassword(request) {
     console.error("password_update_failed", updated.error);
     return json({ error: "Nao foi possivel atualizar a senha agora." }, 400);
   }
+  await revokeAuthSessionsForUser(auth.user.id);
   await clearLoginFailures(attemptKey);
   return json({ ok: true, message: "Senha alterada com sucesso. Entre usando a nova senha." });
+}
+
+async function forgotPassword(request) {
+  const body = await readJson(request);
+  const email = String(body.email || "").trim().toLowerCase();
+  const response = {
+    ok: true,
+    message: "Se o e-mail estiver cadastrado, enviaremos um link para redefinir a senha."
+  };
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(response, 202);
+
+  const attemptKey = `${clientIp(request)}:${email}:forgot-password`;
+  if (await isLoginLocked(attemptKey)) return json(response, 202);
+  await registerLoginFailure(attemptKey);
+
+  const redirectTo = `${String(process.env.PUBLIC_APP_URL || new URL(request.url).origin).replace(/\/+$/, "")}/login?mode=reset`;
+  const result = await supabaseFetch("/auth/v1/recover", {
+    method: "POST",
+    apiKey: SUPABASE_ANON_KEY,
+    bearer: SUPABASE_ANON_KEY,
+    body: { email, redirect_to: redirectTo }
+  });
+  if (result?.error) console.error("password_recovery_request_failed", result.error);
+  return json(response, 202);
+}
+
+async function resetPassword(request) {
+  const body = await readJson(request);
+  const accessToken = String(body.accessToken || body.access_token || "");
+  const newPassword = String(body.newPassword || "");
+  if (!accessToken || !validateStrongPassword(newPassword)) {
+    return json({ error: "Link de recuperacao invalido ou senha fraca. Use ao menos 12 caracteres, letras maiusculas, minusculas e numeros." }, 400);
+  }
+
+  const attemptKey = `${clientIp(request)}:reset-password`;
+  if (await isLoginLocked(attemptKey)) return json({ error: "Muitas tentativas. Aguarde alguns minutos e tente novamente." }, 429);
+  await registerLoginFailure(attemptKey);
+
+  const authUser = await supabaseFetch("/auth/v1/user", {
+    method: "GET",
+    apiKey: SUPABASE_ANON_KEY,
+    bearer: accessToken
+  });
+  if (authUser?.error || !authUser?.id) return json({ error: "Link de recuperacao invalido ou expirado." }, 400);
+
+  const updated = await supabaseFetch("/auth/v1/user", {
+    method: "PUT",
+    apiKey: SUPABASE_ANON_KEY,
+    bearer: accessToken,
+    body: { password: newPassword }
+  });
+  if (updated?.error) return json({ error: "Nao foi possivel redefinir a senha agora." }, 400);
+
+  await revokeAuthSessionsForUser(authUser.id);
+  return json({ ok: true, message: "Senha redefinida com sucesso. Entre usando a nova senha." });
 }
 
 async function registerCustomer(request) {
@@ -254,13 +319,26 @@ async function logout(request) {
   const user = await requireUser(request, CUSTOMER_ROLES);
   if (user.response) return user.response;
   if (!(await verifyCsrf(request, user))) return json({ error: "Token de seguranca invalido. Recarregue a pagina e tente novamente." }, 403);
+  await revokeAuthSession(user.session_id);
   await revokePushSubscriptionsForUser(user.id);
   return json({ ok: true }, 200, clearAuthCookies());
 }
 
 async function me(request) {
   const user = await getAuthUser(request);
-  return json({ user, csrfToken: user?.csrf_token || null });
+  return json({ user: user ? userDto(user) : null, csrfToken: user?.csrf_token || null });
+}
+
+async function internalJobsRoute(request) {
+  if (!CRON_SECRET) return json({ error: "CRON_SECRET nao configurado." }, 503);
+  const authorization = String(request.headers.get("authorization") || "");
+  const bearer = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  const supplied = String(request.headers.get("x-cron-secret") || bearer || "");
+  if (!safeEqual(supplied, CRON_SECRET)) return json({ error: "Nao autorizado." }, 401);
+
+  const startedAt = Date.now();
+  await maybeRunScheduledJobs({ wait: true });
+  return json({ ok: true, durationMs: Date.now() - startedAt, executedAt: isoNow() });
 }
 
 async function kioskStatusRoute(request, sessionOverride = null) {
@@ -271,7 +349,9 @@ async function kioskStatusRoute(request, sessionOverride = null) {
     getSectors()
   ]);
   const kiosk = kioskRows[0];
-  const openSectors = await customerSectorDtos(sectors.filter((sector) => sector.status === "open"));
+  const openSectors = await kioskSectorDtos(sectors
+    .filter((sector) => sector.status === "open")
+    .filter((sector) => !kiosk || kiosk.mode !== "sector" || kiosk.sector_id === sector.id));
   return json({
     paired: Boolean(kiosk),
     canPair: hasAnyRole(user, ADMIN_ROLES),
@@ -295,10 +375,13 @@ async function pairKioskRoute(request) {
     id: KIOSK_CONFIGURATION.id,
     name: KIOSK_CONFIGURATION.name,
     active: true,
+    mode: KIOSK_CONFIGURATION.mode,
+    sector_id: KIOSK_CONFIGURATION.sectorId || null,
     printer_name: KIOSK_CONFIGURATION.printerName,
     printer_port: KIOSK_CONFIGURATION.printerPort,
     paper_width_mm: KIOSK_CONFIGURATION.paperWidthMm,
     install_url: KIOSK_CONFIGURATION.installUrl,
+    app_url: KIOSK_CONFIGURATION.appUrl,
     created_at: now,
     updated_at: now
   }, "id");
@@ -325,13 +408,24 @@ async function unpairKioskRoute(request) {
 async function createPhysicalTicketRoute(request) {
   const kiosk = verifyKioskRequest(request.headers, AUTH_SECRET);
   if (kiosk.error) return json({ error: kiosk.error }, kiosk.status);
-  const input = validatePhysicalTicketInput(await readJson(request));
+  const body = await readJson(request);
+  const input = validatePhysicalTicketInput(body);
   if (input.error) return json(input, 400);
+  const kioskRows = await select("print_kiosks", `id=eq.${encodeURIComponent(kiosk.kioskId)}&active=eq.true&limit=1`);
+  const configuredKiosk = kioskRows[0];
+  if (!configuredKiosk) return json({ error: "Totem indisponivel." }, 400);
+  if (configuredKiosk.mode === "sector" && configuredKiosk.sector_id !== input.sectorId) {
+    return json({ error: "Este totem esta configurado para outro setor." }, 400);
+  }
+  const priority = normalizePriority(body);
   const result = await rpc("issue_physical_ticket", {
     p_kiosk_id: kiosk.kioskId,
     p_sector_id: input.sectorId,
     p_idempotency_key: input.idempotencyKey,
     p_install_url: KIOSK_CONFIGURATION.installUrl,
+    p_app_url: KIOSK_CONFIGURATION.appUrl,
+    p_priority: priority.enabled,
+    p_priority_reason: priority.reason,
     p_auto_call_delay_seconds: AUTO_CALL_DELAY_SECONDS
   });
   if (!result || result.error || !result.ticket) {
@@ -347,6 +441,35 @@ async function createPhysicalTicketRoute(request) {
     printJob: printJobDto(result.printJob),
     alreadyExists: Boolean(result.alreadyExists)
   }, 201);
+}
+
+async function ticketTrackingRoute(request, token) {
+  const rows = await select("tickets", `tracking_token=eq.${encodeURIComponent(token)}&limit=1`);
+  const row = rows[0];
+  if (!row) return json({ error: "Senha nao encontrada." }, 404);
+  return json({ ticket: publicTicketView(await safeTicketDto(row)) });
+}
+
+function publicTicketView(ticket) {
+  if (!ticket) return null;
+  return {
+    ticketNumber: ticket.ticketNumber,
+    ticket: ticket.ticket,
+    sector: ticket.sector,
+    counterLabel: ticket.counterLabel,
+    serviceLabel: ticket.serviceLabel,
+    status: ticket.status,
+    priority: ticket.priority,
+    priorityReason: ticket.priorityReason,
+    position: ticket.position,
+    ahead: ticket.ahead,
+    secondsToCall: ticket.secondsToCall,
+    estimatedCallAt: ticket.estimatedCallAt,
+    progress: ticket.progress,
+    calledAt: ticket.calledAt,
+    finishedAt: ticket.finishedAt,
+    createdAt: ticket.createdAt
+  };
 }
 
 async function kioskPrintJobRoute(request, jobId) {
@@ -388,10 +511,13 @@ function kioskDto(row) {
   return {
     id: row.id,
     name: row.name,
+    mode: row.mode === "sector" ? "sector" : "central",
+    sectorId: row.sector_id || null,
     printerName: row.printer_name,
     printerPort: row.printer_port,
     paperWidthMm: Number(row.paper_width_mm),
     installUrl: row.install_url,
+    appUrl: row.app_url || KIOSK_CONFIGURATION.appUrl,
     lastSeenAt: row.last_seen_at
   };
 }
@@ -545,9 +671,10 @@ async function staffState(request) {
 async function metrics(request) {
   const user = await requireUser(request, ADMIN_ROLES);
   if (user.response) return user.response;
-  if (metricsCache && metricsCache.expiresAt > Date.now()) return json(metricsCache.value);
-  const value = await getMetrics();
-  metricsCache = { value, expiresAt: Date.now() + METRICS_CACHE_TTL_MS };
+  const requestedDate = metricsDateFromQuery(new URL(request.url).searchParams.get("date"));
+  if (metricsCache?.date === requestedDate && metricsCache.expiresAt > Date.now()) return json(metricsCache.value);
+  const value = await getMetrics(requestedDate);
+  metricsCache = { date: requestedDate, value, expiresAt: Date.now() + METRICS_CACHE_TTL_MS };
   return json(value);
 }
 
@@ -979,22 +1106,37 @@ async function getCustomerHistory(customerId) {
   return { tickets: await mapAsync(tickets, ticketDto), ratings };
 }
 
-async function getMetrics() {
+async function getMetrics(metricsDate = businessDateFor()) {
+  const { start, end } = businessDayBounds(metricsDate);
+  const encodedStart = encodeURIComponent(start);
+  const encodedEnd = encodeURIComponent(end);
   const sectors = await mapAsync(await getSectors(), async (sector) => {
-    const finished = await count("tickets", `sector_id=eq.${encodeURIComponent(sector.id)}&status=eq.atendido`);
-    const abandoned = await count("tickets", `sector_id=eq.${encodeURIComponent(sector.id)}&status=in.(expirado,cancelado)`);
-    const smartWaitRows = await select("tickets", `sector_id=eq.${encodeURIComponent(sector.id)}&smart_wait_since=not.is.null`);
-    const serviceRows = await select("tickets", `sector_id=eq.${encodeURIComponent(sector.id)}&service_started_at=not.is.null&finished_at=not.is.null`);
+    const sectorFilter = `sector_id=eq.${encodeURIComponent(sector.id)}`;
+    const issued = await count("tickets", `${sectorFilter}&created_at=gte.${encodedStart}&created_at=lt.${encodedEnd}`);
+    const finished = await count("tickets", `${sectorFilter}&status=eq.atendido&finished_at=gte.${encodedStart}&finished_at=lt.${encodedEnd}`);
+    const [expired, canceled] = await Promise.all([
+      count("tickets", `${sectorFilter}&status=eq.expirado&expired_at=gte.${encodedStart}&expired_at=lt.${encodedEnd}`),
+      count("tickets", `${sectorFilter}&status=eq.cancelado&canceled_at=gte.${encodedStart}&canceled_at=lt.${encodedEnd}`)
+    ]);
+    const abandoned = expired + canceled;
+    const smartWaitRows = await select("tickets", `${sectorFilter}&smart_wait_since=not.is.null&called_at=gte.${encodedStart}&called_at=lt.${encodedEnd}&select=smart_wait_since,called_at`);
+    const serviceRows = await select("tickets", `${sectorFilter}&service_started_at=not.is.null&finished_at=gte.${encodedStart}&finished_at=lt.${encodedEnd}&select=service_started_at,finished_at`);
     return {
       id: sector.id,
       name: sector.name,
+      issued,
       finished,
       abandoned,
       avgServiceSeconds: average(serviceRows.map((row) => secondsBetween(row.service_started_at, row.finished_at))),
       avgSmartWaitSeconds: average(smartWaitRows.map((row) => secondsBetween(row.smart_wait_since, row.called_at || isoNow())))
     };
   });
-  return { sectors, satisfaction: satisfactionSummary(await select("ratings", "select=score")), generatedAt: isoNow() };
+  return {
+    date: metricsDate,
+    sectors,
+    satisfaction: satisfactionSummary(await select("ratings", `created_at=gte.${encodedStart}&created_at=lt.${encodedEnd}&select=score`)),
+    generatedAt: isoNow()
+  };
 }
 
 async function getOfferInsights(days = 30) {
@@ -1241,6 +1383,24 @@ async function customerSectorDtos(sectors) {
     const stats = recentStats.get(sector.id) || { seconds: sector.average_service_seconds, samples: 0 };
     return sectorDtoFromStats(sector, stats, currentCodeFromCounter(sector, countersBySector.get(sector.id)));
   });
+}
+
+async function kioskSectorDtos(sectors) {
+  const [sectorDtos, queueCounts] = await Promise.all([
+    customerSectorDtos(sectors),
+    Promise.all(sectors.map(async (sector) => [
+      sector.id,
+      await count(
+        "tickets",
+        `sector_id=eq.${encodeURIComponent(sector.id)}&status=in.(${QUEUE_WAITING_STATUSES.join(",")})`
+      )
+    ]))
+  ]);
+  const countsBySector = new Map(queueCounts);
+  return sectorDtos.map((sector) => ({
+    ...sector,
+    queueSize: countsBySector.get(sector.id) || 0
+  }));
 }
 
 async function staffAverageStats(sectorIds) {
@@ -1798,9 +1958,18 @@ async function runScheduledJobs() {
   await Promise.all([
     expireAbsentCalls(),
     notifyStandbyExpiringTickets(),
-    expireExpiredStandbyTickets()
+    expireExpiredStandbyTickets(),
+    purgeExpiredAuthSessions()
   ]);
   await autoCallReadyTickets();
+}
+
+async function purgeExpiredAuthSessions() {
+  const result = await supabaseFetch(`/rest/v1/app_sessions?expires_at=lt.${encodeURIComponent(isoNow())}`, {
+    method: "DELETE",
+    headers: { Prefer: "return=minimal" }
+  });
+  if (result?.error) throw new Error(result.error);
 }
 
 async function maybeRunScheduledJobs(options = {}) {
@@ -2034,9 +2203,54 @@ async function getAuthUser(request) {
   const token = getCookie(request, "fz_auth");
   const session = verifySessionToken(token);
   if (!session?.user?.id) return null;
-  const profile = await getProfile(session.user.id, session.email);
-  if (!profile || profile.status !== "active") return null;
-  return { ...profile, csrf_token: session.csrfToken };
+  const [profile, appSession] = await Promise.all([
+    getProfile(session.user.id, session.email),
+    getActiveAuthSession(session)
+  ]);
+  if (!profile || profile.status !== "active" || !appSession) return null;
+  return { ...profile, csrf_token: session.csrfToken, session_id: session.sessionId };
+}
+
+async function createAuthSession(sessionId, userId, csrfToken, expiresAt) {
+  const session = await insert("app_sessions", {
+    id: sessionId,
+    user_id: userId,
+    csrf_token_hash: hashSessionValue(csrfToken),
+    expires_at: expiresAt,
+    last_seen_at: isoNow()
+  });
+  if (!session?.id) throw new Error("Nao foi possivel registrar a sessao.");
+  return session;
+}
+
+async function getActiveAuthSession(session) {
+  if (!session?.sessionId || !session?.user?.id || !session?.csrfToken) return null;
+  const rows = await select(
+    "app_sessions",
+    `id=eq.${encodeURIComponent(session.sessionId)}&user_id=eq.${encodeURIComponent(session.user.id)}&revoked_at=is.null&expires_at=gt.${encodeURIComponent(isoNow())}&limit=1`
+  );
+  const active = rows[0];
+  return active && safeEqual(active.csrf_token_hash, hashSessionValue(session.csrfToken)) ? active : null;
+}
+
+async function revokeAuthSession(sessionId) {
+  if (!sessionId) return;
+  const result = await supabaseFetch(`/rest/v1/app_sessions?id=eq.${encodeURIComponent(sessionId)}&revoked_at=is.null`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: { revoked_at: isoNow() }
+  });
+  if (result?.error) console.error("auth_session_revoke_failed", result.error);
+}
+
+async function revokeAuthSessionsForUser(userId) {
+  if (!userId) return;
+  const result = await supabaseFetch(`/rest/v1/app_sessions?user_id=eq.${encodeURIComponent(userId)}&revoked_at=is.null`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: { revoked_at: isoNow() }
+  });
+  if (result?.error) console.error("auth_sessions_revoke_failed", result.error);
 }
 
 async function requireUser(request, roles) {
@@ -2317,7 +2531,7 @@ function validateCustomerRegistration(body) {
   const password = String(body.password || "");
   if (!name || name.length < 2) return { error: "Informe seu nome completo." };
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Informe um e-mail valido." };
-  if (password.length < 8) return { error: "A senha precisa ter ao menos 8 caracteres." };
+  if (!validateStrongPassword(password)) return { error: "A senha precisa ter ao menos 12 caracteres, letras maiusculas, minusculas e numeros." };
   return { email, name, password };
 }
 
@@ -2369,6 +2583,10 @@ function authSecret() {
   if (secret.length >= 32) return secret;
   if (process.env.NODE_ENV !== "production") return "fila-zero-demo-auth-secret-change-before-production";
   throw new Error("AUTH_SECRET precisa ter ao menos 32 caracteres em producao.");
+}
+
+function hashSessionValue(value) {
+  return crypto.createHash("sha256").update(String(value)).digest("hex");
 }
 
 function signSessionToken(payload) {
@@ -2507,6 +2725,20 @@ function businessDateFor(value = isoNow()) {
   }).formatToParts(date);
   const part = (type) => parts.find((item) => item.type === type)?.value;
   return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function metricsDateFromQuery(value) {
+  const requested = String(value || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(requested) && businessDateFor(`${requested}T12:00:00-03:00`) === requested) {
+    return requested;
+  }
+  return businessDateFor();
+}
+
+function businessDayBounds(metricsDate) {
+  const start = new Date(`${metricsDate}T00:00:00-03:00`);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start: start.toISOString(), end: end.toISOString() };
 }
 
 async function mapAsync(items, mapper) {

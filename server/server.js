@@ -62,6 +62,7 @@ const STAFF_ROLES = ["attendant", "manager", "admin"];
 const ADMIN_ROLES = ["manager", "admin"];
 const ACTIVE_STATUSES = ["aguardando", "proximo", "chamado", "em_atendimento", "espera_inteligente", "standby"];
 const CALL_ELIGIBLE_STATUSES = ["aguardando", "proximo", "standby"];
+const QUEUE_WAITING_STATUSES = ["aguardando", "proximo", "espera_inteligente", "standby"];
 const CALL_BLOCKING_STATUSES = ["chamado", "em_atendimento"];
 const CUSTOMER_CANCELABLE_STATUSES = ["aguardando", "proximo", "chamado", "espera_inteligente", "standby"];
 const STAFF_SKIPPABLE_STATUSES = ["aguardando", "proximo", "chamado", "standby", "espera_inteligente"];
@@ -82,6 +83,7 @@ const SCHEDULED_JOBS_MIN_INTERVAL_MS = 1000;
 const STANDBY_WARNING_SECONDS = 2 * 60;
 const CSRF_EXEMPT_PATHS = new Set(["/api/auth/login"]);
 const AUTH_SECRET = authSecret();
+const CRON_SECRET = String(process.env.CRON_SECRET || "");
 const KIOSK_CONFIGURATION = loadKioskConfiguration(process.env);
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || "");
@@ -165,6 +167,7 @@ function runScheduledJobs() {
   expireAbsentCalls();
   notifyStandbyExpiringTickets();
   expireExpiredStandbyTickets();
+  db.prepare("DELETE FROM auth_sessions WHERE expires_at <= ?").run(isoNow());
   autoCallReadyTickets();
 }
 
@@ -229,6 +232,7 @@ function bootstrap() {
       eligible_at TEXT,
       priority INTEGER NOT NULL DEFAULT 0,
       priority_reason TEXT,
+      tracking_token TEXT,
       standby_started_at TEXT,
       standby_expires_at TEXT,
       service_started_at TEXT,
@@ -409,6 +413,8 @@ function bootstrap() {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       active INTEGER NOT NULL DEFAULT 1,
+      mode TEXT NOT NULL DEFAULT 'central',
+      sector_id TEXT,
       printer_name TEXT NOT NULL,
       printer_port TEXT NOT NULL,
       paper_width_mm INTEGER NOT NULL DEFAULT 80,
@@ -440,6 +446,11 @@ function bootstrap() {
     CREATE INDEX IF NOT EXISTS idx_cart_items_product ON cart_items(product_id);
     CREATE INDEX IF NOT EXISTS idx_cart_items_customer_created ON cart_items(customer_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_tickets_customer_created ON tickets(customer_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_tickets_sector_created ON tickets(sector_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_tickets_sector_finished ON tickets(sector_id, finished_at);
+    CREATE INDEX IF NOT EXISTS idx_tickets_sector_expired ON tickets(sector_id, expired_at);
+    CREATE INDEX IF NOT EXISTS idx_tickets_sector_canceled ON tickets(sector_id, canceled_at);
+    CREATE INDEX IF NOT EXISTS idx_ratings_created_at ON ratings(created_at);
     CREATE INDEX IF NOT EXISTS idx_shopping_signals_customer_created ON shopping_signals(customer_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_web_push_subscriptions_user_enabled ON web_push_subscriptions(user_id, enabled);
     CREATE INDEX IF NOT EXISTS idx_push_notification_events_user_created ON push_notification_events(user_id, created_at);
@@ -496,6 +507,7 @@ function migrateSchema() {
     ["eligible_at", "ALTER TABLE tickets ADD COLUMN eligible_at TEXT"],
     ["priority", "ALTER TABLE tickets ADD COLUMN priority INTEGER NOT NULL DEFAULT 0"],
     ["priority_reason", "ALTER TABLE tickets ADD COLUMN priority_reason TEXT"],
+    ["tracking_token", "ALTER TABLE tickets ADD COLUMN tracking_token TEXT"],
     ["standby_started_at", "ALTER TABLE tickets ADD COLUMN standby_started_at TEXT"],
     ["standby_expires_at", "ALTER TABLE tickets ADD COLUMN standby_expires_at TEXT"],
     ["source", "ALTER TABLE tickets ADD COLUMN source TEXT NOT NULL DEFAULT 'digital'"],
@@ -509,18 +521,28 @@ function migrateSchema() {
   if (!sessionColumns.includes("csrf_token")) {
     db.exec("ALTER TABLE auth_sessions ADD COLUMN csrf_token TEXT");
   }
+
+  const kioskColumns = db.prepare("PRAGMA table_info(print_kiosks)").all().map((column) => column.name);
+  [
+    ["mode", "ALTER TABLE print_kiosks ADD COLUMN mode TEXT NOT NULL DEFAULT 'central'"],
+    ["sector_id", "ALTER TABLE print_kiosks ADD COLUMN sector_id TEXT"]
+  ].forEach(([column, sql]) => {
+    if (!kioskColumns.includes(column)) db.exec(sql);
+  });
 }
 
 function seedPrintKiosk() {
   const now = isoNow();
   db.prepare(`
     INSERT INTO print_kiosks (
-      id, name, active, printer_name, printer_port, paper_width_mm, install_url,
+      id, name, active, mode, sector_id, printer_name, printer_port, paper_width_mm, install_url,
       last_seen_at, created_at, updated_at
     )
-    VALUES (?, ?, 1, ?, ?, ?, ?, NULL, ?, ?)
+    VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
+      mode = excluded.mode,
+      sector_id = excluded.sector_id,
       printer_name = excluded.printer_name,
       printer_port = excluded.printer_port,
       paper_width_mm = excluded.paper_width_mm,
@@ -529,6 +551,8 @@ function seedPrintKiosk() {
   `).run(
     KIOSK_CONFIGURATION.id,
     KIOSK_CONFIGURATION.name,
+    KIOSK_CONFIGURATION.mode,
+    KIOSK_CONFIGURATION.sectorId || null,
     KIOSK_CONFIGURATION.printerName,
     KIOSK_CONFIGURATION.printerPort,
     KIOSK_CONFIGURATION.paperWidthMm,
@@ -539,6 +563,10 @@ function seedPrintKiosk() {
 }
 
 async function handleApi(req, res, url) {
+  if (req.method === "GET" && url.pathname === "/api/internal/jobs") {
+    handleInternalJobs(req, res);
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/api/config") {
     sendJson(res, 200, { presenceCheckEnabled: PRESENCE_CHECK_ENABLED });
     return;
@@ -552,7 +580,7 @@ async function handleApi(req, res, url) {
       sendJson(res, 401, result);
       return;
     }
-    setAuthCookies(res, result.sessionId, result.csrfToken);
+    setAuthCookies(res, result.sessionToken || result.sessionId, result.csrfToken);
     sendJson(res, 200, { user: result.user, csrfToken: result.csrfToken });
     return;
   }
@@ -561,6 +589,18 @@ async function handleApi(req, res, url) {
     const body = await readBody(req);
     const result = await changePassword(body, req);
     sendApiResult(res, 200, result);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/auth/forgot-password") {
+    const result = await forgotPassword(await readBody(req), req);
+    sendApiResult(res, result.error ? 400 : 202, result);
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/auth/reset-password") {
+    const result = await resetPassword(await readBody(req), req);
+    sendApiResult(res, result.error ? 400 : 200, result);
     return;
   }
 
@@ -580,7 +620,19 @@ async function handleApi(req, res, url) {
 
   if (req.method === "GET" && url.pathname === "/api/auth/me") {
     const user = getAuthUser(req);
-    sendJson(res, 200, { user, csrfToken: user ? getSessionForRequest(req)?.csrf_token || null : null });
+    sendJson(res, 200, { user: user ? userDto(user) : null, csrfToken: user?.csrf_token || null });
+    return;
+  }
+
+  const trackedTicket = url.pathname.match(/^\/api\/tickets\/track\/([A-Za-z0-9_-]{20,100})$/);
+  if (req.method === "GET" && trackedTicket) {
+    const token = decodeURIComponent(trackedTicket[1]);
+    const row = db.prepare("SELECT * FROM tickets WHERE tracking_token = ?").get(token);
+    if (!row) {
+      sendJson(res, 404, { error: "Senha nao encontrada." });
+      return;
+    }
+    sendJson(res, 200, { ticket: publicTicketView(ticketDto(row)) });
     return;
   }
 
@@ -782,7 +834,7 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/metrics") {
     if (!requireAuth(req, res, ADMIN_ROLES)) return;
     syncQueueState();
-    sendJson(res, 200, getMetrics());
+    sendJson(res, 200, getMetrics(metricsDateFromQuery(url.searchParams.get("date"))));
     return;
   }
 
@@ -993,12 +1045,39 @@ async function handleApi(req, res, url) {
   sendJson(res, 404, { error: "Rota não encontrada." });
 }
 
+function handleInternalJobs(req, res) {
+  if (!CRON_SECRET) {
+    sendJson(res, 503, { error: "CRON_SECRET nao configurado." });
+    return;
+  }
+  const authorization = String(req.headers.authorization || "");
+  const bearer = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
+  const supplied = String(req.headers["x-cron-secret"] || bearer || "");
+  if (!safeEqual(supplied, CRON_SECRET)) {
+    sendJson(res, 401, { error: "Nao autorizado." });
+    return;
+  }
+  try {
+    const startedAt = Date.now();
+    runScheduledJobs();
+    sendJson(res, 200, { ok: true, durationMs: Date.now() - startedAt, executedAt: isoNow() });
+  } catch (error) {
+    console.error("internal_jobs_failed", error);
+    sendJson(res, 500, { error: "Falha ao executar jobs internos." });
+  }
+}
+
 async function handlePage(req, res, url) {
   const requested = normalizePagePath(url.pathname);
   const pageRoles = {
     "/": CUSTOMER_ROLES,
     "/attendant": STAFF_ROLES,
-    "/admin": ADMIN_ROLES
+    "/admin": ADMIN_ROLES,
+    "/admin/operacao": ADMIN_ROLES,
+    "/admin/setores": ADMIN_ROLES,
+    "/admin/totens": ADMIN_ROLES,
+    "/admin/usuarios": ADMIN_ROLES,
+    "/iccf": ADMIN_ROLES
   };
   if (pageRoles[requested]) {
     const user = getAuthUser(req);
@@ -1026,6 +1105,7 @@ function normalizePagePath(pathname) {
   if (pathname === "/index.html") return "/";
   if (pathname === "/attendant.html") return "/attendant";
   if (pathname === "/admin.html") return "/admin";
+  if (pathname === "/iccf.html") return "/iccf";
   if (pathname === "/login.html") return "/login";
   return pathname;
 }
@@ -1160,6 +1240,55 @@ async function changePassword(body, req) {
   return changeLocalPassword(body, req);
 }
 
+async function forgotPassword(body, req) {
+  const email = String(body.email || "").trim().toLowerCase();
+  if (!isSupabaseConfigured()) return { error: "Recuperacao de senha exige o backend Supabase." };
+  const response = {
+    ok: true,
+    message: "Se o e-mail estiver cadastrado, enviaremos um link para redefinir a senha."
+  };
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return response;
+  const attemptKey = `${clientIp(req)}:${email}:forgot-password`;
+  if (isLoginLocked(attemptKey)) return response;
+  registerLoginFailure(attemptKey);
+  const redirectTo = `${String(process.env.PUBLIC_APP_URL || `http://${req.headers.host || "localhost:3000"}`).replace(/\/+$/, "")}/login?mode=reset`;
+  const result = await supabaseFetch("/auth/v1/recover", {
+    method: "POST",
+    apiKey: SUPABASE_ANON_KEY,
+    bearer: SUPABASE_ANON_KEY,
+    body: { email, redirect_to: redirectTo }
+  });
+  if (result?.error) console.error("password_recovery_request_failed", result.error);
+  return response;
+}
+
+async function resetPassword(body, req) {
+  const accessToken = String(body.accessToken || body.access_token || "");
+  const newPassword = String(body.newPassword || "");
+  if (!isSupabaseConfigured()) return { error: "Recuperacao de senha exige o backend Supabase." };
+  if (!accessToken || !validateStrongPassword(newPassword)) {
+    return { error: "Link de recuperacao invalido ou senha fraca. Use ao menos 12 caracteres, letras maiusculas, minusculas e numeros." };
+  }
+  const attemptKey = `${clientIp(req)}:reset-password`;
+  if (isLoginLocked(attemptKey)) return { error: "Muitas tentativas. Aguarde alguns minutos e tente novamente." };
+  registerLoginFailure(attemptKey);
+  const authUser = await supabaseFetch("/auth/v1/user", {
+    method: "GET",
+    apiKey: SUPABASE_ANON_KEY,
+    bearer: accessToken
+  });
+  if (authUser?.error || !authUser?.id) return { error: "Link de recuperacao invalido ou expirado." };
+  const updated = await supabaseFetch("/auth/v1/user", {
+    method: "PUT",
+    apiKey: SUPABASE_ANON_KEY,
+    bearer: accessToken,
+    body: { password: newPassword }
+  });
+  if (updated?.error) return { error: "Nao foi possivel redefinir a senha agora." };
+  await revokeSupabaseAuthSessions(authUser.id);
+  return { ok: true, message: "Senha redefinida com sucesso. Entre usando a nova senha." };
+}
+
 async function registerCustomer(body, req) {
   if (isSupabaseConfigured()) return registerSupabaseCustomer(body, req);
   return registerLocalCustomer(body, req);
@@ -1171,7 +1300,7 @@ function validateCustomerRegistration(body) {
   const password = String(body.password || "");
   if (!name || name.length < 2) return { error: "Informe seu nome completo." };
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Informe um e-mail valido." };
-  if (password.length < 8) return { error: "A senha precisa ter ao menos 8 caracteres." };
+  if (!validateStrongPassword(password)) return { error: "A senha precisa ter ao menos 12 caracteres, letras maiusculas, minusculas e numeros." };
   return { email, name, password };
 }
 
@@ -1221,21 +1350,22 @@ function loginLocalUser(body, req) {
   db.prepare("INSERT INTO auth_sessions (id, user_id, csrf_token, created_at, expires_at) VALUES (?, ?, ?, ?, ?)")
     .run(sessionId, user.id, csrfToken, now, expiresAt);
   const sessionToken = signSessionToken({
+    sessionId,
     email: user.email,
     user: userDto(user),
     csrfToken,
     expiresAt
   });
   registerEvent("login", "user", user.id, null, null, { email: user.email, role: user.role });
-  return { sessionId: sessionToken, csrfToken, user: userDto(user) };
+  return { sessionId, sessionToken, csrfToken, user: userDto(user) };
 }
 
 function changeLocalPassword(body, req) {
   const email = String(body.email || "").trim().toLowerCase();
   const currentPassword = String(body.currentPassword || "");
   const newPassword = String(body.newPassword || "");
-  if (!email || !currentPassword || newPassword.length < 8) {
-    return { error: "Informe e-mail, senha atual e nova senha com ao menos 8 caracteres." };
+  if (!email || !currentPassword || !validateStrongPassword(newPassword)) {
+    return { error: "Informe e-mail, senha atual e uma nova senha forte com ao menos 12 caracteres, letras maiusculas, minusculas e numeros." };
   }
 
   const attemptKey = `${clientIp(req)}:${email || "unknown"}:change-password`;
@@ -1252,6 +1382,7 @@ function changeLocalPassword(body, req) {
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = hashPassword(newPassword, salt);
   db.prepare("UPDATE users SET password_hash = ?, password_salt = ?, updated_at = ? WHERE id = ?").run(hash, salt, isoNow(), user.id);
+  db.prepare("DELETE FROM auth_sessions WHERE user_id = ?").run(user.id);
   clearLoginFailures(attemptKey);
   registerEvent("senha_alterada", "user", user.id, null, null, { email: user.email });
   return { ok: true, message: "Senha alterada com sucesso. Entre usando a nova senha." };
@@ -1328,8 +1459,18 @@ async function changeSupabasePassword(body, req) {
   });
   if (updated.error) return { error: updated.error };
 
+  await revokeSupabaseAuthSessions(auth.user.id);
   clearLoginFailures(attemptKey);
   return { ok: true, message: "Senha alterada com sucesso. Entre usando a nova senha." };
+}
+
+async function revokeSupabaseAuthSessions(userId) {
+  const result = await supabaseFetch(`/rest/v1/app_sessions?user_id=eq.${encodeURIComponent(userId)}&revoked_at=is.null`, {
+    method: "PATCH",
+    headers: { Prefer: "return=minimal" },
+    body: { revoked_at: isoNow() }
+  });
+  if (result?.error) console.error("auth_sessions_revoke_failed", result.error);
 }
 
 async function registerSupabaseCustomer(body, req) {
@@ -1379,7 +1520,7 @@ async function supabaseUpsertProfile(id, email, name, role) {
 function logoutUser(req, res) {
   const user = getAuthUser(req);
   if (user?.id) revokePushSubscriptionsForUser(user.id);
-  const sessionId = getCookie(req, "fz_auth");
+  const sessionId = user?.session_id || getCookie(req, "fz_auth");
   if (sessionId) db.prepare("DELETE FROM auth_sessions WHERE id = ?").run(sessionId);
   res.setHeader("set-cookie", "fz_auth=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
   appendCookie(res, "fz_csrf=; SameSite=Lax; Path=/; Max-Age=0");
@@ -1387,7 +1528,7 @@ function logoutUser(req, res) {
 
 function getAuthUser(req) {
   const session = getSessionForRequest(req);
-  return session ? userDto(session) : null;
+  return session ? { ...userDto(session), csrf_token: session.csrf_token, session_id: session.session_id } : null;
 }
 
 function getSessionForRequest(req) {
@@ -1396,7 +1537,16 @@ function getSessionForRequest(req) {
   const statelessSession = verifySessionToken(sessionId);
   if (statelessSession) {
     if (statelessSession.provider === "supabase" && statelessSession.user) {
-      return { ...userDto(statelessSession.user), csrf_token: statelessSession.csrfToken };
+      return { ...userDto(statelessSession.user), csrf_token: statelessSession.csrfToken, session_id: statelessSession.sessionId };
+    }
+    if (statelessSession.sessionId) {
+      const session = db.prepare(`
+        SELECT users.*, auth_sessions.csrf_token AS csrf_token, auth_sessions.id AS session_id
+        FROM auth_sessions
+        JOIN users ON users.id = auth_sessions.user_id
+        WHERE auth_sessions.id = ? AND auth_sessions.expires_at > ? AND users.status = 'active'
+      `).get(statelessSession.sessionId, isoNow());
+      return session || null;
     }
     const user = statelessSession.user?.id
       ? db.prepare("SELECT * FROM users WHERE id = ? AND status = ?").get(statelessSession.user.id, "active")
@@ -1980,6 +2130,14 @@ function cleanPriorityReason(value) {
   return PRIORITY_CATEGORIES.has(reason) ? reason : null;
 }
 
+function createTrackingToken() {
+  return crypto.randomBytes(32).toString("base64url");
+}
+
+function buildTrackingUrl(token) {
+  return `${KIOSK_CONFIGURATION.appUrl.replace(/\/+$/, "")}/acompanhar/${encodeURIComponent(token)}`;
+}
+
 function envFlag(name, fallback = false) {
   const value = process.env[name];
   if (value === undefined || value === "") return fallback;
@@ -2012,6 +2170,7 @@ function upsertSession(body, userAgent) {
 }
 
 function getKioskStatus(req, sessionOverride = null) {
+  syncQueueState();
   const session = sessionOverride || verifyKioskSession(getCookie(req, "fz_kiosk"), AUTH_SECRET);
   const user = getAuthUser(req);
   const row = session
@@ -2021,7 +2180,10 @@ function getKioskStatus(req, sessionOverride = null) {
     paired: Boolean(row),
     canPair: hasAnyRole(user, ADMIN_ROLES),
     kiosk: row ? kioskDto(row) : null,
-    sectors: getSectors().filter((sector) => sector.status === "open").map(sectorDto)
+    sectors: getSectors()
+      .filter((sector) => sector.status === "open")
+      .filter((sector) => !row || row.mode !== "sector" || row.sector_id === sector.id)
+      .map((sector) => ({ ...sectorDto(sector), queueSize: currentWaitingCount(sector.id) }))
   };
 }
 
@@ -2029,10 +2191,13 @@ function kioskDto(row) {
   return {
     id: row.id,
     name: row.name,
+    mode: row.mode === "sector" ? "sector" : "central",
+    sectorId: row.sector_id || null,
     printerName: row.printer_name,
     printerPort: row.printer_port,
     paperWidthMm: Number(row.paper_width_mm),
     installUrl: row.install_url,
+    appUrl: KIOSK_CONFIGURATION.appUrl,
     lastSeenAt: row.last_seen_at
   };
 }
@@ -2044,7 +2209,9 @@ function createPhysicalTicket(kioskSession, body) {
   if (!kiosk) return fail("Totem indisponivel.");
   const sector = getSector(input.sectorId);
   if (!sector) return fail("Setor nao encontrado.");
+  if (kiosk.mode === "sector" && kiosk.sector_id !== sector.id) return fail("Este totem esta configurado para outro setor.");
   if (sector.status !== "open") return fail("Setor fechado para novas senhas.");
+  const priority = normalizePriority(body);
 
   const previous = db.prepare("SELECT * FROM print_jobs WHERE idempotency_key = ?").get(input.idempotencyKey);
   if (previous) {
@@ -2061,6 +2228,7 @@ function createPhysicalTicket(kioskSession, body) {
     const deviceId = `totem-${crypto.randomUUID()}`;
     const ticketId = `ticket-${crypto.randomUUID()}`;
     const jobId = `print-${crypto.randomUUID()}`;
+    const trackingToken = createTrackingToken();
     const nextNumber = nextTicketNumber(sector.id, now);
     const queueOrder = nextQueueOrder(sector.id);
     const code = formatTicket(sector.prefix, nextNumber);
@@ -2074,17 +2242,20 @@ function createPhysicalTicket(kioskSession, body) {
       installUrl: kiosk.install_url,
       paperWidthMm: Number(kiosk.paper_width_mm),
       printerName: kiosk.printer_name,
-      printerPort: kiosk.printer_port
+      printerPort: kiosk.printer_port,
+      trackUrl: buildTrackingUrl(trackingToken),
+      priority: priority.enabled,
+      priorityReason: priority.reason
     };
 
     db.prepare("INSERT INTO customers (id, created_at) VALUES (?, ?)").run(customerId, now);
     db.prepare(`
       INSERT INTO tickets (
         id, customer_id, device_id, sector_id, customer_name, number, code, status,
-        queue_order, eligible_at, priority, location_verified, qr_verified, source,
+        queue_order, eligible_at, priority, priority_reason, tracking_token, location_verified, qr_verified, source,
         kiosk_id, created_at, updated_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'aguardando', ?, ?, 0, 0, 1, 'physical', ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'aguardando', ?, ?, ?, ?, ?, 0, 0, 'physical', ?, ?, ?)
     `).run(
       ticketId,
       customerId,
@@ -2095,6 +2266,9 @@ function createPhysicalTicket(kioskSession, body) {
       code,
       queueOrder,
       eligibleAt,
+      priority.enabled ? 1 : 0,
+      priority.reason,
+      trackingToken,
       kiosk.id,
       now,
       now
@@ -2863,25 +3037,31 @@ function getCustomerHistory(customerId) {
   return { tickets, ratings };
 }
 
-function getMetrics() {
+function getMetrics(metricsDate = businessDateFor()) {
+  const { start, end } = businessDayBounds(metricsDate);
   const sectors = getSectors().map((sector) => {
-    const finished = db.prepare("SELECT COUNT(*) AS total FROM tickets WHERE sector_id = ? AND status = 'atendido'").get(sector.id).total;
-    const abandoned = db.prepare("SELECT COUNT(*) AS total FROM tickets WHERE sector_id = ? AND status IN ('expirado', 'cancelado')").get(sector.id).total;
-    const smartWaitRows = db.prepare("SELECT smart_wait_since, called_at FROM tickets WHERE sector_id = ? AND smart_wait_since IS NOT NULL").all(sector.id);
+    const issued = db.prepare("SELECT COUNT(*) AS total FROM tickets WHERE sector_id = ? AND created_at >= ? AND created_at < ?").get(sector.id, start, end).total;
+    const finished = db.prepare("SELECT COUNT(*) AS total FROM tickets WHERE sector_id = ? AND status = 'atendido' AND finished_at >= ? AND finished_at < ?").get(sector.id, start, end).total;
+    const expired = db.prepare("SELECT COUNT(*) AS total FROM tickets WHERE sector_id = ? AND status = 'expirado' AND expired_at >= ? AND expired_at < ?").get(sector.id, start, end).total;
+    const canceled = db.prepare("SELECT COUNT(*) AS total FROM tickets WHERE sector_id = ? AND status = 'cancelado' AND canceled_at >= ? AND canceled_at < ?").get(sector.id, start, end).total;
+    const abandoned = expired + canceled;
+    const smartWaitRows = db.prepare("SELECT smart_wait_since, called_at FROM tickets WHERE sector_id = ? AND smart_wait_since IS NOT NULL AND called_at >= ? AND called_at < ?").all(sector.id, start, end);
     const avgSmartWaitSeconds = average(smartWaitRows.map((row) => secondsBetween(row.smart_wait_since, row.called_at || isoNow())));
-    const serviceRows = db.prepare("SELECT service_started_at, finished_at FROM tickets WHERE sector_id = ? AND service_started_at IS NOT NULL AND finished_at IS NOT NULL").all(sector.id);
+    const serviceRows = db.prepare("SELECT service_started_at, finished_at FROM tickets WHERE sector_id = ? AND service_started_at IS NOT NULL AND finished_at >= ? AND finished_at < ?").all(sector.id, start, end);
     const avgServiceSeconds = average(serviceRows.map((row) => secondsBetween(row.service_started_at, row.finished_at)));
     return {
       id: sector.id,
       name: sector.name,
+      issued,
       finished,
       abandoned,
       avgServiceSeconds,
       avgSmartWaitSeconds
     };
   });
-  const ratings = db.prepare("SELECT score FROM ratings").all();
+  const ratings = db.prepare("SELECT score FROM ratings WHERE created_at >= ? AND created_at < ?").all(start, end);
   return {
+    date: metricsDate,
     sectors,
     satisfaction: satisfactionSummary(ratings),
     generatedAt: isoNow()
@@ -3223,6 +3403,28 @@ function ticketDto(row) {
   };
 }
 
+function publicTicketView(ticket) {
+  if (!ticket) return null;
+  return {
+    ticketNumber: ticket.ticketNumber,
+    ticket: ticket.ticket,
+    sector: ticket.sector,
+    counterLabel: ticket.counterLabel,
+    serviceLabel: ticket.serviceLabel,
+    status: ticket.status,
+    priority: ticket.priority,
+    priorityReason: ticket.priorityReason,
+    position: ticket.position,
+    ahead: ticket.ahead,
+    secondsToCall: ticket.secondsToCall,
+    estimatedCallAt: ticket.estimatedCallAt,
+    progress: ticket.progress,
+    calledAt: ticket.calledAt,
+    finishedAt: ticket.finishedAt,
+    createdAt: ticket.createdAt
+  };
+}
+
 function sectorDto(row) {
   const averageStats = averageServiceStats(row);
   return {
@@ -3261,6 +3463,15 @@ function getSectors() {
 
 function getSector(id) {
   return db.prepare("SELECT * FROM sectors WHERE id = ?").get(id);
+}
+
+function currentWaitingCount(sectorId) {
+  const placeholdersList = placeholders(QUEUE_WAITING_STATUSES);
+  return Number(db.prepare(`
+    SELECT COUNT(*) AS total
+    FROM tickets
+    WHERE sector_id = ? AND status IN (${placeholdersList})
+  `).get(sectorId, ...QUEUE_WAITING_STATUSES).total || 0);
 }
 
 function getTicket(id) {
@@ -3384,6 +3595,20 @@ function businessDateFor(value = isoNow()) {
   }).formatToParts(date);
   const part = (type) => parts.find((item) => item.type === type)?.value;
   return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function metricsDateFromQuery(value) {
+  const requested = String(value || "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(requested) && businessDateFor(`${requested}T12:00:00-03:00`) === requested) {
+    return requested;
+  }
+  return businessDateFor();
+}
+
+function businessDayBounds(metricsDate) {
+  const start = new Date(`${metricsDate}T00:00:00-03:00`);
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start: start.toISOString(), end: end.toISOString() };
 }
 
 function runInTransaction(work) {

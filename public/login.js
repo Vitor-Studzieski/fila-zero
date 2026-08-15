@@ -45,6 +45,66 @@ document.querySelector("#passwordForm").addEventListener("submit", async (event)
   }
 });
 
+document.querySelector("#recoverForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const error = document.querySelector("#recoverError");
+  const submit = form.querySelector(".yellow-action");
+  error.textContent = "";
+  setSubmitting(submit, true);
+
+  try {
+    const result = await api("/api/auth/forgot-password", {
+      method: "POST",
+      body: Object.fromEntries(new FormData(form).entries())
+    });
+    form.reset();
+    showLoginToast(result.message || "Confira seu e-mail para continuar.");
+  } catch (exception) {
+    error.textContent = exception.message;
+    showLoginToast(exception.message);
+  } finally {
+    setSubmitting(submit, false);
+  }
+});
+
+document.querySelector("#resetForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const error = document.querySelector("#resetError");
+  const data = Object.fromEntries(new FormData(form).entries());
+  const submit = form.querySelector(".yellow-action");
+  error.textContent = "";
+
+  if (data.newPassword !== data.confirmPassword) {
+    error.textContent = "As senhas precisam ser iguais.";
+    showLoginToast(error.textContent);
+    return;
+  }
+  if (!isStrongPassword(data.newPassword)) {
+    error.textContent = "Use ao menos 12 caracteres, letras maiusculas, minusculas e numeros.";
+    showLoginToast(error.textContent);
+    return;
+  }
+
+  setSubmitting(submit, true);
+  try {
+    const result = await api("/api/auth/reset-password", {
+      method: "POST",
+      body: { accessToken: recoveryAccessToken(), newPassword: data.newPassword }
+    });
+    form.reset();
+    history.replaceState({}, document.title, `${location.pathname}${location.search}`);
+    showLoginToast(result.message || "Senha redefinida com sucesso.");
+    activatePanel("login");
+  } catch (exception) {
+    error.textContent = exception.message;
+    showLoginToast(exception.message);
+  } finally {
+    setSubmitting(submit, false);
+  }
+});
+
 document.querySelector("#registerForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -84,6 +144,8 @@ document.querySelectorAll("[data-login-panel]").forEach((button) => {
   button.addEventListener("click", () => activatePanel(button.dataset.loginPanel));
 });
 
+if (recoveryAccessToken()) activatePanel("reset");
+
 document.querySelectorAll("[data-toggle-password]").forEach((button) => {
   button.addEventListener("click", () => {
     const input = button.parentElement?.querySelector("input");
@@ -99,12 +161,25 @@ function activatePanel(panel) {
   document.querySelectorAll("[data-login-panel]").forEach((button) => {
     button.classList.toggle("active", button.dataset.loginPanel === panel);
   });
-  document.querySelector("#loginForm").classList.toggle("active", panel === "login");
-  document.querySelector("#registerForm").classList.toggle("active", panel === "register");
-  document.querySelector("#passwordForm").classList.toggle("active", panel === "password");
-  document.querySelector("#loginError").textContent = "";
-  document.querySelector("#registerError").textContent = "";
-  document.querySelector("#passwordError").textContent = "";
+  document.querySelectorAll(".login-panel").forEach((form) => {
+    form.classList.toggle("active", form.id === `${panel}Form`);
+  });
+  document.querySelectorAll(".login-error").forEach((error) => {
+    error.textContent = "";
+  });
+}
+
+function recoveryAccessToken() {
+  const hash = new URLSearchParams(location.hash.replace(/^#/, ""));
+  return hash.get("access_token") || new URLSearchParams(location.search).get("access_token") || "";
+}
+
+function isStrongPassword(value) {
+  return typeof value === "string"
+    && value.length >= 12
+    && /[a-z]/.test(value)
+    && /[A-Z]/.test(value)
+    && /\d/.test(value);
 }
 
 function showLoginToast(message) {

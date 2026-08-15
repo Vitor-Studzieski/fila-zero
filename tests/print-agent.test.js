@@ -21,22 +21,32 @@ test("gera cupom ESC/POS sem QR e com corte para a Bematech", () => {
     sectorName: "Acougue",
     issuedAt: "2026-07-29T20:00:00.000Z",
     installUrl: "https://fila-zero-mauve.vercel.app/instalar",
+    trackUrl: "https://fila-zero-mauve.vercel.app/acompanhar/token-de-teste-1234567890",
     paperWidthMm: 80
   });
 
   assert.ok(receipt.length > 50);
   assert.ok(receipt.includes(Buffer.from("A042", "ascii")));
   assert.equal(receipt.includes(Buffer.from([0x1d, 0x76, 0x30, 0])), false);
-  assert.equal(receipt.includes(Buffer.from("QR Code", "ascii")), false);
+  assert.ok(receipt.includes(Buffer.from([0x1d, 0x28, 0x6b])));
   assert.ok(receipt.includes(Buffer.from([0x1d, 0x56, 66, 4])));
 });
 
-test("totem exibe o unico QR como acesso a pagina de instalacao", () => {
+test("totem exibe o QR geral separado do QR individual da senha", () => {
   const html = fs.readFileSync(path.resolve(__dirname, "../public/totem.html"), "utf8");
   const script = fs.readFileSync(path.resolve(__dirname, "../public/totem.js"), "utf8");
-  assert.match(html, /id="totemInstallQr"/);
-  assert.match(script, /kiosk\?\.installUrl/);
-  assert.match(script, /\/instalar/);
+  assert.match(html, /id="totemGeneralQr"/);
+  assert.match(html, /id="resultTrackQr"/);
+  assert.match(html, /id="issueNormalTicketButton"/);
+  assert.match(html, /id="issuePriorityTicketButton"/);
+  assert.match(html, /id="backNormalTicketButton"/);
+  assert.match(html, /id="backPriorityTicketButton"/);
+  assert.match(html, /Confirme sua escolha/);
+  assert.doesNotMatch(html, /id="totemStepConfirm"/);
+  assert.match(script, /kiosk\?\.appUrl/);
+  assert.match(script, /fila-zero-mauve\.vercel\.app\/login\?next=%2F/);
+  assert.match(script, /trackUrl/);
+  assert.match(script, /setStep\(state\.serviceType === "preferencial" \? "priority" : "type"\)/);
 });
 
 test("carrega configuracao local sem sobrescrever variaveis do processo", () => {

@@ -1,32 +1,45 @@
 let adminState = { sectors: [] };
 let adminUsers = [];
 let adminMetrics = { sectors: [], satisfaction: { count: 0, average: 0 } };
-let offerInsights = emptyOfferInsights();
-let adminSource = null;
 let currentUser = null;
 let adminPollingTimer = null;
 let adminMetricsTimer = null;
-let offerInsightsTimer = null;
 const ADMIN_STATE_POLL_INTERVAL_MS = 15000;
 const ADMIN_METRICS_POLL_INTERVAL_MS = 60000;
-const OFFER_INSIGHTS_POLL_INTERVAL_MS = 90000;
 
 initAdmin();
 
 async function initAdmin() {
-  currentUser = await requireSession(["manager"]);
-  document.querySelector("#logoutButton").addEventListener("click", logout);
-  document.querySelector("#userForm").addEventListener("submit", createUser);
-  document.querySelector("#offerInsightPeriod")?.addEventListener("change", () => loadOfferInsights());
+  currentUser = await requireSession(["manager", "admin"]);
+  document.querySelector("#logoutButton")?.addEventListener("click", logout);
+  document.querySelectorAll(".manager-nav a").forEach((link) => {
+    link.addEventListener("click", () => {
+      document.querySelectorAll(".manager-nav a").forEach((item) => item.classList.remove("active"));
+      link.classList.add("active");
+    });
+  });
+  document.querySelector("#userForm")?.addEventListener("submit", createUser);
   document.querySelector("#sectorFilter")?.addEventListener("change", renderQueueTable);
   document.querySelector("#statusFilter")?.addEventListener("change", renderQueueTable);
   document.querySelector("#refreshDashboardButton")?.addEventListener("click", refreshDashboard);
-  await Promise.all([loadAdminState(), loadMetrics(), loadUsers(), loadOfferInsights()]);
+  const metricsDateInput = document.querySelector("#metricsDate");
+  if (metricsDateInput) {
+    metricsDateInput.value = businessToday();
+    metricsDateInput.addEventListener("change", () => loadMetrics().catch(() => {}));
+  }
+  try {
+    await Promise.all([loadAdminState(), loadMetrics(), loadUsers()]);
+  } catch (error) {
+    const alerts = document.querySelector("#dashboardAlerts");
+    if (alerts) {
+      alerts.innerHTML = `<div class="manager-alert manager-alert-attention"><span class="manager-alert-mark">!</span><div><strong>Não foi possível carregar todos os dados</strong><p>Tente atualizar o painel novamente. ${escapeHtml(error.message || "Erro de comunicação")}</p></div></div>`;
+    }
+  }
   connectAdminRealtime();
 }
 
 async function refreshDashboard() {
-  await Promise.all([loadAdminState(), loadMetrics(), loadOfferInsights()]);
+  await Promise.all([loadAdminState(), loadMetrics()]);
 }
 
 async function loadAdminState() {
@@ -36,6 +49,7 @@ async function loadAdminState() {
 }
 
 async function loadUsers() {
+  if (!document.querySelector("#adminUsers")) return;
   if (!["manager", "admin"].includes(currentUser.role)) {
     document.querySelector("#usuarios")?.closest(".manager-section-title")?.setAttribute("hidden", "");
     return;
@@ -46,30 +60,19 @@ async function loadUsers() {
 }
 
 async function loadMetrics() {
-  adminMetrics = await api("/api/metrics");
-  renderMetrics();
+  const selectedDate = document.querySelector("#metricsDate")?.value || businessToday();
+  adminMetrics = await api(`/api/metrics?date=${encodeURIComponent(selectedDate)}`);
   renderAdmin();
   renderDashboard();
 }
 
-async function loadOfferInsights() {
-  const period = Number(document.querySelector("#offerInsightPeriod")?.value || 30);
-  offerInsights = await api(`/api/offer-insights?days=${encodeURIComponent(period)}`);
-  renderOfferInsights();
-  renderDashboard();
-}
-
 function connectAdminRealtime() {
-  adminSource?.close();
-  adminSource = null;
   startAdminPolling();
   startMetricsPolling();
-  startOfferInsightsPolling();
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) {
       loadAdminState().catch(() => {});
       loadMetrics().catch(() => {});
-      loadOfferInsights().catch(() => {});
     }
   });
 }
@@ -90,33 +93,17 @@ function startMetricsPolling() {
   }, ADMIN_METRICS_POLL_INTERVAL_MS);
 }
 
-function startOfferInsightsPolling() {
-  if (offerInsightsTimer) return;
-  offerInsightsTimer = setInterval(() => {
-    if (document.hidden) return;
-    loadOfferInsights().catch(() => {});
-  }, OFFER_INSIGHTS_POLL_INTERVAL_MS);
-}
-
-function scheduleMetricsRefresh() {
-  clearTimeout(scheduleMetricsRefresh.timer);
-  scheduleMetricsRefresh.timer = setTimeout(() => {
-    loadMetrics().catch(() => {});
-  }, 700);
-}
-
 function renderAdmin() {
   renderSectorFilter();
   renderQueueTable();
-  document.querySelector("#adminSectors").innerHTML = adminState.sectors.map((sector) => {
-    const called = sector.tickets.filter((ticket) => ticket.status === "chamado");
-    const inService = sector.tickets.filter((ticket) => ticket.status === "em_atendimento");
-    const waiting = sector.tickets.filter((ticket) => ["aguardando", "proximo", "espera_inteligente", "standby"].includes(ticket.status));
-    const currentTicket = inService[0] || called[0] || null;
-    const metric = adminMetrics.sectors.find((item) => item.id === sector.id) || {};
-    const load = Math.min(100, Math.round((waiting.length / Math.max(1, Number(sector.capacity || 1))) * 100));
+  const sectorGrid = document.querySelector("#adminSectors");
+  if (!sectorGrid) return;
+  sectorGrid.innerHTML = adminState.sectors.map((sector) => {
+    const snapshot = sectorSnapshot(sector);
+    const metric = snapshot.metric;
+    const settings = timeParts(sector.averageServiceSeconds);
     return `
-      <form class="manager-sector-card manager-form" data-sector-form="${escapeHtml(sector.id)}" data-online-required>
+      <article class="manager-sector-card">
         <div class="manager-sector-head">
           <div>
             <strong>${escapeHtml(sector.name)}</strong>
@@ -125,30 +112,36 @@ function renderAdmin() {
           <b class="manager-badge ${sector.status === "open" ? "success" : sector.status === "paused" ? "warn" : "danger"}">${escapeHtml(statusLabel(sector.status))}</b>
         </div>
         <div class="manager-sector-metrics">
-          <div><span>Fila</span><strong>${escapeHtml(waiting.length)}</strong></div>
-          <div><span>Atual</span><strong>${escapeHtml(currentTicket ? supportCode(currentTicket).replace("Senha ", "") : "--")}</strong></div>
-          <div><span>Médio</span><strong>${escapeHtml(formatMinutesSeconds(metric.avgServiceSeconds || sector.averageServiceSeconds))}</strong></div>
+          <div><span>Fila</span><strong>${escapeHtml(snapshot.waiting.length)}</strong></div>
+          <div><span>Atual</span><strong>${escapeHtml(snapshot.currentTicket ? supportCode(snapshot.currentTicket).replace("Senha ", "") : "--")}</strong></div>
+          <div><span>Atendimento médio</span><strong>${escapeHtml(formatMinutesSeconds(metric.avgServiceSeconds || sector.averageServiceSeconds))}</strong></div>
         </div>
-        <div class="manager-progress"><span style="width:${escapeHtml(load)}%"></span></div>
-        <p class="manager-sector-current">${escapeHtml(currentTicket ? `${displayCustomerName(currentTicket)} - ${ticketStatus(currentTicket)}` : "Nenhuma chamada ativa")}</p>
-        <label>Nome do setor<input name="name" value="${escapeHtml(sector.name)}" /></label>
-        <label>Balcão<input name="counterLabel" value="${escapeHtml(sector.counterLabel)}" /></label>
-        <label>Descrição<input name="serviceLabel" value="${escapeHtml(sector.serviceLabel)}" /></label>
-        <div class="manager-form-row">
-          <label>Fila base<input type="number" name="queueSize" min="1" value="${escapeHtml(sector.queueSize)}" /></label>
-          <label>Tempo médio (min)<input type="number" name="averageServiceMinutes" min="0" value="${escapeHtml(timeParts(sector.averageServiceSeconds).minutes)}" /></label>
-          <label>Tempo médio (seg)<input type="number" name="averageServiceRestSeconds" min="0" max="59" value="${escapeHtml(timeParts(sector.averageServiceSeconds).seconds)}" /></label>
-          <label>Capacidade<input type="number" name="capacity" min="1" value="${escapeHtml(sector.capacity)}" /></label>
-        </div>
-        <label>Status
-          <select name="status">
-            <option value="open" ${sector.status === "open" ? "selected" : ""}>Aberto</option>
-            <option value="paused" ${sector.status === "paused" ? "selected" : ""}>Pausado</option>
-            <option value="closed" ${sector.status === "closed" ? "selected" : ""}>Fechado</option>
-          </select>
-        </label>
-        <button class="manager-button" type="submit">Salvar setor</button>
-      </form>
+        <div class="manager-progress" aria-label="${escapeHtml(snapshot.load)}% da capacidade ocupada"><span style="width:${escapeHtml(snapshot.load)}%"></span></div>
+        <div class="manager-sector-load"><span>${escapeHtml(snapshot.load)}% da capacidade da fila</span><b>${escapeHtml(snapshot.waiting.length)} aguardando</b></div>
+        <p class="manager-sector-current">${escapeHtml(snapshot.currentTicket ? `${displayCustomerName(snapshot.currentTicket)} - ${ticketStatus(snapshot.currentTicket)}` : "Nenhuma chamada ativa")}</p>
+        <details class="manager-sector-settings">
+          <summary>Editar configuração</summary>
+          <form class="manager-form" data-sector-form="${escapeHtml(sector.id)}" data-online-required>
+            <label>Nome do setor<input name="name" value="${escapeHtml(sector.name)}" /></label>
+            <label>Balcão<input name="counterLabel" value="${escapeHtml(sector.counterLabel)}" /></label>
+            <label>Descrição<input name="serviceLabel" value="${escapeHtml(sector.serviceLabel)}" /></label>
+            <div class="manager-form-row">
+              <label>Fila base<input type="number" name="queueSize" min="1" value="${escapeHtml(sector.queueSize)}" /></label>
+              <label>Tempo médio (min)<input type="number" name="averageServiceMinutes" min="0" value="${escapeHtml(settings.minutes)}" /></label>
+              <label>Tempo médio (seg)<input type="number" name="averageServiceRestSeconds" min="0" max="59" value="${escapeHtml(settings.seconds)}" /></label>
+              <label>Capacidade<input type="number" name="capacity" min="1" value="${escapeHtml(sector.capacity)}" /></label>
+            </div>
+            <label>Status
+              <select name="status">
+                <option value="open" ${sector.status === "open" ? "selected" : ""}>Aberto</option>
+                <option value="paused" ${sector.status === "paused" ? "selected" : ""}>Pausado</option>
+                <option value="closed" ${sector.status === "closed" ? "selected" : ""}>Fechado</option>
+              </select>
+            </label>
+            <button class="manager-button" type="submit">Salvar setor</button>
+          </form>
+        </details>
+      </article>
     `;
   }).join("");
 
@@ -177,6 +170,10 @@ function renderQueueTable() {
     .flatMap((sector) => (sector.tickets || []).map((ticket) => ({ ...ticket, sectorId: sector.id, sectorName: sector.name })))
     .filter((ticket) => !sectorFilter || ticket.sectorId === sectorFilter)
     .filter((ticket) => !statusFilter || ticket.status === statusFilter);
+  const statusOrder = { chamado: 0, em_atendimento: 1, proximo: 2, aguardando: 3, standby: 4, espera_inteligente: 5 };
+  rows.sort((left, right) => (statusOrder[left.status] ?? 9) - (statusOrder[right.status] ?? 9)
+    || Number(right.priority) - Number(left.priority)
+    || Number(left.position || 999) - Number(right.position || 999));
   document.querySelector("#queueCount").textContent = `${rows.length} ${rows.length === 1 ? "registro" : "registros"}`;
   table.innerHTML = rows.length ? rows.map(queueRow).join("") : `
     <tr><td colspan="6" class="manager-empty-cell">Nenhuma senha ativa com os filtros selecionados.</td></tr>
@@ -190,7 +187,7 @@ function queueRow(ticket) {
       <td>${escapeHtml(ticket.sectorName || ticket.sector)}</td>
       <td>${escapeHtml(supportCode(ticket))}</td>
       <td><span class="manager-badge ${ticket.status === "em_atendimento" ? "success" : ticket.status === "standby" ? "warn" : "neutral"}">${escapeHtml(ticketStatus(ticket))}</span></td>
-      <td>${ticket.priority ? `<span class="manager-badge danger">Preferencial</span>` : `<span class="manager-badge neutral">Normal</span>`}</td>
+      <td>${ticket.priority ? `<span class="manager-badge danger">Preferencial</span><small class="manager-cell-note">${escapeHtml(priorityReasonLabel(ticket.priorityReason))}</small>` : `<span class="manager-badge neutral">Normal</span>`}</td>
       <td>${escapeHtml(ticket.status === "em_atendimento" ? "Agora" : `${ticket.position || 1}º`)}</td>
     </tr>
   `;
@@ -243,81 +240,85 @@ function priorityBadgeMarkup(extraClass = "") {
   return `<em class="priority-badge ${extraClass}">${priorityIcon()}<span>PREFERENCIAL</span></em>`;
 }
 
-function renderMetrics() {
-  const metricsGrid = document.querySelector("#adminMetrics");
-  if (!metricsGrid) return;
-  metricsGrid.innerHTML = [
-    ...adminMetrics.sectors.map((sector) => `
-      <article class="ops-card">
-        <div class="ops-card-head">
-          <div>
-            <strong>${escapeHtml(sector.name)}</strong>
-            <span>${escapeHtml(sector.finished)} atendimentos finalizados</span>
-          </div>
-        </div>
-        <div class="ops-metric"><span>Tempo médio</span><strong>${escapeHtml(formatMinutesSeconds(sector.avgServiceSeconds))}</strong></div>
-        <div class="ops-metric"><span>Espera inteligente</span><strong>${escapeHtml(formatMinutesSeconds(sector.avgSmartWaitSeconds))}</strong></div>
-        <p class="ops-empty">Abandono: ${escapeHtml(sector.abandoned)}</p>
-      </article>
-    `),
-    `<article class="ops-card">
-      <div class="ops-card-head"><div><strong>Satisfação</strong><span>${escapeHtml(adminMetrics.satisfaction.count)} avaliações</span></div></div>
-      <div class="ops-metric"><span>Média</span><strong>${escapeHtml(adminMetrics.satisfaction.average)}</strong></div>
-    </article>`
-  ].join("");
-}
-
 function renderDashboard() {
+  if (!document.querySelector("#dashboardKpis")) return;
   const summary = dashboardSummary();
-  const topCluster = offerInsights.clusters[0] || null;
-  const topProduct = offerInsights.productRanking[0] || null;
-  const topPattern = offerInsights.timePatterns[0] || null;
-  const health = dashboardHealth(summary, offerInsights.confidence);
+  const health = dashboardHealth(summary);
   const openSectors = adminState.sectors.filter((sector) => sector.status === "open").length;
 
   setText("#heroOpenSectors", openSectors);
-  setText("#heroQueueTotal", summary.waiting);
-  setText("#heroStatus", health.label.toLowerCase());
+  setText("#heroActiveCalls", summary.called);
+  setText("#heroCriticalSector", summary.criticalSector || "nenhum");
+  setText("#heroHeadline", health.headline);
+  setText("#heroDescription", health.detail);
+  setText("#heroStatus", health.label);
   setText("#heroAverageTime", formatMinutesSeconds(summary.avgServiceSeconds));
   setText("#heroWaitingCustomers", summary.waiting);
   setText("#heroSyncTime", new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }));
   document.querySelector("#healthDot")?.classList.toggle("attention", health.status === "attention");
 
   document.querySelector("#dashboardKpis").innerHTML = [
-    dashboardKpi("Fila agora", summary.waiting, "senhas aguardando", health.status === "attention" ? "atenção" : "estável"),
-    dashboardKpi("Tempo médio", formatMinutesSeconds(summary.avgServiceSeconds), "média entre setores", "tempo real"),
-    dashboardKpi("Abandono", summary.abandoned, `${summary.finished} finalizados`, summary.abandoned ? "monitorar" : "baixo"),
-    dashboardKpi("ICCF", offerInsights.totalCustomers, `${offerInsights.totalSelections} seleções`, confidenceLabel(offerInsights.confidence))
+    dashboardKpi("Fila atual", summary.waiting, "senhas aguardando", summary.overloaded.length ? "atenção" : "normal"),
+    dashboardKpi("Em atendimento", summary.called, "chamadas ativas", summary.called ? "agora" : "livre"),
+    dashboardKpi("Senhas do dia", summary.issued, "emitidas na data", adminMetrics.date || "hoje"),
+    dashboardKpi("Tempo de atendimento", formatMinutesSeconds(summary.avgServiceSeconds), "média registrada", "histórico"),
+    dashboardKpi("Satisfação", satisfactionValue(), `${adminMetrics.satisfaction.count || 0} avaliações`, "experiência")
   ].join("");
 
-  document.querySelector("#dashboardOperations").innerHTML = adminMetrics.sectors.length
-    ? adminMetrics.sectors.map((sector) => operationBar(sector, summary.maxAvgServiceSeconds)).join("")
-    : `<p class="insight-empty">Aguardando métricas operacionais.</p>`;
+  document.querySelector("#dashboardAlerts").innerHTML = operationalAlerts(summary);
 
-  document.querySelector("#dashboardIntel").innerHTML = `
-    ${dashboardIntelItem("1", "Cluster principal", topCluster ? `${topCluster.name} em ${topCluster.dominantSector}` : "Sem cluster suficiente")}
-    ${dashboardIntelItem("2", "Produto em destaque", topProduct ? `${topProduct.productName} (${topProduct.quantity} seleções)` : "Sem ranking de produto")}
-    ${dashboardIntelItem("3", "Padrão mais forte", topPattern ? topPattern.label : "Sem padrão de horário")}
-    ${dashboardIntelItem("4", "Próxima ação", offerInsights.suggestions[0] || "Aguardando mais seleções nas ofertas")}
-  `;
+  const sectorRows = adminState.sectors.map(sectorSnapshot).sort((left, right) => right.load - left.load || right.waiting.length - left.waiting.length);
+  document.querySelector("#dashboardOperations").innerHTML = sectorRows.length
+    ? sectorRows.map((sector) => operationBar(sector)).join("")
+    : `<p class="manager-empty">Aguardando dados dos setores.</p>`;
 }
 
 function dashboardSummary() {
   const activeTickets = adminState.sectors.flatMap((sector) => sector.tickets || []);
   const waiting = activeTickets.filter((ticket) => ["aguardando", "proximo", "espera_inteligente", "standby"].includes(ticket.status)).length;
   const called = activeTickets.filter((ticket) => ["chamado", "em_atendimento"].includes(ticket.status)).length;
+  const issued = adminMetrics.sectors.reduce((sum, sector) => sum + Number(sector.issued || 0), 0);
   const finished = adminMetrics.sectors.reduce((sum, sector) => sum + Number(sector.finished || 0), 0);
   const abandoned = adminMetrics.sectors.reduce((sum, sector) => sum + Number(sector.abandoned || 0), 0);
   const avgServiceSeconds = averageNumber(adminMetrics.sectors.map((sector) => Number(sector.avgServiceSeconds || 0)));
-  const maxAvgServiceSeconds = Math.max(1, ...adminMetrics.sectors.map((sector) => Number(sector.avgServiceSeconds || 0)));
-  return { waiting, called, finished, abandoned, avgServiceSeconds, maxAvgServiceSeconds };
+  const sectors = adminState.sectors.map(sectorSnapshot);
+  const overloaded = sectors.filter((sector) => sector.load >= 100 || (sector.status === "open" && sector.waiting.length > 8));
+  const critical = [...sectors].sort((left, right) => right.load - left.load || right.waiting.length - left.waiting.length)[0];
+  return {
+    waiting,
+    called,
+    issued,
+    finished,
+    abandoned,
+    avgServiceSeconds,
+    overloaded,
+    criticalSector: critical?.name || ""
+  };
 }
 
-function dashboardHealth(summary, confidence) {
-  if (summary.waiting > 8 || summary.abandoned > summary.finished) return { label: "Atenção operacional", status: "attention" };
-  if (confidence === "alta" && offerInsights.totalSelections > 0) return { label: "Oportunidade ativa", status: "good" };
-  if (summary.called || summary.waiting || summary.finished) return { label: "Operação estável", status: "good" };
-  return { label: "Aguardando movimento", status: "neutral" };
+function dashboardHealth(summary) {
+  if (summary.overloaded.length) {
+    return {
+      label: "Atenção operacional",
+      status: "attention",
+      headline: "Há setores pedindo atenção.",
+      detail: `${summary.overloaded.map((sector) => sector.name).join(", ")} está com a fila acima do nível recomendado.`
+    };
+  }
+  if (summary.called || summary.waiting) {
+    return {
+      label: "Operação estável",
+      status: "good",
+      headline: "A operação está em andamento.",
+      detail: "As filas estão sendo acompanhadas e os atendimentos ativos aparecem na sequência operacional."
+    };
+  }
+  return {
+    label: "Aguardando movimento",
+    status: "neutral",
+    headline: "A operação está tranquila.",
+    detail: "Ainda não há senhas ativas. Os indicadores serão atualizados quando a fila receber movimento."
+  };
 }
 
 function dashboardKpi(label, value, detail, trend = "") {
@@ -330,14 +331,14 @@ function dashboardKpi(label, value, detail, trend = "") {
   `;
 }
 
-function operationBar(sector, maxValue) {
-  const value = Number(sector.avgServiceSeconds || 0);
-  const width = Math.max(4, Math.min(100, Math.round((value / maxValue) * 100)));
+function operationBar(sector) {
+  const value = Number(sector.metric.avgServiceSeconds || sector.averageServiceSeconds || 0);
+  const width = Math.max(4, Math.min(100, Math.round(sector.load)));
   return `
     <article class="manager-bar-row">
       <div>
         <strong>${escapeHtml(sector.name)}</strong>
-        <span>${escapeHtml(sector.finished)} finalizados - ${escapeHtml(sector.abandoned)} abandonos</span>
+        <span>${escapeHtml(sector.waiting.length)} aguardando · ${escapeHtml(sector.currentTicket ? `atual ${supportCode(sector.currentTicket).replace("Senha ", "")}` : "sem chamada")}</span>
       </div>
       <b>${escapeHtml(formatMinutesSeconds(value))}</b>
       <i><em style="width:${escapeHtml(width)}%"></em></i>
@@ -345,13 +346,47 @@ function operationBar(sector, maxValue) {
   `;
 }
 
-function dashboardIntelItem(index, label, value) {
-  return `
-    <article class="manager-insight">
-      <div>${escapeHtml(index)}</div>
-      <p><strong>${escapeHtml(label)}</strong><span>${escapeHtml(value)}</span></p>
-    </article>
-  `;
+function sectorSnapshot(sector) {
+  const tickets = Array.isArray(sector?.tickets) ? sector.tickets : [];
+  const waiting = tickets.filter((ticket) => ["aguardando", "proximo", "espera_inteligente", "standby"].includes(ticket.status));
+  const called = tickets.filter((ticket) => ["chamado", "em_atendimento"].includes(ticket.status));
+  const currentTicket = called.find((ticket) => ticket.status === "em_atendimento") || called[0] || null;
+  const metric = adminMetrics.sectors.find((item) => item.id === sector.id) || {};
+  const capacity = Math.max(1, Number(sector.capacity || 1));
+  const load = Math.min(100, Math.round((waiting.length / capacity) * 100));
+  return { ...sector, tickets, waiting, called, currentTicket, metric, capacity, load };
+}
+
+function operationalAlerts(summary) {
+  const alerts = [];
+  summary.overloaded.forEach((sector) => {
+    alerts.push({
+      tone: "attention",
+      title: `${sector.name}: fila acima do recomendado`,
+      detail: `${sector.waiting.length} senhas aguardando para uma capacidade configurada de ${sector.capacity}.`
+    });
+  });
+  adminState.sectors.filter((sector) => sector.status !== "open").forEach((sector) => {
+    alerts.push({
+      tone: sector.status === "paused" ? "warning" : "neutral",
+      title: `${sector.name}: setor ${statusLabel(sector.status).toLowerCase()}`,
+      detail: "Confira a configuração do setor antes de liberar novas senhas."
+    });
+  });
+  if (!alerts.length) {
+    return `<div class="manager-alert manager-alert-good"><span class="manager-alert-mark">✓</span><div><strong>Nenhum alerta operacional</strong><p>Não há filas acima do nível configurado neste momento.</p></div></div>`;
+  }
+  return alerts.slice(0, 4).map((alert) => `
+    <div class="manager-alert manager-alert-${escapeHtml(alert.tone)}">
+      <span class="manager-alert-mark">!</span>
+      <div><strong>${escapeHtml(alert.title)}</strong><p>${escapeHtml(alert.detail)}</p></div>
+    </div>
+  `).join("");
+}
+
+function satisfactionValue() {
+  const value = adminMetrics.satisfaction?.average;
+  return value && value !== "sem avaliações" ? String(value) : "--";
 }
 
 function averageNumber(values) {
@@ -377,101 +412,8 @@ function timeParts(totalSeconds) {
   };
 }
 
-function renderOfferInsights() {
-  const data = offerInsights || emptyOfferInsights();
-  setText("#iccfConfidence", confidenceLabel(data.confidence));
-  document.querySelector("#offerInsightSummary").innerHTML = [
-    insightStat("Seleções analisadas", data.totalSelections),
-    insightStat("Clientes identificados", data.totalCustomers),
-    insightStat("Confiança", confidenceLabel(data.confidence)),
-    insightStat("Janela", `${data.periodDays || 30} dias`)
-  ].join("");
-
-  if (!data.totalSelections) {
-    const empty = `<p class="manager-empty">Ainda não há seleções de ofertas suficientes para formar clusters. Conforme os clientes adicionarem ofertas ao carrinho, o ICCF passa a revelar padrões de compra.</p>`;
-    document.querySelector("#offerClusters").innerHTML = empty;
-    document.querySelector("#offerProducts").innerHTML = empty;
-    document.querySelector("#offerPatterns").innerHTML = empty;
-    document.querySelector("#offerSuggestions").innerHTML = empty;
-    return;
-  }
-
-  document.querySelector("#offerClusters").innerHTML = data.clusters.length
-    ? data.clusters.map(clusterCard).join("")
-    : `<p class="manager-empty">Sem clusters consistentes neste período.</p>`;
-  document.querySelector("#offerProducts").innerHTML = data.productRanking.length
-    ? data.productRanking.map(productInsightRow).join("")
-    : `<p class="manager-empty">Nenhum produto ranqueado neste período.</p>`;
-  document.querySelector("#offerPatterns").innerHTML = data.timePatterns.length
-    ? data.timePatterns.map(patternInsightRow).join("")
-    : `<p class="manager-empty">Nenhum padrão de horário detectado.</p>`;
-  document.querySelector("#offerSuggestions").innerHTML = data.suggestions.length
-    ? data.suggestions.map((suggestion, index) => dashboardIntelItem(index + 1, "Ação recomendada", suggestion)).join("")
-    : `<p class="manager-empty">Sem recomendações novas agora.</p>`;
-}
-
-function insightStat(label, value) {
-  return `
-    <article class="manager-mini-stat">
-      <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(value)}</strong>
-    </article>
-  `;
-}
-
-function clusterCard(cluster) {
-  return `
-    <article class="manager-cluster-card">
-      <div class="manager-sector-head">
-        <div>
-          <strong>${escapeHtml(cluster.name)}</strong>
-          <span>${escapeHtml(cluster.dominantSector)} - ${escapeHtml(cluster.dominantTime)}</span>
-        </div>
-        <b class="manager-badge neutral">${escapeHtml(confidenceLabel(cluster.confidence))}</b>
-      </div>
-      <div class="manager-chip-row">
-        <span>${escapeHtml(cluster.quantity)} seleções</span>
-        <span>${escapeHtml(cluster.customers)} clientes</span>
-      </div>
-      <div class="manager-chip-row products">
-        ${cluster.topProducts.map((product) => `<span>${escapeHtml(product.productName)}</span>`).join("")}
-      </div>
-      <p class="manager-note">${escapeHtml(cluster.recommendation)}</p>
-    </article>
-  `;
-}
-
-function productInsightRow(product) {
-  return `
-    ${dashboardIntelItem(product.quantity, product.productName, `${product.sectorName} - ${product.customers} clientes`)}
-  `;
-}
-
-function patternInsightRow(pattern) {
-  return `
-    ${dashboardIntelItem(pattern.quantity, pattern.label, pattern.topProducts.map((product) => product.productName).join(", ") || "Sem produtos associados")}
-  `;
-}
-
-function emptyOfferInsights() {
-  return {
-    periodDays: 30,
-    totalSelections: 0,
-    totalCustomers: 0,
-    productRanking: [],
-    sectorPatterns: [],
-    timePatterns: [],
-    clusters: [],
-    suggestions: [],
-    confidence: "baixa"
-  };
-}
-
-function confidenceLabel(value) {
-  return { alta: "Alta", media: "Média", baixa: "Baixa" }[value] || value || "Baixa";
-}
-
 function renderUsers() {
+  if (!document.querySelector("#adminUsers")) return;
   document.querySelector("#adminUsers").innerHTML = adminUsers.map((user) => `
     <article class="manager-user-row">
       <div class="manager-person">
@@ -526,9 +468,22 @@ function ticketStatus(ticket) {
     proximo: "proxima",
     chamado: "chamada",
     em_atendimento: "em atendimento",
+    standby: "standby",
     espera_inteligente: "espera inteligente"
   };
   return labels[ticket.status] || ticket.status;
+}
+
+function priorityReasonLabel(value) {
+  const labels = {
+    deficiencia_ou_mobilidade_reduzida: "Mobilidade reduzida",
+    tea: "TEA",
+    idoso_60_mais: "Idoso 60+",
+    gestante_ou_lactante: "Gestante ou lactante",
+    crianca_de_colo: "Criança de colo",
+    obesidade: "Obesidade"
+  };
+  return labels[value] || value || "Categoria não informada";
 }
 
 function roleLabel(role) {
@@ -597,6 +552,17 @@ function getCookie(name) {
     .map((item) => item.trim())
     .find((item) => item.startsWith(`${name}=`))
     ?.slice(name.length + 1) || "";
+}
+
+function businessToday() {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(new Date());
+  const part = (type) => parts.find((item) => item.type === type)?.value;
+  return `${part("year")}-${part("month")}-${part("day")}`;
 }
 
 function escapeHtml(value) {

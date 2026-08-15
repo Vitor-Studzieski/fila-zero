@@ -1,11 +1,11 @@
 import Script from "next/script";
 import HtmlTemplate from "../_components/HtmlTemplate";
 
-export default function AdminPage() {
+export default function IccfPage() {
   return (
     <div className="manager-page">
-      <HtmlTemplate fileName="admin.html" />
-      <Script src="/admin.js" strategy="afterInteractive" />
+      <HtmlTemplate fileName="iccf.html" />
+      <Script src="/iccf.js" strategy="afterInteractive" />
     </div>
   );
 }

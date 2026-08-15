@@ -10,74 +10,77 @@
       <header class="totem-header">
         <div class="totem-brand">
           <img src="/icons/fila-zero-192.png" alt="" />
-          <div>
-            <span>Supermercado Pompeia</span>
-            <strong>Fila Zero</strong>
-          </div>
+          <div><span>Supermercado Pompeia</span><strong>Fila Zero</strong></div>
         </div>
-        <div class="totem-connection" id="totemConnection" data-state="loading">
-          <span aria-hidden="true"></span>
-          <strong>Conectando</strong>
-        </div>
+        <div class="totem-connection" id="totemConnection" data-state="loading"><span aria-hidden="true"></span><strong>Conectando</strong></div>
       </header>
 
       <section class="totem-loading" id="totemLoading" aria-live="polite">
-        <strong>Preparando o totem</strong>
-        <span>Carregando os setores disponiveis.</span>
+        <strong>Preparando o totem</strong><span>Carregando a configuração do equipamento.</span>
       </section>
 
       <section class="totem-pair" id="totemPair" hidden>
-        <div>
-          <p class="totem-eyebrow">Configuracao necessaria</p>
-          <h1>Este computador ainda nao esta vinculado.</h1>
-          <p id="totemPairMessage">Entre como gestor para autorizar a emissao de senhas neste equipamento.</p>
-        </div>
+        <div><p class="totem-eyebrow">Configuração necessária</p><h1>Este computador ainda não está vinculado.</h1><p id="totemPairMessage">Entre como gestor para autorizar a emissão de senhas neste equipamento.</p></div>
         <button class="totem-primary" id="pairKioskButton" type="button" hidden>Vincular este totem</button>
         <a class="totem-primary" id="pairLoginLink" href="/login?next=%2Ftotem">Entrar como gestor</a>
       </section>
 
       <section class="totem-operation" id="totemOperation" hidden>
         <div class="totem-heading">
-          <div>
-            <p class="totem-eyebrow">Retire sua senha</p>
-            <h1>Escolha o setor</h1>
-          </div>
-          <p>Selecione onde deseja ser atendido. Sua senha sera impressa logo em seguida.</p>
+          <div><p class="totem-eyebrow" id="totemFlowEyebrow">Retire sua senha</p><h1 id="totemFlowTitle">Escolha o setor</h1></div>
+          <p id="totemFlowDescription">Faça uma escolha por vez. Ao definir o atendimento, você já poderá imprimir sua senha.</p>
         </div>
 
-        <div class="totem-operation-grid">
-          <div class="totem-sectors" id="totemSectors" aria-live="polite"></div>
-          <aside class="totem-install">
-            <div class="totem-install-qr" id="totemInstallQr" aria-label="QR Code para instalar o aplicativo"></div>
-            <div>
-              <strong>Ainda nao tem o aplicativo?</strong>
-              <span>Aponte a camera do celular e instale o Fila Zero.</span>
-            </div>
-          </aside>
+        <div class="totem-progress" aria-label="Etapas da emissão">
+          <span class="active" data-progress-step="sector">1 <small>Setor</small></span>
+          <span data-progress-step="type">2 <small>Atendimento</small></span>
+          <span data-progress-step="priority">3 <small>Categoria</small></span>
         </div>
+
+        <section class="totem-step" id="totemStepSector">
+          <div class="totem-step-heading"><h2>Onde você deseja ser atendido?</h2><p>Escolha um setor para continuar.</p></div>
+          <div class="totem-operation-grid">
+            <div class="totem-sectors" id="totemSectors" aria-live="polite"></div>
+            <aside class="totem-install" id="totemGeneralQrCard">
+              <div class="totem-install-qr" id="totemGeneralQr" aria-label="QR Code geral do Fila Zero"></div>
+              <div><strong>Prefere usar o celular?</strong><span>Aponte a câmera para acessar o Fila Zero.</span></div>
+            </aside>
+          </div>
+        </section>
+
+        <section class="totem-step" id="totemStepType" hidden>
+          <div class="totem-step-heading"><h2>Como você precisa ser atendido?</h2><p>Escolha apenas uma opção.</p></div>
+          <div class="totem-choice-grid">
+            <button class="totem-choice" type="button" data-service-type="normal"><strong>Atendimento normal</strong><span>Entre na fila comum do setor.</span></button>
+            <button class="totem-choice totem-choice-priority" type="button" data-service-type="preferencial"><strong>Atendimento preferencial</strong><span>Para quem tem direito ao atendimento prioritário.</span></button>
+          </div>
+          <div class="totem-inline-issue" id="totemNormalIssue" hidden>
+            <div class="totem-inline-summary"><span>Confirme sua escolha</span><strong id="normalIssueSector">--</strong><small>Atendimento normal. Deseja imprimir esta senha?</small></div>
+            <div class="totem-inline-actions"><button class="totem-secondary" id="backNormalTicketButton" type="button">Voltar</button><button class="totem-primary" id="issueNormalTicketButton" type="button">Imprimir senha</button></div>
+          </div>
+          <button class="totem-secondary totem-back-button" id="backToSectorButton" type="button">Voltar</button>
+        </section>
+
+        <section class="totem-step" id="totemStepPriority" hidden>
+          <div class="totem-step-heading"><h2>Qual é a categoria preferencial?</h2><p>Selecione a categoria que corresponde à sua necessidade.</p></div>
+          <div class="totem-priority-grid" id="totemPriorityOptions"></div>
+          <div class="totem-inline-issue" id="totemPriorityIssue" hidden>
+            <div class="totem-inline-summary"><span>Confirme sua escolha</span><strong id="priorityIssueSector">--</strong><small>Atendimento preferencial: <span id="priorityIssueReason">Selecione uma categoria para continuar.</span> Deseja imprimir esta senha?</small></div>
+            <div class="totem-inline-actions"><button class="totem-secondary" id="backPriorityTicketButton" type="button">Voltar</button><button class="totem-primary" id="issuePriorityTicketButton" type="button" disabled>Imprimir senha</button></div>
+          </div>
+          <div class="totem-step-actions"><button class="totem-secondary" id="backToTypeButton" type="button">Voltar</button></div>
+        </section>
+
         <p class="totem-feedback" id="totemFeedback" role="alert" aria-live="assertive"></p>
       </section>
 
-      <dialog class="totem-dialog" id="confirmDialog">
-        <form method="dialog">
-          <p class="totem-eyebrow">Confirmar setor</p>
-          <h2 id="confirmSectorName">Setor</h2>
-          <p>Sua senha entrara na fila e sera enviada para a impressora.</p>
-          <div class="totem-dialog-actions">
-            <button class="totem-secondary" value="cancel">Voltar</button>
-            <button class="totem-primary" id="issueTicketButton" value="default">Emitir senha</button>
-          </div>
-        </form>
-      </dialog>
-
       <section class="totem-result" id="totemResult" hidden aria-live="assertive">
         <p class="totem-eyebrow">Senha emitida</p>
-        <span id="resultSector">Setor</span>
-        <strong id="resultTicket">A000</strong>
-        <div class="totem-print-state" id="printState" data-state="pending">
-          <span aria-hidden="true"></span>
-          <p>Enviando para a impressora</p>
-        </div>
+        <span id="resultSector">Setor</span><strong id="resultTicket">A000</strong>
+        <div class="totem-result-details"><span id="resultPriorityBadge" hidden>Atendimento preferencial</span><p id="resultTrackMessage">Acompanhe sua posição pelo celular.</p></div>
+        <div class="totem-result-qr" id="resultTrackQr" aria-label="QR Code individual da senha"></div>
+        <p class="totem-result-url" id="resultTrackUrl"></p>
+        <div class="totem-print-state" id="printState" data-state="pending"><span aria-hidden="true"></span><p>Enviando para a impressora</p></div>
         <button class="totem-secondary" id="newTicketButton" type="button">Retirar outra senha</button>
       </section>
     </main>

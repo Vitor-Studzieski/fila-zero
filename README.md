@@ -37,6 +37,13 @@ O backend, as paginas Next.js e os arquivos de `public/` rodam pelo mesmo servid
 - `http://localhost:3000/` - app do cliente
 - `http://localhost:3000/attendant` - painel do funcionario
 - `http://localhost:3000/admin` - painel do gestor
+- `http://localhost:3000/admin/operacao` - operação em tempo real
+- `http://localhost:3000/admin/setores` - configuração dos setores
+- `http://localhost:3000/admin/totens` - totens e impressão
+- `http://localhost:3000/admin/usuarios` - usuários e permissões
+- `http://localhost:3000/iccf` - clusters e inteligencia comercial
+- `http://localhost:3000/totem` - emissão física de senhas por etapas
+- `http://localhost:3000/acompanhar/<token>` - acompanhamento individual da senha
 
 ## Contas de teste
 
@@ -79,6 +86,7 @@ SUPABASE_AUTH_ENABLED
 DATA_BACKEND
 SUPABASE_AUTO_CONFIRM_CUSTOMERS
 AUTH_SECRET
+CRON_SECRET
 BOOTSTRAP_ADMIN_EMAIL
 BOOTSTRAP_ADMIN_PASSWORD
 DEMO_USERS_JSON
@@ -86,11 +94,15 @@ PUSH_NOTIFICATIONS_ENABLED
 NEXT_PUBLIC_VAPID_PUBLIC_KEY
 VAPID_PRIVATE_KEY
 VAPID_SUBJECT
+KIOSK_MODE
+KIOSK_SECTOR_ID
 ```
 
 Use `DATA_BACKEND=supabase` para rodar login, filas, carrinho, setores, metricas e usuarios no Supabase/Postgres. `AUTH_SECRET` precisa ser um segredo fixo com ao menos 32 caracteres. `SUPABASE_AUTO_CONFIRM_CUSTOMERS=1` libera cadastro publico sem confirmacao de e-mail para testes; em producao real, volte para `0`. `BOOTSTRAP_ADMIN_PASSWORD` precisa ter ao menos 12 caracteres quando o fallback local estiver em uso.
 
-Nesta fase, a emissao digital e direta e nao exige QR Code nem geolocalizacao. O unico QR Code do sistema direciona para `/instalar` e aparece somente na tela do totem.
+`CRON_SECRET` protege a rota interna `/api/internal/jobs`, usada pela Vercel Cron para executar expiracao de senhas, chamadas automaticas e notificacoes mesmo sem trafego de usuarios. Gere um segredo exclusivo e cadastre o mesmo valor no ambiente local e na Vercel.
+
+`KIOSK_MODE=central` permite escolher o setor no Totem. Com `KIOSK_MODE=sector` e `KIOSK_SECTOR_ID=acougue`, o dispositivo inicia direto no atendimento daquele balcão. O QR Code geral leva ao Fila Zero; cada senha impressa recebe um QR Code individual para `/acompanhar/<token>`.
 
 Para ativar as notificacoes Web Push, execute `npx web-push generate-vapid-keys`, cadastre o par gerado e um contato valido em `VAPID_SUBJECT`, e so entao defina `PUSH_NOTIFICATIONS_ENABLED=1`. A chave privada nunca deve chegar ao navegador ou ser versionada.
 

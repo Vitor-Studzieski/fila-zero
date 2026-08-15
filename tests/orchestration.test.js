@@ -12,6 +12,7 @@ const BASE_URL = `http://localhost:${PORT}`;
 const TEST_DOMAIN = "example.invalid";
 const testCredentials = createTestCredentials();
 const printAgentToken = crypto.randomBytes(48).toString("base64url");
+const cronSecret = crypto.randomBytes(48).toString("base64url");
 
 let server;
 let dataDir;
@@ -30,7 +31,8 @@ test.before(async () => {
       PRESENCE_CHECK_ENABLED: "0",
       DEMO_USERS_JSON: JSON.stringify(testCredentials.seedUsers),
       AUTH_SECRET: crypto.randomBytes(32).toString("hex"),
-      PRINT_AGENT_TOKEN: printAgentToken
+      PRINT_AGENT_TOKEN: printAgentToken,
+      CRON_SECRET: cronSecret
     },
     stdio: "ignore"
   });
@@ -304,6 +306,28 @@ test("bloqueia login apos muitas tentativas invalidas", async () => {
   assert.match(payload.error, /Muitas tentativas/i);
 });
 
+test("rota interna de jobs exige o segredo do cron", async () => {
+  const unauthorized = await fetch(`${BASE_URL}/api/internal/jobs`);
+  assert.equal(unauthorized.status, 401);
+
+  const authorized = await fetch(`${BASE_URL}/api/internal/jobs`, {
+    headers: { authorization: `Bearer ${cronSecret}` }
+  });
+  assert.equal(authorized.status, 200);
+  const payload = await authorized.json();
+  assert.equal(payload.ok, true);
+});
+
+test("logout revoga a sessao imediatamente", async () => {
+  const { cookie } = await createCustomer("logout-revoga-sessao");
+  await api("/api/auth/logout", { method: "POST", cookie });
+
+  const response = await fetch(`${BASE_URL}/api/auth/me`, { headers: { cookie } });
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.user, null);
+});
+
 test("permite alterar senha informando senha atual", async () => {
   const email = `troca-senha-${crypto.randomUUID()}@${TEST_DOMAIN}`;
   const password = strongPassword();
@@ -363,16 +387,26 @@ test("totem emite senha fisica na fila unica e conclui a impressao sem duplicar"
       cookie: kioskCookie,
       "x-kiosk-csrf": kioskCsrfToken
     },
-    body: JSON.stringify({ sectorId: "frios", idempotencyKey })
+    body: JSON.stringify({ sectorId: "frios", idempotencyKey, priority: true, priorityReason: "tea" })
   });
   const firstResponse = await issue();
   const first = await firstResponse.json();
   assert.equal(firstResponse.status, 201);
   assert.equal(first.ticket.source, "physical");
   assert.equal(first.ticket.sectorId, "frios");
+  assert.equal(first.ticket.priority, true);
+  assert.equal(first.ticket.priorityReason, "tea");
   assert.equal(first.printJob.status, "pending");
   assert.equal(first.printJob.payload.paperWidthMm, 80);
   assert.equal(first.printJob.payload.installUrl, "https://fila-zero-mauve.vercel.app/instalar");
+  assert.match(first.printJob.payload.trackUrl, /\/acompanhar\/[A-Za-z0-9_-]+$/);
+
+  const trackingToken = new URL(first.printJob.payload.trackUrl).pathname.split("/").pop();
+  const trackingResponse = await fetch(`${BASE_URL}/api/tickets/track/${trackingToken}`);
+  const tracking = await trackingResponse.json();
+  assert.equal(trackingResponse.status, 200);
+  assert.equal(tracking.ticket.ticket, first.ticket.ticket);
+  assert.equal(tracking.ticket.priority, true);
 
   const duplicateResponse = await issue();
   const duplicate = await duplicateResponse.json();

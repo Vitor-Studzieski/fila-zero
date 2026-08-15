@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Operação - Fila Zero</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="manager-page">
+    <div class="manager-shell">
+      <aside class="manager-sidebar">
+        <div class="manager-brand">
+          <div class="manager-brand-mark">FZ</div>
+          <div><strong>Fila Zero</strong><span>Painel do gestor</span></div>
+        </div>
+        <nav class="manager-nav" aria-label="Navegação do gestor">
+          <a href="/admin"><span>Visão geral</span><small>01</small></a>
+          <a class="active" href="/admin/operacao"><span>Operação</span><small>02</small></a>
+          <a href="/admin/setores"><span>Setores</span><small>03</small></a>
+          <a href="/admin/totens"><span>Totens e impressão</span><small>04</small></a>
+          <a href="/iccf"><span>Inteligência</span><small>05</small></a>
+          <a href="/admin/usuarios"><span>Usuários</span><small>06</small></a>
+        </nav>
+        <div class="manager-sidebar-note">Acompanhe as filas, chamadas e setores em tempo real.</div>
+      </aside>
+
+      <main class="manager-main">
+        <header class="manager-topbar">
+          <div>
+            <p class="manager-eyebrow">Monitoramento</p>
+            <h1>Operação</h1>
+            <p>Acompanhe a fila atual, as chamadas e a saúde de cada setor.</p>
+          </div>
+          <div class="manager-actions">
+            <span class="manager-live-state"><span class="manager-status-dot"></span><span>Atualização automática</span></span>
+            <a class="manager-button secondary" href="/admin">Visão geral</a>
+            <button class="manager-button warning" id="logoutButton" type="button">Sair</button>
+          </div>
+        </header>
+
+        <section class="manager-section-title">
+          <div>
+            <p class="manager-eyebrow">Agora</p>
+            <h2>Fila em andamento</h2>
+            <p>As chamadas ativas aparecem primeiro; depois, as senhas por prioridade e posição.</p>
+          </div>
+          <div class="manager-toolbar">
+            <label>Setor
+              <select id="sectorFilter"><option value="">Todos os setores</option></select>
+            </label>
+            <label>Status
+              <select id="statusFilter">
+                <option value="">Todos os status</option>
+                <option value="aguardando">Aguardando</option>
+                <option value="proximo">Próximo</option>
+                <option value="chamado">Chamado</option>
+                <option value="em_atendimento">Em atendimento</option>
+                <option value="standby">Standby</option>
+                <option value="espera_inteligente">Espera inteligente</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section class="manager-content-grid">
+          <article class="manager-panel">
+            <div class="manager-panel-header">
+              <div><h3>Fila operacional</h3><p>Clientes aguardando, chamados e atendimentos em andamento.</p></div>
+              <span class="manager-badge neutral" id="queueCount">0 registros</span>
+            </div>
+            <div class="manager-table-wrap">
+              <table class="manager-table">
+                <thead><tr><th>Cliente</th><th>Setor</th><th>Senha</th><th>Status</th><th>Modalidade</th><th>Posição</th></tr></thead>
+                <tbody id="queueTable"></tbody>
+              </table>
+            </div>
+          </article>
+          <article class="manager-panel">
+            <div class="manager-panel-header">
+              <div><h3>Saúde por setor</h3><p>Fila atual, ocupação e tempo médio de atendimento.</p></div>
+            </div>
+            <div class="manager-panel-body" id="dashboardOperations"></div>
+          </article>
+        </section>
+      </main>
+    </div>
+    <script src="admin.js"></script>
+  </body>
+</html>

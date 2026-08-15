@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Setores - Fila Zero</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="manager-page">
+    <div class="manager-shell">
+      <aside class="manager-sidebar">
+        <div class="manager-brand"><div class="manager-brand-mark">FZ</div><div><strong>Fila Zero</strong><span>Painel do gestor</span></div></div>
+        <nav class="manager-nav" aria-label="Navegação do gestor">
+          <a href="/admin"><span>Visão geral</span><small>01</small></a>
+          <a href="/admin/operacao"><span>Operação</span><small>02</small></a>
+          <a class="active" href="/admin/setores"><span>Setores</span><small>03</small></a>
+          <a href="/admin/totens"><span>Totens e impressão</span><small>04</small></a>
+          <a href="/iccf"><span>Inteligência</span><small>05</small></a>
+          <a href="/admin/usuarios"><span>Usuários</span><small>06</small></a>
+        </nav>
+        <div class="manager-sidebar-note">Configure os setores, capacidade, balcões e tempos médios.</div>
+      </aside>
+
+      <main class="manager-main">
+        <header class="manager-topbar">
+          <div><p class="manager-eyebrow">Configuração</p><h1>Setores</h1><p>Gerencie os balcões e os parâmetros que orientam as filas.</p></div>
+          <div class="manager-actions">
+            <span class="manager-live-state"><span class="manager-status-dot"></span><span>Atualização automática</span></span>
+            <a class="manager-button secondary" href="/admin">Visão geral</a>
+            <button class="manager-button warning" id="logoutButton" type="button">Sair</button>
+          </div>
+        </header>
+        <section class="manager-section-title">
+          <div><p class="manager-eyebrow">Áreas de atendimento</p><h2>Configuração dos setores</h2><p>Edite cada setor sem misturar esses campos com o acompanhamento operacional.</p></div>
+        </section>
+        <section class="manager-sector-grid" id="adminSectors"></section>
+      </main>
+    </div>
+    <script src="admin.js"></script>
+  </body>
+</html>

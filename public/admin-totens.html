@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Totens e impressão - Fila Zero</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="manager-page">
+    <div class="manager-shell">
+      <aside class="manager-sidebar">
+        <div class="manager-brand"><div class="manager-brand-mark">FZ</div><div><strong>Fila Zero</strong><span>Painel do gestor</span></div></div>
+        <nav class="manager-nav" aria-label="Navegação do gestor">
+          <a href="/admin"><span>Visão geral</span><small>01</small></a>
+          <a href="/admin/operacao"><span>Operação</span><small>02</small></a>
+          <a href="/admin/setores"><span>Setores</span><small>03</small></a>
+          <a class="active" href="/admin/totens"><span>Totens e impressão</span><small>04</small></a>
+          <a href="/iccf"><span>Inteligência</span><small>05</small></a>
+          <a href="/admin/usuarios"><span>Usuários</span><small>06</small></a>
+        </nav>
+        <div class="manager-sidebar-note">Acompanhe os dispositivos e os trabalhos de impressão.</div>
+      </aside>
+
+      <main class="manager-main">
+        <header class="manager-topbar">
+          <div><p class="manager-eyebrow">Dispositivos</p><h1>Totens e impressão</h1><p>Centralize a configuração dos totens e o acompanhamento da impressão.</p></div>
+          <div class="manager-actions">
+            <span class="manager-live-state"><span class="manager-status-dot"></span><span>Atualização automática</span></span>
+            <a class="manager-button secondary" href="/admin">Visão geral</a>
+            <button class="manager-button warning" id="logoutButton" type="button">Sair</button>
+          </div>
+        </header>
+        <section class="manager-section-title">
+          <div><p class="manager-eyebrow">Infraestrutura de atendimento</p><h2>Totens e fila de impressão</h2><p>Os controles desta área ficam separados da operação para facilitar a manutenção dos dispositivos.</p></div>
+        </section>
+        <section class="manager-content-grid manager-future-grid">
+          <article class="manager-panel manager-future-card"><div class="manager-future-icon">T</div><div><h3>Configuração dos Totens</h3><p>Central ou específico por balcão, com setor associado e estado do dispositivo.</p><span class="manager-badge neutral">Módulo em preparação</span></div></article>
+          <article class="manager-panel manager-future-card"><div class="manager-future-icon">P</div><div><h3>Fila de impressão</h3><p>Trabalhos pendentes, impressões concluídas e falhas que precisam de recuperação.</p><span class="manager-badge neutral">Módulo em preparação</span></div></article>
+        </section>
+      </main>
+    </div>
+    <script src="admin.js"></script>
+  </body>
+</html>

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ICCF - Fila Zero</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="manager-page">
+    <div class="manager-shell">
+      <aside class="manager-sidebar">
+        <div class="manager-brand">
+          <div class="manager-brand-mark">FZ</div>
+          <div>
+            <strong>Fila Zero</strong>
+            <span>Painel do gestor</span>
+          </div>
+        </div>
+        <nav class="manager-nav" aria-label="Navegação do gestor">
+          <a href="/admin"><span>Visão geral</span><small>01</small></a>
+          <a href="/admin/operacao"><span>Operação</span><small>02</small></a>
+          <a href="/admin/setores"><span>Setores</span><small>03</small></a>
+          <a href="/admin/totens"><span>Totens e impressão</span><small>04</small></a>
+          <a class="active" href="/iccf"><span>Inteligência</span><small>05</small></a>
+          <a href="/admin/usuarios"><span>Usuários</span><small>06</small></a>
+        </nav>
+        <div class="manager-sidebar-note">
+          A inteligência comercial fica separada da operação para facilitar a leitura dos clusters e das oportunidades.
+        </div>
+      </aside>
+
+      <main class="manager-main manager-iccf-page">
+        <header class="manager-topbar">
+          <div>
+            <p class="manager-eyebrow">Inteligência comercial</p>
+            <h1>ICCF</h1>
+            <p>Clusters, produtos e recomendações para apoiar as decisões comerciais.</p>
+          </div>
+          <div class="manager-actions">
+            <span class="manager-live-state"><span class="manager-status-dot"></span><span>Atualização automática</span></span>
+            <a class="manager-button secondary" href="/admin">Dashboard</a>
+            <button class="manager-button warning" id="logoutButton" type="button">Sair</button>
+          </div>
+        </header>
+
+        <section class="manager-section-title manager-iccf-heading">
+          <div>
+            <p class="manager-eyebrow">Análise de comportamento</p>
+            <h2>Clusters e oportunidades</h2>
+            <p>Use o período para comparar os padrões de seleção de ofertas e transformar os sinais em ações.</p>
+          </div>
+          <div class="manager-toolbar">
+            <label>Período
+              <select id="offerInsightPeriod">
+                <option value="7">7 dias</option>
+                <option value="30" selected>30 dias</option>
+                <option value="60">60 dias</option>
+                <option value="90">90 dias</option>
+              </select>
+            </label>
+          </div>
+        </section>
+
+        <section class="manager-content-grid manager-iccf-layout">
+          <article class="manager-panel">
+            <div class="manager-panel-header">
+              <div>
+                <h3>Clusters de comportamento</h3>
+                <p>Principais grupos detectados pelo ICCF.</p>
+              </div>
+              <span class="manager-badge warn" id="iccfConfidence">Baixa</span>
+            </div>
+            <div class="manager-panel-body">
+              <div class="manager-insight-summary" id="offerInsightSummary"></div>
+              <div class="manager-insight-list" id="offerClusters"></div>
+            </div>
+          </article>
+
+          <article class="manager-panel">
+            <div class="manager-panel-header">
+              <div>
+                <h3>Ações e produtos</h3>
+                <p>Produtos mais selecionados, padrões e recomendações.</p>
+              </div>
+            </div>
+            <div class="manager-panel-body">
+              <h4 class="manager-subtitle">Produtos mais selecionados</h4>
+              <div class="manager-insight-list" id="offerProducts"></div>
+              <h4 class="manager-subtitle">Padrões por horário e setor</h4>
+              <div class="manager-insight-list" id="offerPatterns"></div>
+              <h4 class="manager-subtitle">Ações recomendadas</h4>
+              <div class="manager-insight-list" id="offerSuggestions"></div>
+            </div>
+          </article>
+        </section>
+      </main>
+    </div>
+    <script src="iccf.js"></script>
+  </body>
+</html>

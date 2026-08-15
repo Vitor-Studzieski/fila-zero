@@ -42,6 +42,7 @@
             <button class="active" type="button" data-login-panel="login">Entrar</button>
             <button type="button" data-login-panel="register">Criar conta</button>
             <button type="button" data-login-panel="password">Alterar senha</button>
+            <button type="button" data-login-panel="recover">Recuperar senha</button>
           </div>
 
           <form class="login-panel active" id="loginForm">
@@ -55,7 +56,7 @@
               <button class="password-toggle" type="button" aria-label="Mostrar senha" data-toggle-password>Ver</button>
             </label>
             <button class="yellow-action" data-online-required>Entrar</button>
-            <button class="fz-auth-link" type="button" data-login-panel="password">Esqueceu sua senha?</button>
+            <button class="fz-auth-link" type="button" data-login-panel="recover">Esqueceu sua senha?</button>
             <p class="login-error" id="loginError"></p>
           </form>
 
@@ -70,12 +71,12 @@
             </label>
             <label class="password-field">
               Senha
-              <input name="password" type="password" autocomplete="new-password" placeholder="Crie uma senha segura" minlength="8" required />
+              <input name="password" type="password" autocomplete="new-password" placeholder="Crie uma senha segura" minlength="12" required />
               <button class="password-toggle" type="button" aria-label="Mostrar senha" data-toggle-password>Ver</button>
             </label>
             <label class="password-field">
               Confirmar senha
-              <input name="confirmPassword" type="password" autocomplete="new-password" placeholder="Repita a senha" minlength="8" required />
+              <input name="confirmPassword" type="password" autocomplete="new-password" placeholder="Repita a senha" minlength="12" required />
               <button class="password-toggle" type="button" aria-label="Mostrar senha" data-toggle-password>Ver</button>
             </label>
             <button class="yellow-action" data-online-required>Criar conta de cliente</button>
@@ -94,11 +95,35 @@
             </label>
             <label class="password-field">
               Nova senha
-              <input name="newPassword" type="password" autocomplete="new-password" placeholder="Digite a nova senha" minlength="8" required />
+              <input name="newPassword" type="password" autocomplete="new-password" placeholder="Digite a nova senha" minlength="12" required />
               <button class="password-toggle" type="button" aria-label="Mostrar senha" data-toggle-password>Ver</button>
             </label>
             <button class="yellow-action" data-online-required>Salvar nova senha</button>
             <p class="login-error" id="passwordError"></p>
+          </form>
+
+          <form class="login-panel" id="recoverForm">
+            <label>
+              E-mail
+              <input name="email" type="email" autocomplete="email" placeholder="seuemail@superpompeia.com" required />
+            </label>
+            <button class="yellow-action" data-online-required>Enviar link de recuperacao</button>
+            <p class="login-error" id="recoverError"></p>
+          </form>
+
+          <form class="login-panel" id="resetForm">
+            <label class="password-field">
+              Nova senha
+              <input name="newPassword" type="password" autocomplete="new-password" placeholder="Crie uma senha forte" minlength="12" required />
+              <button class="password-toggle" type="button" aria-label="Mostrar senha" data-toggle-password>Ver</button>
+            </label>
+            <label class="password-field">
+              Confirmar nova senha
+              <input name="confirmPassword" type="password" autocomplete="new-password" placeholder="Repita a senha" minlength="12" required />
+              <button class="password-toggle" type="button" aria-label="Mostrar senha" data-toggle-password>Ver</button>
+            </label>
+            <button class="yellow-action" data-online-required>Redefinir senha</button>
+            <p class="login-error" id="resetError"></p>
           </form>
         </div>
       </section>

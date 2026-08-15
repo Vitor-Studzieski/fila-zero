@@ -1,10 +1,24 @@
 import { NextResponse } from "next/server";
 
-const protectedPages = new Set(["/", "/attendant", "/admin"]);
+const protectedPages = new Set([
+  "/",
+  "/attendant",
+  "/admin",
+  "/admin/operacao",
+  "/admin/setores",
+  "/admin/totens",
+  "/admin/usuarios",
+  "/iccf"
+]);
 const pageRoles = {
   "/": ["customer", "manager", "admin"],
   "/attendant": ["attendant", "manager", "admin"],
-  "/admin": ["manager", "admin"]
+  "/admin": ["manager", "admin"],
+  "/admin/operacao": ["manager", "admin"],
+  "/admin/setores": ["manager", "admin"],
+  "/admin/totens": ["manager", "admin"],
+  "/admin/usuarios": ["manager", "admin"],
+  "/iccf": ["manager", "admin"]
 };
 
 export async function proxy(request) {
@@ -88,5 +102,14 @@ function roleHome(user) {
 }
 
 export const config = {
-  matcher: ["/", "/attendant", "/admin"]
+  matcher: [
+    "/",
+    "/attendant",
+    "/admin",
+    "/admin/operacao",
+    "/admin/setores",
+    "/admin/totens",
+    "/admin/usuarios",
+    "/iccf"
+  ]
 };

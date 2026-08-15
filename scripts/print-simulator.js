@@ -82,11 +82,12 @@ function renderReceipt(payload = {}) {
     "",
     center("SENHA", width),
     center(String(payload.ticketCode || "---"), width),
+    center(payload.priority ? "ATENDIMENTO PREFERENCIAL" : "ATENDIMENTO NORMAL", width),
     "",
     center(`Emitida as ${issuedAt}`, width),
     "",
-    center("[ QR CODE DO APLICATIVO ]", width),
-    center(String(payload.installUrl || ""), width),
+    center("[ QR CODE DA SENHA ]", width),
+    center(String(payload.trackUrl || payload.installUrl || ""), width),
     line,
     ""
   ].join("\n");

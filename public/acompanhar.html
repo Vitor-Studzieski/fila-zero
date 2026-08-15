@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Acompanhar senha - Fila Zero</title>
+  </head>
+  <body>
+    <main class="tracking-stage">
+      <header class="tracking-header"><strong>Fila Zero</strong><span>Acompanhamento da senha</span></header>
+      <section class="tracking-loading" id="trackingLoading"><strong>Carregando sua senha...</strong><span>Buscando a posição atual na fila.</span></section>
+      <section class="tracking-card" id="trackingContent" hidden>
+        <p class="tracking-eyebrow">Sua senha</p>
+        <strong class="tracking-ticket" id="trackingTicket">A000</strong>
+        <h1 id="trackingSector">Setor</h1>
+        <span class="tracking-badge" id="trackingPriority" hidden>Atendimento preferencial</span>
+        <div class="tracking-status"><span class="tracking-status-dot" id="trackingStatusDot"></span><strong id="trackingStatus">Aguardando</strong><small id="trackingUpdated">Atualizado agora</small></div>
+        <div class="tracking-metrics"><div><span>Pessoas à frente</span><strong id="trackingAhead">0</strong></div><div><span>Posição estimada</span><strong id="trackingPosition">1ª</strong></div></div>
+        <div class="tracking-progress"><span id="trackingProgressBar"></span></div>
+        <p class="tracking-message" id="trackingMessage">Você será avisado quando estiver próximo do atendimento.</p>
+      </section>
+      <section class="tracking-error" id="trackingError" hidden><strong>Não encontramos essa senha.</strong><span>Verifique se o QR Code foi lido corretamente.</span></section>
+    </main>
+  </body>
+</html>
