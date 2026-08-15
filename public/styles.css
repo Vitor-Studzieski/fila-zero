@@ -3460,6 +3460,246 @@ textarea:focus {
   }
 }
 
+/* Refinamento visual do dashboard ICCF. */
+.manager-iccf-page {
+  background: #f1f4f8;
+}
+
+.manager-iccf-page .manager-topbar {
+  margin-bottom: 26px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #d9e2ec;
+}
+
+.manager-iccf-page .manager-topbar h1 {
+  color: #12233d;
+  letter-spacing: -0.035em;
+}
+
+.manager-iccf-page .manager-section-title {
+  align-items: end;
+  margin: 0 0 18px;
+  padding: 0 2px 17px;
+  border-bottom: 1px solid #d9e2ec;
+}
+
+.manager-iccf-page .manager-section-title h2 {
+  margin: 0 0 6px;
+  color: #14243d;
+  font-size: clamp(22px, 2vw, 28px);
+  letter-spacing: -0.025em;
+}
+
+.manager-iccf-page .manager-section-title > div:first-child {
+  min-width: 0;
+}
+
+.manager-iccf-page .manager-toolbar label {
+  color: #596980;
+}
+
+.manager-iccf-page .manager-toolbar select {
+  min-width: 132px;
+  border-color: #c9d6e4;
+  box-shadow: 0 2px 5px rgba(28, 52, 84, 0.04);
+}
+
+.manager-iccf-layout {
+  grid-template-columns: minmax(0, 1.05fr) minmax(420px, 0.95fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.manager-iccf-layout .manager-panel {
+  overflow: hidden;
+  border-color: #ccd8e5;
+  border-radius: 14px;
+  box-shadow: 0 10px 26px rgba(25, 48, 79, 0.06);
+}
+
+.manager-iccf-layout .manager-panel-header {
+  align-items: flex-start;
+  margin-bottom: 0;
+  padding: 18px 20px 15px;
+  border-bottom: 1px solid #e1e8f0;
+}
+
+.manager-iccf-layout .manager-panel-header h3 {
+  margin: 0 0 4px;
+  color: #172a46;
+  font-size: 16px;
+}
+
+.manager-iccf-layout .manager-panel-header p {
+  color: #68778c;
+}
+
+.manager-iccf-layout .manager-panel-body {
+  padding: 18px 20px 20px;
+}
+
+.manager-iccf-layout .manager-badge {
+  min-height: 24px;
+  border: 1px solid #f2d78b;
+}
+
+.manager-insight-summary {
+  gap: 9px;
+  margin-bottom: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e1e8f0;
+}
+
+.manager-mini-stat {
+  min-height: 68px;
+  padding: 11px 12px;
+  border-color: #dce5ee;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.manager-mini-stat span {
+  color: #6a788b;
+  font-size: 10px;
+  letter-spacing: 0.015em;
+  text-transform: uppercase;
+}
+
+.manager-mini-stat strong {
+  color: #1559a6;
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.manager-iccf-layout #offerClusters.manager-insight-list {
+  gap: 12px;
+}
+
+.manager-cluster-card {
+  gap: 13px;
+  padding: 15px;
+  border-color: #d9e3ed;
+  border-radius: 11px;
+  background: #fbfcfe;
+  box-shadow: 0 3px 10px rgba(25, 48, 79, 0.03);
+}
+
+.manager-cluster-card .manager-sector-head {
+  padding-bottom: 11px;
+  border-bottom: 1px solid #e5ebf2;
+}
+
+.manager-cluster-card .manager-sector-head strong {
+  color: #1a2d48;
+  font-size: 15px;
+}
+
+.manager-cluster-card .manager-sector-head span {
+  color: #708096;
+  font-size: 12px;
+}
+
+.manager-cluster-card .manager-chip-row span {
+  min-height: 30px;
+  border: 1px solid #d8e9ed;
+}
+
+.manager-cluster-card .manager-chip-row.products span {
+  border-color: #f2d78b;
+}
+
+.manager-cluster-card .manager-note {
+  border: 1px solid #e5ebf2;
+  background: #f5f8fb;
+}
+
+.manager-iccf-layout .manager-subtitle {
+  margin: 21px 0 9px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e1e8f0;
+  color: #536176;
+  font-size: 11px;
+  letter-spacing: 0.025em;
+}
+
+.manager-iccf-layout .manager-subtitle:first-child {
+  margin-top: 0;
+}
+
+.manager-iccf-layout #offerProducts.manager-insight-list,
+.manager-iccf-layout #offerPatterns.manager-insight-list,
+.manager-iccf-layout #offerSuggestions.manager-insight-list {
+  overflow: hidden;
+  gap: 0;
+  border: 1px solid #dce5ee;
+  border-radius: 11px;
+  background: #ffffff;
+}
+
+.manager-iccf-layout .manager-insight {
+  min-height: 68px;
+  padding: 13px 12px;
+  border-bottom-color: #e4eaf1;
+}
+
+.manager-iccf-layout .manager-insight:last-child {
+  border-bottom: 0;
+}
+
+.manager-iccf-layout .manager-insight > div {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #dbe8fa;
+  border-radius: 8px;
+  background: #edf4ff;
+  color: #1559a6;
+  font-size: 13px;
+}
+
+.manager-iccf-layout .manager-insight p {
+  min-width: 0;
+}
+
+.manager-iccf-layout .manager-insight strong {
+  margin-bottom: 3px;
+  color: #1b2c46;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.manager-iccf-layout .manager-insight span {
+  color: #69788d;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.manager-iccf-layout .manager-empty {
+  border: 1px dashed #d4dfeb;
+  background: #f8fafc;
+}
+
+@media (max-width: 1180px) {
+  .manager-iccf-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .manager-iccf-page .manager-topbar {
+    padding-bottom: 16px;
+  }
+
+  .manager-iccf-page .manager-section-title {
+    padding-bottom: 14px;
+  }
+
+  .manager-iccf-layout .manager-panel-header,
+  .manager-iccf-layout .manager-panel-body {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+}
+
 @media (max-width: 760px) {
   .ops-stage {
     padding: 14px;
@@ -7717,4 +7957,213 @@ textarea:focus {
 .manager-date-filter input:focus-visible {
   outline: 3px solid rgb(255 201 40 / 38%);
   outline-offset: 2px;
+}
+
+/* Ajustes finais do ICCF após o design system geral da dashboard. */
+.manager-iccf-page {
+  background: #f1f4f8;
+}
+
+.manager-iccf-page .manager-topbar {
+  margin-bottom: 26px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #d9e2ec;
+}
+
+.manager-iccf-page .manager-section-title {
+  align-items: end;
+  margin: 0 0 18px;
+  padding: 0 2px 17px;
+  border-bottom: 1px solid #d9e2ec;
+}
+
+.manager-iccf-page .manager-section-title h2 {
+  margin: 0 0 6px;
+  font-size: clamp(22px, 2vw, 28px);
+  letter-spacing: -0.025em;
+}
+
+.manager-iccf-page .manager-toolbar select {
+  min-width: 132px;
+  border-color: #c9d6e4;
+  box-shadow: 0 2px 5px rgba(28, 52, 84, 0.04);
+}
+
+.manager-iccf-layout {
+  grid-template-columns: minmax(0, 1.05fr) minmax(420px, 0.95fr);
+  gap: 18px;
+  align-items: stretch;
+}
+
+.manager-iccf-layout .manager-panel {
+  overflow: hidden;
+  border-color: #ccd8e5;
+  border-radius: 14px;
+  box-shadow: 0 10px 26px rgba(25, 48, 79, 0.06);
+}
+
+.manager-iccf-layout .manager-panel-header {
+  align-items: flex-start;
+  margin-bottom: 0;
+  padding: 18px 20px 15px;
+  border-bottom: 1px solid #e1e8f0;
+}
+
+.manager-iccf-layout .manager-panel-header h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+
+.manager-iccf-layout .manager-panel-body {
+  padding: 18px 20px 20px;
+}
+
+.manager-iccf-layout .manager-badge {
+  min-height: 24px;
+  border: 1px solid #f2d78b;
+}
+
+.manager-iccf-layout .manager-insight-summary {
+  gap: 9px;
+  margin-bottom: 18px;
+  padding-bottom: 18px;
+  border-bottom: 1px solid #e1e8f0;
+}
+
+.manager-iccf-layout .manager-mini-stat {
+  min-height: 68px;
+  padding: 11px 12px;
+  border-color: #dce5ee;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.manager-iccf-layout .manager-mini-stat span {
+  font-size: 10px;
+  letter-spacing: 0.015em;
+  text-transform: uppercase;
+}
+
+.manager-iccf-layout .manager-mini-stat strong {
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.manager-iccf-layout #offerClusters.manager-insight-list {
+  gap: 12px;
+}
+
+.manager-iccf-layout .manager-cluster-card {
+  gap: 13px;
+  padding: 15px;
+  border-color: #d9e3ed;
+  border-radius: 11px;
+  background: #fbfcfe;
+  box-shadow: 0 3px 10px rgba(25, 48, 79, 0.03);
+}
+
+.manager-iccf-layout .manager-cluster-card .manager-sector-head {
+  padding-bottom: 11px;
+  border-bottom: 1px solid #e5ebf2;
+}
+
+.manager-iccf-layout .manager-cluster-card .manager-chip-row span {
+  min-height: 30px;
+  border: 1px solid #d8e9ed;
+}
+
+.manager-iccf-layout .manager-cluster-card .manager-chip-row.products span {
+  border-color: #f2d78b;
+}
+
+.manager-iccf-layout .manager-cluster-card .manager-note {
+  border: 1px solid #e5ebf2;
+  background: #f5f8fb;
+}
+
+.manager-iccf-layout .manager-subtitle {
+  margin: 21px 0 9px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid #e1e8f0;
+  font-size: 11px;
+  letter-spacing: 0.025em;
+}
+
+.manager-iccf-layout .manager-subtitle:first-child {
+  margin-top: 0;
+}
+
+.manager-iccf-layout #offerProducts.manager-insight-list,
+.manager-iccf-layout #offerPatterns.manager-insight-list,
+.manager-iccf-layout #offerSuggestions.manager-insight-list {
+  overflow: hidden;
+  gap: 0;
+  border: 1px solid #dce5ee;
+  border-radius: 11px;
+  background: #ffffff;
+}
+
+.manager-iccf-layout #offerProducts .manager-insight,
+.manager-iccf-layout #offerPatterns .manager-insight,
+.manager-iccf-layout #offerSuggestions .manager-insight {
+  min-height: 68px;
+  padding: 13px 12px;
+  border-bottom-color: #e4eaf1;
+}
+
+.manager-iccf-layout #offerProducts .manager-insight:last-child,
+.manager-iccf-layout #offerPatterns .manager-insight:last-child,
+.manager-iccf-layout #offerSuggestions .manager-insight:last-child {
+  border-bottom: 0;
+}
+
+.manager-iccf-layout .manager-insight > div {
+  width: 32px;
+  height: 32px;
+  border: 1px solid #dbe8fa;
+  border-radius: 8px;
+  background: #edf4ff;
+  font-size: 13px;
+}
+
+.manager-iccf-layout .manager-insight p {
+  min-width: 0;
+}
+
+.manager-iccf-layout .manager-insight strong {
+  margin-bottom: 3px;
+  font-size: 14px;
+  line-height: 1.25;
+}
+
+.manager-iccf-layout .manager-insight span {
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.manager-iccf-layout .manager-empty {
+  border: 1px dashed #d4dfeb;
+  background: #f8fafc;
+}
+
+@media (max-width: 1180px) {
+  .manager-iccf-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .manager-iccf-page .manager-topbar {
+    padding-bottom: 16px;
+  }
+
+  .manager-iccf-page .manager-section-title {
+    padding-bottom: 14px;
+  }
+
+  .manager-iccf-layout .manager-panel-header,
+  .manager-iccf-layout .manager-panel-body {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
 }
