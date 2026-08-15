@@ -1,8 +1,8 @@
-(function exposeFilaZeroPwaUtils(root, factory) {
+(function exposeSenhaHubPwaUtils(root, factory) {
   const api = factory();
   if (typeof module === "object" && module.exports) module.exports = api;
-  if (root) root.FilaZeroPwaUtils = api;
-})(typeof self !== "undefined" ? self : globalThis, function createFilaZeroPwaUtils() {
+  if (root) root.SenhaHubPwaUtils = api;
+})(typeof self !== "undefined" ? self : globalThis, function createSenhaHubPwaUtils() {
   const ALLOWED_NOTIFICATION_VIEWS = new Set(["status", "account"]);
 
   function urlBase64ToUint8Array(value) {

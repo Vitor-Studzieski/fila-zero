@@ -2,11 +2,11 @@ const crypto = require("node:crypto");
 
 const KIOSK_SESSION_SECONDS = 60 * 60 * 24 * 30;
 const DEFAULT_KIOSK_ID = "totem-pompeia-01";
-const DEFAULT_INSTALL_URL = "https://fila-zero-mauve.vercel.app/instalar";
-const DEFAULT_APP_URL = "https://fila-zero-mauve.vercel.app";
+const DEFAULT_INSTALL_URL = "https://senhahub-mauve.vercel.app/instalar";
+const DEFAULT_APP_URL = "https://senhahub-mauve.vercel.app";
 
 function loadKioskConfiguration(env = process.env) {
-  const appUrl = normalizeHttpsUrl(env.PUBLIC_APP_URL) || "https://fila-zero-mauve.vercel.app";
+  const appUrl = normalizeHttpsUrl(env.PUBLIC_APP_URL) || "https://senhahub-mauve.vercel.app";
   const mode = ["central", "sector"].includes(String(env.KIOSK_MODE || "").trim().toLowerCase())
     ? String(env.KIOSK_MODE).trim().toLowerCase()
     : "central";
@@ -59,25 +59,25 @@ function verifyKioskSession(token, secret, now = Date.now()) {
 function kioskCookies(session, production = false) {
   const secure = production ? "; Secure" : "";
   return [
-    `fz_kiosk=${encodeURIComponent(session.token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${KIOSK_SESSION_SECONDS}${secure}`,
-    `fz_kiosk_csrf=${encodeURIComponent(session.csrfToken)}; SameSite=Strict; Path=/; Max-Age=${KIOSK_SESSION_SECONDS}${secure}`
+    `senhahub_kiosk=${encodeURIComponent(session.token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${KIOSK_SESSION_SECONDS}${secure}`,
+    `senhahub_kiosk_csrf=${encodeURIComponent(session.csrfToken)}; SameSite=Strict; Path=/; Max-Age=${KIOSK_SESSION_SECONDS}${secure}`
   ];
 }
 
 function clearKioskCookies(production = false) {
   const secure = production ? "; Secure" : "";
   return [
-    `fz_kiosk=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`,
-    `fz_kiosk_csrf=; SameSite=Strict; Path=/; Max-Age=0${secure}`
+    `senhahub_kiosk=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`,
+    `senhahub_kiosk_csrf=; SameSite=Strict; Path=/; Max-Age=0${secure}`
   ];
 }
 
 function verifyKioskRequest(headers, secret) {
   const cookieHeader = headerValue(headers, "cookie");
-  const session = verifyKioskSession(getCookie(cookieHeader, "fz_kiosk"), secret);
+  const session = verifyKioskSession(getCookie(cookieHeader, "senhahub_kiosk"), secret);
   if (!session) return { error: "Totem nao vinculado.", status: 401 };
   const headerToken = headerValue(headers, "x-kiosk-csrf");
-  const cookieToken = getCookie(cookieHeader, "fz_kiosk_csrf");
+  const cookieToken = getCookie(cookieHeader, "senhahub_kiosk_csrf");
   if (!safeEqual(headerToken, session.csrfToken) || !safeEqual(cookieToken, session.csrfToken)) {
     return { error: "Token de seguranca do totem invalido.", status: 403 };
   }

@@ -1,4 +1,4 @@
-# Necessidades de Desenvolvimento - Fila Zero
+# Necessidades de Desenvolvimento - SenhaHub
 
 Atualizado em: 2026-08-05
 

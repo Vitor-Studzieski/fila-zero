@@ -1,5 +1,5 @@
-(function exposeFilaZeroPush(scope) {
-  const utils = scope.FilaZeroPwaUtils;
+(function exposeSenhaHubPush(scope) {
+  const utils = scope.SenhaHubPwaUtils;
   const allowedTypes = new Set([
     "queue_near",
     "queue_next",
@@ -28,7 +28,7 @@
     const url = utils.safeAppUrl(input.url, scope.location.origin) || `${scope.location.origin}/?view=status`;
     return {
       type,
-      title: cleanText(input.title, 80, "Fila Zero"),
+      title: cleanText(input.title, 80, "SenhaHub"),
       body: cleanText(input.body, 180, "Abra o aplicativo para consultar a situação atual da fila."),
       url,
       eventId: cleanText(input.eventId, 120, `push-${Date.now()}`),
@@ -51,7 +51,7 @@
     }
     await scope.registration.showNotification(payload.title, {
       body: payload.body,
-      icon: "/icons/fila-zero-192.png",
+      icon: "/icons/senhahub-192.png",
       badge: "/icons/favicon-32.png",
       tag: payload.eventId,
       renotify: payload.type === "queue_recalled",
@@ -99,7 +99,7 @@
     }));
   }
 
-  scope.FilaZeroPush = {
+  scope.SenhaHubPush = {
     handleNotificationClick,
     handleNotificationClose,
     handlePush,

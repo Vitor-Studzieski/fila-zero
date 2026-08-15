@@ -26,7 +26,7 @@ let cartItems = [];
 const identity = getOrCreateIdentity();
 let currentUser = null;
 let alertPreferences = loadAlertPreferences();
-let queueTutorialSeen = localStorage.getItem("filaZeroQueueTutorialSeen") === "1";
+let queueTutorialSeen = localStorage.getItem("senhaHubQueueTutorialSeen") === "1";
 
 let activeScreen = "home";
 let currentSector = null;
@@ -163,7 +163,7 @@ async function init() {
   renderClub();
   renderAccount();
   identity.customerId = currentUser.customerId;
-  localStorage.setItem("filaZeroIdentity", JSON.stringify(identity));
+  localStorage.setItem("senhaHubIdentity", JSON.stringify(identity));
   await loadProductCatalog();
   await Promise.all([syncSession(), loadCart(), loadState(), loadShoppingAgent()]);
   applyRequestedView();
@@ -202,12 +202,12 @@ function syncMobileViewport() {
 function getOrCreateIdentity() {
   const params = new URLSearchParams(location.search);
   const sharedCustomerId = params.get("cliente") || params.get("customer_id");
-  const stored = safeJsonParse(localStorage.getItem("filaZeroIdentity"), {});
+  const stored = safeJsonParse(localStorage.getItem("senhaHubIdentity"), {});
   const identity = {
     customerId: sharedCustomerId || stored.customerId || `cliente-${crypto.randomUUID()}`,
     deviceId: stored.deviceId || `device-${crypto.randomUUID()}`
   };
-  localStorage.setItem("filaZeroIdentity", JSON.stringify(identity));
+  localStorage.setItem("senhaHubIdentity", JSON.stringify(identity));
   return identity;
 }
 
@@ -218,7 +218,7 @@ async function syncSession() {
   });
   identity.customerId = session.customerId;
   identity.deviceId = session.deviceId;
-  localStorage.setItem("filaZeroIdentity", JSON.stringify(identity));
+  localStorage.setItem("senhaHubIdentity", JSON.stringify(identity));
 }
 
 async function loadState() {
@@ -488,7 +488,7 @@ function closeQueueTutorial() {
 
 function markQueueTutorialSeen() {
   queueTutorialSeen = true;
-  localStorage.setItem("filaZeroQueueTutorialSeen", "1");
+  localStorage.setItem("senhaHubQueueTutorialSeen", "1");
 }
 
 function syncAccessArea() {
@@ -914,7 +914,7 @@ function pruneQueueAlertHistory(tickets) {
 }
 
 function loadAlertPreferences() {
-  const stored = safeJsonParse(localStorage.getItem("filaZeroAlertPreferences"), {});
+  const stored = safeJsonParse(localStorage.getItem("senhaHubAlertPreferences"), {});
   return {
     sound: stored.sound !== false,
     vibration: stored.vibration !== false
@@ -931,7 +931,7 @@ function safeJsonParse(value, fallback) {
 }
 
 function saveAlertPreferences() {
-  localStorage.setItem("filaZeroAlertPreferences", JSON.stringify(alertPreferences));
+  localStorage.setItem("senhaHubAlertPreferences", JSON.stringify(alertPreferences));
 }
 
 function syncAlertControls() {
@@ -1619,7 +1619,7 @@ function notifyTicketCalled(ticket) {
 
 function handleNotifyButton() {
   navigate("account");
-  setTimeout(() => window.filaZeroPwa?.openNotificationSettings(), 0);
+  setTimeout(() => window.senhaHubPwa?.openNotificationSettings(), 0);
 }
 
 async function sendRating() {
@@ -1638,13 +1638,13 @@ async function sendRating() {
 
 async function logoutAccount() {
   try {
-    await window.filaZeroPwa?.prepareLogout();
+    await window.senhaHubPwa?.prepareLogout();
     await api("/api/auth/logout", { method: "POST" });
   } catch (exception) {
     console.warn(exception);
   } finally {
     stateSource?.close();
-    localStorage.removeItem("filaZeroIdentity");
+    localStorage.removeItem("senhaHubIdentity");
     location.href = "/login";
   }
 }
@@ -1687,9 +1687,9 @@ function bindEvents() {
   });
   document.querySelector("#sendRating").addEventListener("click", sendRating);
   document.querySelector("#logoutButton")?.addEventListener("click", logoutAccount);
-  window.addEventListener("fila-zero:push", handlePushRefresh);
-  window.addEventListener("fila-zero:notification-click", handlePushRefresh);
-  window.addEventListener("fila-zero:reconnected", () => loadState().catch(() => {}));
+  window.addEventListener("senhahub:push", handlePushRefresh);
+  window.addEventListener("senhahub:notification-click", handlePushRefresh);
+  window.addEventListener("senhahub:reconnected", () => loadState().catch(() => {}));
 }
 
 function handleProductSearch(event) {
@@ -1731,7 +1731,7 @@ function formatTimer(totalSeconds) {
 async function api(path, options = {}) {
   const method = options.method || "GET";
   const mutation = method !== "GET";
-  if (mutation) window.filaZeroPwa?.markCriticalOperation(true);
+  if (mutation) window.senhaHubPwa?.markCriticalOperation(true);
   try {
     const response = await fetch(path, {
       method,
@@ -1742,7 +1742,7 @@ async function api(path, options = {}) {
       body: options.body ? JSON.stringify(options.body) : undefined
     });
     const payload = await parseApiPayload(response);
-    window.filaZeroPwa?.reportNetworkSuccess();
+    window.senhaHubPwa?.reportNetworkSuccess();
     if (response.status === 401) {
       location.href = `/login?next=${encodeURIComponent(location.pathname)}`;
       throw new Error("Login necessÃ¡rio.");
@@ -1750,10 +1750,10 @@ async function api(path, options = {}) {
     if (!response.ok || payload.error) throw new Error(payload.error || "Falha na API.");
     return payload;
   } catch (error) {
-    window.filaZeroPwa?.reportNetworkFailure();
+    window.senhaHubPwa?.reportNetworkFailure();
     throw error;
   } finally {
-    if (mutation) window.filaZeroPwa?.markCriticalOperation(false);
+    if (mutation) window.senhaHubPwa?.markCriticalOperation(false);
   }
 }
 
@@ -1774,7 +1774,7 @@ function apiTextError(response, text) {
 }
 
 function csrfHeader() {
-  const token = getCookie("fz_csrf");
+  const token = getCookie("senhahub_csrf");
   return token ? { "x-csrf-token": token } : {};
 }
 

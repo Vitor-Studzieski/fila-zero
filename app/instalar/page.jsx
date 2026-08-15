@@ -3,7 +3,7 @@ import HtmlTemplate from "../_components/HtmlTemplate";
 
 export const metadata = {
   title: "Instalar aplicativo",
-  description: "Instale o Fila Zero para acompanhar suas senhas pelo celular."
+  description: "Instale o SenhaHub para acompanhar suas senhas pelo celular."
 };
 
 export default function InstallPage() {

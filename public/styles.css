@@ -4852,21 +4852,21 @@ textarea:focus {
   }
 }
 
-/* Fila Zero premium login */
-.fz-login-stage {
+/* SenhaHub premium login */
+.senhahub-login-stage {
   min-height: 100svh;
   background: #f0f2f5;
   color: #101828;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-.fz-login-stage *,
-.fz-login-stage *::before,
-.fz-login-stage *::after {
+.senhahub-login-stage *,
+.senhahub-login-stage *::before,
+.senhahub-login-stage *::after {
   box-sizing: border-box;
 }
 
-.fz-login-shell {
+.senhahub-login-shell {
   display: grid;
   width: min(100%, 430px);
   min-height: 100svh;
@@ -4878,7 +4878,7 @@ textarea:focus {
   box-shadow: 0 24px 70px rgba(13, 43, 94, 0.18);
 }
 
-.fz-login-hero {
+.senhahub-login-hero {
   display: grid;
   min-height: 50svh;
   padding: max(28px, env(safe-area-inset-top)) 24px 22px;
@@ -4887,27 +4887,27 @@ textarea:focus {
   color: #ffffff;
 }
 
-.fz-login-hero-content {
+.senhahub-login-hero-content {
   display: grid;
   align-content: center;
   gap: 22px;
   text-align: center;
 }
 
-.fz-login-brand {
+.senhahub-login-brand {
   display: grid;
   justify-items: center;
   gap: 10px;
 }
 
-.fz-login-kicker {
+.senhahub-login-kicker {
   color: rgba(255, 255, 255, 0.78);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.18em;
 }
 
-.fz-login-logo {
+.senhahub-login-logo {
   display: grid;
   width: 72px;
   height: 72px;
@@ -4921,12 +4921,12 @@ textarea:focus {
   box-shadow: 0 16px 36px rgba(245, 197, 24, 0.22);
 }
 
-.fz-login-title {
+.senhahub-login-title {
   display: grid;
   gap: 4px;
 }
 
-.fz-login-title strong {
+.senhahub-login-title strong {
   color: #ffffff;
   font-size: 28px;
   font-weight: 900;
@@ -4934,13 +4934,13 @@ textarea:focus {
   line-height: 1;
 }
 
-.fz-login-title span {
+.senhahub-login-title span {
   color: #f5c518;
   font-size: 14px;
   font-weight: 700;
 }
 
-.fz-market-logo {
+.senhahub-market-logo {
   display: block;
   width: 62px;
   height: 62px;
@@ -4951,7 +4951,7 @@ textarea:focus {
   box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
 }
 
-.fz-login-tagline {
+.senhahub-login-tagline {
   max-width: 290px;
   margin: 0 auto;
   color: rgba(255, 255, 255, 0.9);
@@ -4960,14 +4960,14 @@ textarea:focus {
   line-height: 1.42;
 }
 
-.fz-login-features {
+.senhahub-login-features {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-top: 4px;
 }
 
-.fz-login-chip {
+.senhahub-login-chip {
   display: inline-flex;
   min-height: 40px;
   align-items: center;
@@ -4983,20 +4983,20 @@ textarea:focus {
   line-height: 1.1;
 }
 
-.fz-login-panel {
+.senhahub-login-panel {
   min-height: 50svh;
   padding: 22px 24px max(24px, env(safe-area-inset-bottom));
   border-top: 1px solid #d9dee8;
   background: #f0f2f5;
 }
 
-.fz-login-form {
+.senhahub-login-form {
   display: grid;
   gap: 16px;
   width: 100%;
 }
 
-.fz-login-secure {
+.senhahub-login-secure {
   display: inline-flex;
   width: fit-content;
   align-items: center;
@@ -5011,12 +5011,12 @@ textarea:focus {
   font-weight: 800;
 }
 
-.fz-login-heading {
+.senhahub-login-heading {
   display: grid;
   gap: 6px;
 }
 
-.fz-login-heading h1 {
+.senhahub-login-heading h1 {
   margin: 0;
   color: #0d2b5e;
   font-size: 24px;
@@ -5025,8 +5025,8 @@ textarea:focus {
   line-height: 1.12;
 }
 
-.fz-login-heading p,
-.fz-login-note {
+.senhahub-login-heading p,
+.senhahub-login-note {
   margin: 0;
   color: #60708a;
   font-size: 14px;
@@ -5034,12 +5034,12 @@ textarea:focus {
   line-height: 1.45;
 }
 
-.fz-login-note {
+.senhahub-login-note {
   margin-top: -4px;
   font-size: 12px;
 }
 
-.fz-login-tabs.login-tabs {
+.senhahub-login-tabs.login-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 2px;
@@ -5051,7 +5051,7 @@ textarea:focus {
   box-shadow: none;
 }
 
-.fz-login-tabs.login-tabs button {
+.senhahub-login-tabs.login-tabs button {
   position: relative;
   min-height: 42px;
   padding: 0 4px 10px;
@@ -5064,7 +5064,7 @@ textarea:focus {
   box-shadow: none;
 }
 
-.fz-login-tabs.login-tabs button::after {
+.senhahub-login-tabs.login-tabs button::after {
   content: "";
   position: absolute;
   right: 14px;
@@ -5075,26 +5075,26 @@ textarea:focus {
   background: transparent;
 }
 
-.fz-login-tabs.login-tabs button.active {
+.senhahub-login-tabs.login-tabs button.active {
   background: transparent;
   color: #0d2b5e;
   box-shadow: none;
 }
 
-.fz-login-tabs.login-tabs button.active::after {
+.senhahub-login-tabs.login-tabs button.active::after {
   background: #f5c518;
 }
 
-.fz-login-stage .login-panel {
+.senhahub-login-stage .login-panel {
   display: none;
   gap: 12px;
 }
 
-.fz-login-stage .login-panel.active {
+.senhahub-login-stage .login-panel.active {
   display: grid;
 }
 
-.fz-login-stage .login-panel label {
+.senhahub-login-stage .login-panel label {
   position: relative;
   display: grid;
   gap: 7px;
@@ -5103,7 +5103,7 @@ textarea:focus {
   font-weight: 800;
 }
 
-.fz-login-stage .login-panel input {
+.senhahub-login-stage .login-panel input {
   width: 100%;
   height: 48px;
   min-height: 48px;
@@ -5117,16 +5117,16 @@ textarea:focus {
   box-shadow: none;
 }
 
-.fz-login-stage .login-panel input:focus {
+.senhahub-login-stage .login-panel input:focus {
   border-color: #0d2b5e;
   box-shadow: 0 0 0 3px rgba(13, 43, 94, 0.12);
 }
 
-.fz-login-stage .password-field input {
+.senhahub-login-stage .password-field input {
   padding-right: 56px;
 }
 
-.fz-login-stage .password-toggle {
+.senhahub-login-stage .password-toggle {
   position: absolute;
   right: 5px;
   bottom: 5px;
@@ -5143,7 +5143,7 @@ textarea:focus {
   font-weight: 900;
 }
 
-.fz-login-stage .yellow-action {
+.senhahub-login-stage .yellow-action {
   width: 100%;
   height: 48px;
   min-height: 48px;
@@ -5157,12 +5157,12 @@ textarea:focus {
   box-shadow: none;
 }
 
-.fz-login-stage .yellow-action:disabled {
+.senhahub-login-stage .yellow-action:disabled {
   cursor: wait;
   opacity: 0.72;
 }
 
-.fz-login-helper {
+.senhahub-login-helper {
   min-height: 32px;
   margin: -2px 0 0;
   border: 0;
@@ -5174,7 +5174,7 @@ textarea:focus {
   text-align: center;
 }
 
-.fz-login-stage .login-error {
+.senhahub-login-stage .login-error {
   min-height: 18px;
   margin: 0;
   color: #b42318;
@@ -5182,7 +5182,7 @@ textarea:focus {
   font-weight: 800;
 }
 
-.fz-login-stage .login-toast {
+.senhahub-login-stage .login-toast {
   position: fixed;
   right: 18px;
   bottom: 18px;
@@ -5204,20 +5204,20 @@ textarea:focus {
   transition: opacity 180ms ease, transform 180ms ease;
 }
 
-.fz-login-stage .login-toast.visible {
+.senhahub-login-stage .login-toast.visible {
   opacity: 1;
   transform: translateY(0);
 }
 
 @media (min-width: 760px) {
-  .fz-login-stage {
+  .senhahub-login-stage {
     display: grid;
     place-items: center;
     padding: 50px 20px;
     background: #0d2b5e;
   }
 
-  .fz-login-shell {
+  .senhahub-login-shell {
     grid-template-columns: minmax(0, 1fr) minmax(360px, 430px);
     width: min(100%, 848px);
     min-height: 576px;
@@ -5226,61 +5226,61 @@ textarea:focus {
     border-radius: 12px;
   }
 
-  .fz-login-hero,
-  .fz-login-panel {
+  .senhahub-login-hero,
+  .senhahub-login-panel {
     min-height: 576px;
   }
 }
 
 @media (max-height: 760px) {
-  .fz-login-shell {
+  .senhahub-login-shell {
     min-height: 100%;
   }
 
-  .fz-login-hero,
-  .fz-login-panel {
+  .senhahub-login-hero,
+  .senhahub-login-panel {
     min-height: auto;
   }
 
-  .fz-login-hero {
+  .senhahub-login-hero {
     padding-top: max(22px, env(safe-area-inset-top));
     padding-bottom: 18px;
   }
 
-  .fz-login-logo {
+  .senhahub-login-logo {
     width: 60px;
     height: 60px;
     border-radius: 14px;
     font-size: 21px;
   }
 
-  .fz-market-logo {
+  .senhahub-market-logo {
     width: 54px;
     height: 54px;
     border-radius: 14px;
   }
 
-  .fz-login-title strong {
+  .senhahub-login-title strong {
     font-size: 24px;
   }
 
-  .fz-login-tagline {
+  .senhahub-login-tagline {
     font-size: 16px;
   }
 }
 
 @media (max-width: 360px) {
-  .fz-login-hero,
-  .fz-login-panel {
+  .senhahub-login-hero,
+  .senhahub-login-panel {
     padding-right: 18px;
     padding-left: 18px;
   }
 
-  .fz-login-features {
+  .senhahub-login-features {
     gap: 6px;
   }
 
-  .fz-login-chip {
+  .senhahub-login-chip {
     font-size: 10px;
   }
 }
@@ -5308,8 +5308,8 @@ textarea:focus {
   }
 }
 
-/* Fila Zero auth redesign */
-.fz-auth-stage {
+/* SenhaHub auth redesign */
+.senhahub-auth-stage {
   min-height: 100svh;
   overflow-y: auto;
   background: #0d2b5e;
@@ -5317,13 +5317,13 @@ textarea:focus {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-.fz-auth-stage *,
-.fz-auth-stage *::before,
-.fz-auth-stage *::after {
+.senhahub-auth-stage *,
+.senhahub-auth-stage *::before,
+.senhahub-auth-stage *::after {
   box-sizing: border-box;
 }
 
-.fz-auth-hero {
+.senhahub-auth-hero {
   position: relative;
   display: grid;
   min-height: 48svh;
@@ -5337,19 +5337,19 @@ textarea:focus {
   color: #ffffff;
 }
 
-.fz-auth-hero > * {
+.senhahub-auth-hero > * {
   position: relative;
   z-index: 1;
 }
 
-.fz-auth-brand {
+.senhahub-auth-brand {
   display: grid;
   grid-template-columns: 74px minmax(0, 1fr);
   align-items: center;
   gap: 14px;
 }
 
-.fz-auth-market-logo {
+.senhahub-auth-market-logo {
   width: 74px;
   height: 74px;
   object-fit: cover;
@@ -5359,19 +5359,19 @@ textarea:focus {
   box-shadow: 0 16px 34px rgba(0, 0, 0, 0.18);
 }
 
-.fz-auth-title {
+.senhahub-auth-title {
   display: grid;
   gap: 3px;
   min-width: 0;
 }
 
-.fz-auth-title span {
+.senhahub-auth-title span {
   color: #f5c518;
   font-size: 13px;
   font-weight: 700;
 }
 
-.fz-auth-title strong {
+.senhahub-auth-title strong {
   color: #ffffff;
   font-size: 23px;
   font-weight: 900;
@@ -5380,13 +5380,13 @@ textarea:focus {
   text-transform: uppercase;
 }
 
-.fz-auth-copy {
+.senhahub-auth-copy {
   display: grid;
   gap: 8px;
   max-width: 342px;
 }
 
-.fz-auth-copy p {
+.senhahub-auth-copy p {
   width: fit-content;
   margin: 0;
   padding: 7px 12px;
@@ -5397,7 +5397,7 @@ textarea:focus {
   font-weight: 800;
 }
 
-.fz-auth-copy h1 {
+.senhahub-auth-copy h1 {
   margin: 0;
   color: #ffffff;
   font-size: clamp(25px, 7.2vw, 34px);
@@ -5406,7 +5406,7 @@ textarea:focus {
   line-height: 1.12;
 }
 
-.fz-auth-copy span {
+.senhahub-auth-copy span {
   display: block;
   color: rgba(255, 255, 255, 0.76);
   font-size: 15px;
@@ -5414,14 +5414,14 @@ textarea:focus {
   line-height: 1.55;
 }
 
-.fz-auth-features {
+.senhahub-auth-features {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-top: -8px;
 }
 
-.fz-auth-features span {
+.senhahub-auth-features span {
   display: grid;
   min-height: 42px;
   place-items: center;
@@ -5435,7 +5435,7 @@ textarea:focus {
   text-align: center;
 }
 
-.fz-auth-panel {
+.senhahub-auth-panel {
   display: grid;
   gap: 14px;
   min-height: 52svh;
@@ -5445,7 +5445,7 @@ textarea:focus {
   background: #f0f2f5;
 }
 
-.fz-auth-card {
+.senhahub-auth-card {
   display: grid;
   gap: 16px;
   padding: 18px;
@@ -5455,7 +5455,7 @@ textarea:focus {
   box-shadow: 0 18px 48px rgba(13, 43, 94, 0.13);
 }
 
-.fz-auth-secure {
+.senhahub-auth-secure {
   width: fit-content;
   margin: 0;
   padding: 7px 12px;
@@ -5467,7 +5467,7 @@ textarea:focus {
   font-weight: 850;
 }
 
-.fz-auth-secure::before {
+.senhahub-auth-secure::before {
   content: "";
   display: inline-block;
   width: 7px;
@@ -5478,12 +5478,12 @@ textarea:focus {
   vertical-align: 1px;
 }
 
-.fz-auth-heading {
+.senhahub-auth-heading {
   display: grid;
   gap: 5px;
 }
 
-.fz-auth-heading h2 {
+.senhahub-auth-heading h2 {
   margin: 0;
   color: #0d2b5e;
   font-size: 25px;
@@ -5492,7 +5492,7 @@ textarea:focus {
   line-height: 1.1;
 }
 
-.fz-auth-heading p {
+.senhahub-auth-heading p {
   margin: 0;
   color: #60708a;
   font-size: 14px;
@@ -5500,7 +5500,7 @@ textarea:focus {
   line-height: 1.45;
 }
 
-.fz-auth-tabs.login-tabs {
+.senhahub-auth-tabs.login-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0;
@@ -5512,7 +5512,7 @@ textarea:focus {
   box-shadow: none;
 }
 
-.fz-auth-tabs.login-tabs button {
+.senhahub-auth-tabs.login-tabs button {
   position: relative;
   min-height: 42px;
   padding: 0 4px 10px;
@@ -5525,7 +5525,7 @@ textarea:focus {
   box-shadow: none;
 }
 
-.fz-auth-tabs.login-tabs button::after {
+.senhahub-auth-tabs.login-tabs button::after {
   content: "";
   position: absolute;
   right: 13px;
@@ -5536,26 +5536,26 @@ textarea:focus {
   background: transparent;
 }
 
-.fz-auth-tabs.login-tabs button.active {
+.senhahub-auth-tabs.login-tabs button.active {
   background: transparent;
   color: #0d2b5e;
   box-shadow: none;
 }
 
-.fz-auth-tabs.login-tabs button.active::after {
+.senhahub-auth-tabs.login-tabs button.active::after {
   background: #f5c518;
 }
 
-.fz-auth-stage .login-panel {
+.senhahub-auth-stage .login-panel {
   display: none;
   gap: 12px;
 }
 
-.fz-auth-stage .login-panel.active {
+.senhahub-auth-stage .login-panel.active {
   display: grid;
 }
 
-.fz-auth-stage .login-panel label {
+.senhahub-auth-stage .login-panel label {
   position: relative;
   display: grid;
   gap: 7px;
@@ -5564,7 +5564,7 @@ textarea:focus {
   font-weight: 850;
 }
 
-.fz-auth-stage .login-panel input {
+.senhahub-auth-stage .login-panel input {
   width: 100%;
   height: 48px;
   min-height: 48px;
@@ -5578,16 +5578,16 @@ textarea:focus {
   box-shadow: none;
 }
 
-.fz-auth-stage .login-panel input:focus {
+.senhahub-auth-stage .login-panel input:focus {
   border-color: #0d2b5e;
   box-shadow: 0 0 0 3px rgba(13, 43, 94, 0.12);
 }
 
-.fz-auth-stage .password-field input {
+.senhahub-auth-stage .password-field input {
   padding-right: 58px;
 }
 
-.fz-auth-stage .password-toggle {
+.senhahub-auth-stage .password-toggle {
   position: absolute;
   right: 5px;
   bottom: 5px;
@@ -5604,7 +5604,7 @@ textarea:focus {
   font-weight: 900;
 }
 
-.fz-auth-stage .yellow-action {
+.senhahub-auth-stage .yellow-action {
   width: 100%;
   height: 48px;
   min-height: 48px;
@@ -5618,17 +5618,17 @@ textarea:focus {
   box-shadow: none;
 }
 
-.fz-auth-stage .yellow-action:hover {
+.senhahub-auth-stage .yellow-action:hover {
   background: #f5c518;
   box-shadow: none;
 }
 
-.fz-auth-stage .yellow-action:disabled {
+.senhahub-auth-stage .yellow-action:disabled {
   cursor: wait;
   opacity: 0.72;
 }
 
-.fz-auth-link {
+.senhahub-auth-link {
   min-height: 30px;
   border: 0;
   border-radius: 8px;
@@ -5638,7 +5638,7 @@ textarea:focus {
   font-weight: 850;
 }
 
-.fz-auth-stage .login-error {
+.senhahub-auth-stage .login-error {
   min-height: 18px;
   margin: 0;
   color: #b42318;
@@ -5646,7 +5646,7 @@ textarea:focus {
   font-weight: 850;
 }
 
-.fz-auth-footnote {
+.senhahub-auth-footnote {
   margin: 0;
   padding: 0 4px;
   color: #60708a;
@@ -5656,7 +5656,7 @@ textarea:focus {
   text-align: center;
 }
 
-.fz-auth-stage .login-toast {
+.senhahub-auth-stage .login-toast {
   position: fixed;
   right: 18px;
   bottom: 18px;
@@ -5678,13 +5678,13 @@ textarea:focus {
   transition: opacity 180ms ease, transform 180ms ease;
 }
 
-.fz-auth-stage .login-toast.visible {
+.senhahub-auth-stage .login-toast.visible {
   opacity: 1;
   transform: translateY(0);
 }
 
 @media (min-width: 760px) {
-  .fz-auth-stage {
+  .senhahub-auth-stage {
     display: grid;
     grid-template-columns: minmax(360px, 480px) minmax(360px, 430px);
     justify-content: center;
@@ -5693,14 +5693,14 @@ textarea:focus {
     padding: 48px 20px;
   }
 
-  .fz-auth-hero {
+  .senhahub-auth-hero {
     min-height: 640px;
     border: 1px solid rgba(255, 255, 255, 0.34);
     border-right: 0;
     border-radius: 18px 0 0 18px;
   }
 
-  .fz-auth-panel {
+  .senhahub-auth-panel {
     min-height: 640px;
     align-content: center;
     border-radius: 0 18px 18px 0;
@@ -5708,15 +5708,15 @@ textarea:focus {
 }
 
 @media (max-height: 760px) {
-  .fz-auth-hero {
+  .senhahub-auth-hero {
     min-height: auto;
   }
 
-  .fz-auth-copy h1 {
+  .senhahub-auth-copy h1 {
     font-size: clamp(24px, 7vw, 32px);
   }
 
-  .fz-auth-market-logo {
+  .senhahub-auth-market-logo {
     width: 48px;
     height: 48px;
     border-radius: 14px;
@@ -5725,32 +5725,32 @@ textarea:focus {
 }
 
 @media (max-width: 370px) {
-  .fz-auth-hero {
+  .senhahub-auth-hero {
     padding-right: 18px;
     padding-left: 18px;
   }
 
-  .fz-auth-brand {
+  .senhahub-auth-brand {
     grid-template-columns: 58px minmax(0, 1fr);
     gap: 10px;
   }
 
-  .fz-auth-market-logo {
+  .senhahub-auth-market-logo {
     width: 58px;
     height: 58px;
     border-radius: 13px;
   }
 
-  .fz-auth-title strong {
+  .senhahub-auth-title strong {
     font-size: 20px;
   }
 
-  .fz-auth-panel {
+  .senhahub-auth-panel {
     padding-right: 14px;
     padding-left: 14px;
   }
 
-  .fz-auth-card {
+  .senhahub-auth-card {
     padding: 16px;
   }
 }

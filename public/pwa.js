@@ -1,5 +1,5 @@
-(function initializeFilaZeroPwa() {
-  const utils = window.FilaZeroPwaUtils;
+(function initializeSenhaHubPwa() {
+  const utils = window.SenhaHubPwaUtils;
   if (!utils) {
     console.error("pwa_utils_unavailable");
     return;
@@ -12,7 +12,7 @@
     registration: null,
     criticalOperations: 0,
     updateApplying: false,
-    lastNetworkSuccessAt: Number(localStorage.getItem("filaZeroLastNetworkSuccessAt") || 0),
+    lastNetworkSuccessAt: Number(localStorage.getItem("senhaHubLastNetworkSuccessAt") || 0),
     pushStatus: null,
     pushStatusPromise: null,
     currentSubscription: null
@@ -35,7 +35,7 @@
     window.addEventListener("load", scheduleServiceWorkerRegistration, { once: true });
   }
 
-  window.filaZeroPwa = {
+  window.senhaHubPwa = {
     markCriticalOperation,
     openNotificationSettings,
     prepareLogout,
@@ -80,7 +80,7 @@
       install.hidden = true;
       install.setAttribute("aria-labelledby", "pwaInstallTitle");
       install.innerHTML = [
-        '<strong id="pwaInstallTitle">Instale o Fila Zero</strong>',
+        '<strong id="pwaInstallTitle">Instale o SenhaHub</strong>',
         "<p>Acompanhe sua senha pela tela inicial e receba alertas quando o aplicativo estiver fechado.</p>",
         '<div class="pwa-prompt-actions">',
         '<button class="pwa-button" id="pwaInstallNow" type="button">Instalar</button>',
@@ -97,7 +97,7 @@
       update.hidden = true;
       update.setAttribute("aria-labelledby", "pwaUpdateTitle");
       update.innerHTML = [
-        '<strong id="pwaUpdateTitle">Uma nova versão do Fila Zero está disponível</strong>',
+        '<strong id="pwaUpdateTitle">Uma nova versão do SenhaHub está disponível</strong>',
         '<p id="pwaUpdateDescription">Atualize para usar a versão mais recente.</p>',
         '<div class="pwa-prompt-actions">',
         '<button class="pwa-button" id="pwaUpdateNow" type="button">Atualizar agora</button>',
@@ -213,9 +213,9 @@
 
   function handleControllerChange() {
     if (!state.updateApplying) return;
-    const lastReload = Number(sessionStorage.getItem("filaZeroPwaUpdateReloadAt") || 0);
+    const lastReload = Number(sessionStorage.getItem("senhaHubPwaUpdateReloadAt") || 0);
     if (Date.now() - lastReload < 10000) return;
-    sessionStorage.setItem("filaZeroPwaUpdateReloadAt", String(Date.now()));
+    sessionStorage.setItem("senhaHubPwaUpdateReloadAt", String(Date.now()));
     location.reload();
   }
 
@@ -250,19 +250,19 @@
   }
 
   function dismissInstallation() {
-    localStorage.setItem("filaZeroInstallDismissedAt", String(Date.now()));
+    localStorage.setItem("senhaHubInstallDismissedAt", String(Date.now()));
     recordPwaEvent("install_dismissed");
     document.querySelector("#pwaInstallPrompt").hidden = true;
   }
 
   function installationDismissed() {
-    const timestamp = Number(localStorage.getItem("filaZeroInstallDismissedAt") || 0);
+    const timestamp = Number(localStorage.getItem("senhaHubInstallDismissedAt") || 0);
     return timestamp > 0 && Date.now() - timestamp < INSTALL_DISMISS_MS;
   }
 
   function handleAppInstalled() {
     state.deferredInstallPrompt = null;
-    localStorage.removeItem("filaZeroInstallDismissedAt");
+    localStorage.removeItem("senhaHubInstallDismissedAt");
     recordPwaEvent("install_completed");
     const prompt = document.querySelector("#pwaInstallPrompt");
     if (prompt) prompt.hidden = true;
@@ -275,7 +275,7 @@
     if (!text || !button) return;
     const installed = utils.isStandaloneDisplay();
     text.textContent = installed
-      ? "O Fila Zero está aberto como aplicativo neste dispositivo."
+      ? "O SenhaHub está aberto como aplicativo neste dispositivo."
       : "Use o aplicativo pela tela inicial para acessar sua fila com mais rapidez.";
     button.hidden = installed;
   }
@@ -286,7 +286,7 @@
     const platform = currentPlatform();
     help.hidden = false;
     help.textContent = platform === "ios"
-      ? "No iPhone ou iPad, abra o menu Compartilhar do navegador, escolha Adicionar à Tela de Início e abra o Fila Zero pelo novo ícone."
+      ? "No iPhone ou iPad, abra o menu Compartilhar do navegador, escolha Adicionar à Tela de Início e abra o SenhaHub pelo novo ícone."
       : "Use a opção Instalar aplicativo ou Adicionar à tela inicial no menu do navegador. Se ela não aparecer, este navegador pode não oferecer instalação.";
     openNotificationSettings();
   }
@@ -309,7 +309,7 @@
       });
       if (!response.ok) throw new Error("connection_check_failed");
       reportNetworkSuccess();
-      window.dispatchEvent(new CustomEvent("fila-zero:reconnected"));
+      window.dispatchEvent(new CustomEvent("senhahub:reconnected"));
     } catch {
       setConnectionState("reconnecting");
     }
@@ -317,7 +317,7 @@
 
   function reportNetworkSuccess(timestamp = Date.now()) {
     state.lastNetworkSuccessAt = Number(timestamp) || Date.now();
-    localStorage.setItem("filaZeroLastNetworkSuccessAt", String(state.lastNetworkSuccessAt));
+    localStorage.setItem("senhaHubLastNetworkSuccessAt", String(state.lastNetworkSuccessAt));
     if (navigator.onLine) setConnectionState("online");
   }
 
@@ -367,7 +367,7 @@
       return;
     }
     if (compatibility.requiresInstallation) {
-      setPushState("Instale o aplicativo para ativar alertas", "No iPhone e iPad, as notificações funcionam após adicionar o Fila Zero à tela inicial.", "error");
+      setPushState("Instale o aplicativo para ativar alertas", "No iPhone e iPad, as notificações funcionam após adicionar o SenhaHub à tela inicial.", "error");
     }
     try {
       const subscription = await navigator.serviceWorker.ready.then((registration) => registration.pushManager.getSubscription());
@@ -409,7 +409,7 @@
       return;
     }
     if (Notification.permission === "denied") {
-      setPushState("Permissão bloqueada", "Abra as configurações do navegador ou do sistema para permitir notificações do Fila Zero.", "error");
+      setPushState("Permissão bloqueada", "Abra as configurações do navegador ou do sistema para permitir notificações do SenhaHub.", "error");
       return;
     }
     if (compatibility.requiresInstallation) return;
@@ -431,7 +431,7 @@
     }
     if (compatibility.requiresInstallation) {
       showInstallInstructions();
-      setPushState("Instale o aplicativo primeiro", "Depois de abrir o Fila Zero pela tela inicial, volte aqui e ative os alertas.", "error");
+      setPushState("Instale o aplicativo primeiro", "Depois de abrir o SenhaHub pela tela inicial, volte aqui e ative os alertas.", "error");
       return;
     }
     if (!state.pushStatus?.configured || !state.pushStatus.publicKey) {
@@ -604,11 +604,11 @@
 
   function handleServiceWorkerMessage(event) {
     if (event.data?.type === "PUSH_EVENT") {
-      window.dispatchEvent(new CustomEvent("fila-zero:push", { detail: event.data.payload }));
+      window.dispatchEvent(new CustomEvent("senhahub:push", { detail: event.data.payload }));
       return;
     }
     if (event.data?.type === "NOTIFICATION_CLICK") {
-      window.dispatchEvent(new CustomEvent("fila-zero:notification-click", { detail: event.data.payload }));
+      window.dispatchEvent(new CustomEvent("senhahub:notification-click", { detail: event.data.payload }));
     }
   }
 
@@ -644,8 +644,8 @@
     const token = document.cookie
       .split(";")
       .map((item) => item.trim())
-      .find((item) => item.startsWith("fz_csrf="))
-      ?.slice("fz_csrf=".length);
+      .find((item) => item.startsWith("senhahub_csrf="))
+      ?.slice("senhahub_csrf=".length);
     return token ? { "x-csrf-token": token } : {};
   }
 
@@ -674,10 +674,10 @@
 
   function recordPwaEvent(type) {
     try {
-      const current = JSON.parse(localStorage.getItem("filaZeroPwaEvents") || "[]");
+      const current = JSON.parse(localStorage.getItem("senhaHubPwaEvents") || "[]");
       const entries = Array.isArray(current) ? current.slice(-19) : [];
       entries.push({ type: String(type).slice(0, 80), at: new Date().toISOString() });
-      localStorage.setItem("filaZeroPwaEvents", JSON.stringify(entries));
+      localStorage.setItem("senhaHubPwaEvents", JSON.stringify(entries));
     } catch {
       // Installation telemetry is best effort and contains no personal data.
     }

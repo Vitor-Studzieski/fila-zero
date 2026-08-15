@@ -1,8 +1,8 @@
 export default function manifest() {
   return {
     id: "/",
-    name: "Fila Zero - Supermercado Pompeia",
-    short_name: "Fila Zero",
+    name: "SenhaHub - Supermercado Pompeia",
+    short_name: "SenhaHub",
     description: "Fila virtual, acompanhamento de atendimento e lista de compras do Supermercado Pompeia.",
     start_url: "/",
     scope: "/",
@@ -14,25 +14,25 @@ export default function manifest() {
     categories: ["productivity", "utilities"],
     icons: [
       {
-        src: "/icons/fila-zero-192.png",
+        src: "/icons/senhahub-192.png",
         sizes: "192x192",
         type: "image/png",
         purpose: "any"
       },
       {
-        src: "/icons/fila-zero-512.png",
+        src: "/icons/senhahub-512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "any"
       },
       {
-        src: "/icons/fila-zero-maskable-192.png",
+        src: "/icons/senhahub-maskable-192.png",
         sizes: "192x192",
         type: "image/png",
         purpose: "maskable"
       },
       {
-        src: "/icons/fila-zero-maskable-512.png",
+        src: "/icons/senhahub-maskable-512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable"
@@ -46,7 +46,7 @@ export default function manifest() {
         url: "/?view=status",
         icons: [
           {
-            src: "/icons/fila-zero-192.png",
+            src: "/icons/senhahub-192.png",
             sizes: "192x192",
             type: "image/png"
           }

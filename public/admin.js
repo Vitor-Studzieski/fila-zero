@@ -503,7 +503,7 @@ function initials(value) {
 async function api(path, options = {}) {
   const method = options.method || "GET";
   const mutation = method !== "GET";
-  if (mutation) window.filaZeroPwa?.markCriticalOperation(true);
+  if (mutation) window.senhaHubPwa?.markCriticalOperation(true);
   try {
     const response = await fetch(path, {
       method,
@@ -514,14 +514,14 @@ async function api(path, options = {}) {
       body: options.body ? JSON.stringify(options.body) : undefined
     });
     const payload = await parseApiPayload(response);
-    window.filaZeroPwa?.reportNetworkSuccess();
+    window.senhaHubPwa?.reportNetworkSuccess();
     if (!response.ok || payload.error) throw new Error(payload.error || "Falha na API.");
     return payload;
   } catch (error) {
-    window.filaZeroPwa?.reportNetworkFailure();
+    window.senhaHubPwa?.reportNetworkFailure();
     throw error;
   } finally {
-    if (mutation) window.filaZeroPwa?.markCriticalOperation(false);
+    if (mutation) window.senhaHubPwa?.markCriticalOperation(false);
   }
 }
 
@@ -542,7 +542,7 @@ function apiTextError(response, text) {
 }
 
 function csrfHeader() {
-  const token = getCookie("fz_csrf");
+  const token = getCookie("senhahub_csrf");
   return token ? { "x-csrf-token": token } : {};
 }
 
@@ -584,7 +584,7 @@ async function requireSession(roles) {
 }
 
 async function logout() {
-  await window.filaZeroPwa?.prepareLogout();
+  await window.senhaHubPwa?.prepareLogout();
   await api("/api/auth/logout", { method: "POST" });
   location.href = "/login";
 }

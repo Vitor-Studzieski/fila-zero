@@ -3,7 +3,7 @@ import HtmlTemplate from "../../_components/HtmlTemplate";
 
 export const metadata = {
   title: "Acompanhar senha",
-  description: "Acompanhe a posição da sua senha no Fila Zero."
+  description: "Acompanhe a posição da sua senha no SenhaHub."
 };
 
 export default function TrackTicketPage() {

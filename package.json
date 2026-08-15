@@ -1,8 +1,8 @@
 {
-  "name": "fila-zero-supermercado-pompeia",
+  "name": "senhahub-supermercado-pompeia",
   "version": "1.0.0",
   "private": true,
-  "description": "Aplicativo Fila Zero com backend, SQLite, SSE, painel do atendente e painel administrativo.",
+  "description": "Aplicativo SenhaHub com backend, SQLite, SSE, painel do atendente e painel administrativo.",
   "engines": {
     "node": "22.x"
   },

@@ -42,7 +42,7 @@ let server;
 let dataDir;
 
 test.before(async () => {
-  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fila-zero-pwa-"));
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "senhahub-pwa-"));
   server = spawn(process.execPath, ["--no-warnings", "server/server.js"], {
     cwd: ROOT,
     env: {
@@ -119,7 +119,7 @@ test("constroi payload minimo e restringe o destino a telas internas", () => {
   assert.equal(payload.url, "/?view=status");
   assert.equal(safeNotificationPath("/?view=account"), "/?view=account");
   assert.equal(safeNotificationPath("/admin"), "/?view=status");
-  assert.equal(pwaUtils.safeAppUrl("https://externo.example", "https://fila-zero.example"), null);
+  assert.equal(pwaUtils.safeAppUrl("https://externo.example", "https://senhahub.example"), null);
 });
 
 test("mantem consentimentos operacionais separados das promocoes", () => {
@@ -385,9 +385,9 @@ async function login(user) {
   });
   assert.equal(response.status, 200);
   const setCookie = response.headers.get("set-cookie") || "";
-  const auth = setCookie.match(/fz_auth=[^;,]+/)?.[0];
-  const csrfCookie = setCookie.match(/fz_csrf=[^;,]+/)?.[0];
-  const csrf = csrfCookie?.slice("fz_csrf=".length);
+  const auth = setCookie.match(/senhahub_auth=[^;,]+/)?.[0];
+  const csrfCookie = setCookie.match(/senhahub_csrf=[^;,]+/)?.[0];
+  const csrf = csrfCookie?.slice("senhahub_csrf=".length);
   assert.ok(auth && csrfCookie && csrf);
   return { cookie: `${auth}; ${csrfCookie}`, csrf };
 }

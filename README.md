@@ -1,4 +1,4 @@
-# Fila Zero Supermercado Pompeia
+# SenhaHub Supermercado Pompeia
 
 Aplicativo de fila virtual para supermercado, com login por perfil, solicitacao de senhas por setor, painel do atendente, painel administrativo e lista de compras/promocoes.
 
@@ -102,7 +102,7 @@ Use `DATA_BACKEND=supabase` para rodar login, filas, carrinho, setores, metricas
 
 `CRON_SECRET` protege a rota interna `/api/internal/jobs`, usada pela Vercel Cron para executar expiracao de senhas, chamadas automaticas e notificacoes mesmo sem trafego de usuarios. Gere um segredo exclusivo e cadastre o mesmo valor no ambiente local e na Vercel.
 
-`KIOSK_MODE=central` permite escolher o setor no Totem. Com `KIOSK_MODE=sector` e `KIOSK_SECTOR_ID=acougue`, o dispositivo inicia direto no atendimento daquele balcão. O QR Code geral leva ao Fila Zero; cada senha impressa recebe um QR Code individual para `/acompanhar/<token>`.
+`KIOSK_MODE=central` permite escolher o setor no Totem. Com `KIOSK_MODE=sector` e `KIOSK_SECTOR_ID=acougue`, o dispositivo inicia direto no atendimento daquele balcão. O QR Code geral leva ao SenhaHub; cada senha impressa recebe um QR Code individual para `/acompanhar/<token>`.
 
 Para ativar as notificacoes Web Push, execute `npx web-push generate-vapid-keys`, cadastre o par gerado e um contato valido em `VAPID_SUBJECT`, e so entao defina `PUSH_NOTIFICATIONS_ENABLED=1`. A chave privada nunca deve chegar ao navegador ou ser versionada.
 
@@ -115,7 +115,7 @@ O fluxo de emissao fisica, pareamento do totem e simulacao da impressao esta em 
 O SQLite local fica em:
 
 ```text
-data/fila-zero.sqlite
+data/senhahub.sqlite
 ```
 
 Esse arquivo nao e versionado pelo Git. Se quiser reiniciar os dados locais, pare o servidor e apague os arquivos SQLite dentro de `data/`.
@@ -162,7 +162,7 @@ Executa os testes de orquestracao da fila, PWA e Web Push.
 
 O projeto possui adaptacao para Vercel em `app/api/[...path]/route.js`. Em producao, configure `DATA_BACKEND=supabase` para que a API use Supabase/Postgres em vez de SQLite local.
 
-As acoes autenticadas usam cookie `HttpOnly` e token CSRF. Se o login funcionar, mas acoes como carrinho ou senha falharem com erro de token de seguranca, recarregue a pagina para sincronizar o cookie `fz_csrf`.
+As acoes autenticadas usam cookie `HttpOnly` e token CSRF. Se o login funcionar, mas acoes como carrinho ou senha falharem com erro de token de seguranca, recarregue a pagina para sincronizar o cookie `senhahub_csrf`.
 
 ## Preparacao Supabase
 

@@ -32,7 +32,7 @@ const dev = process.env.NODE_ENV !== "production";
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : resolveDefaultDataDir();
-const DB_PATH = path.join(DATA_DIR, "fila-zero.sqlite");
+const DB_PATH = path.join(DATA_DIR, "senhahub.sqlite");
 const isStandaloneServer = require.main === module;
 const apiOnly = process.env.API_ONLY === "1";
 let nextHandler = null;
@@ -147,7 +147,7 @@ function createHttpServer() {
 
 function listen(server) {
   server.listen(PORT, () => {
-    console.log(`Fila Zero Next.js rodando em http://localhost:${PORT}`);
+    console.log(`SenhaHub Next.js rodando em http://localhost:${PORT}`);
   });
 }
 
@@ -680,7 +680,7 @@ async function handleApi(req, res, url) {
 
   const kioskPrintJob = url.pathname.match(/^\/api\/kiosk\/print-jobs\/([^/]+)$/);
   if (req.method === "GET" && kioskPrintJob) {
-    const kiosk = verifyKioskSession(getCookie(req, "fz_kiosk"), AUTH_SECRET);
+    const kiosk = verifyKioskSession(getCookie(req, "senhahub_kiosk"), AUTH_SECRET);
     if (!kiosk) {
       sendJson(res, 401, { error: "Totem nao vinculado." });
       return;
@@ -1520,10 +1520,10 @@ async function supabaseUpsertProfile(id, email, name, role) {
 function logoutUser(req, res) {
   const user = getAuthUser(req);
   if (user?.id) revokePushSubscriptionsForUser(user.id);
-  const sessionId = user?.session_id || getCookie(req, "fz_auth");
+  const sessionId = user?.session_id || getCookie(req, "senhahub_auth");
   if (sessionId) db.prepare("DELETE FROM auth_sessions WHERE id = ?").run(sessionId);
-  res.setHeader("set-cookie", "fz_auth=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
-  appendCookie(res, "fz_csrf=; SameSite=Lax; Path=/; Max-Age=0");
+  res.setHeader("set-cookie", "senhahub_auth=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0");
+  appendCookie(res, "senhahub_csrf=; SameSite=Lax; Path=/; Max-Age=0");
 }
 
 function getAuthUser(req) {
@@ -1532,7 +1532,7 @@ function getAuthUser(req) {
 }
 
 function getSessionForRequest(req) {
-  const sessionId = getCookie(req, "fz_auth");
+  const sessionId = getCookie(req, "senhahub_auth");
   if (!sessionId) return null;
   const statelessSession = verifySessionToken(sessionId);
   if (statelessSession) {
@@ -1568,7 +1568,7 @@ function verifyCsrf(req, res, user) {
   if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) return true;
   const session = getSessionForRequest(req);
   const headerToken = String(req.headers["x-csrf-token"] || "");
-  const cookieToken = getCookie(req, "fz_csrf") || "";
+  const cookieToken = getCookie(req, "senhahub_csrf") || "";
   const expected = session?.csrf_token || "";
   if (safeEqual(headerToken, expected) && safeEqual(cookieToken, expected)) return true;
   sendJson(res, 403, { error: "Token de seguranca invalido. Recarregue a pagina e tente novamente." });
@@ -1853,8 +1853,8 @@ function createSqlitePushRepository() {
 
 function setAuthCookies(res, sessionId, csrfToken) {
   const secure = dev ? "" : "; Secure";
-  res.setHeader("set-cookie", `fz_auth=${sessionId}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`);
-  appendCookie(res, `fz_csrf=${csrfToken}; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`);
+  res.setHeader("set-cookie", `senhahub_auth=${sessionId}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`);
+  appendCookie(res, `senhahub_csrf=${csrfToken}; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`);
 }
 
 function appendCookie(res, cookie) {
@@ -1896,7 +1896,7 @@ function base64UrlEncode(value) {
 
 function authSecret() {
   if (process.env.AUTH_SECRET && process.env.AUTH_SECRET.length >= 32) return process.env.AUTH_SECRET;
-  if (dev) return "fila-zero-demo-auth-secret-change-before-production";
+  if (dev) return "senhahub-demo-auth-secret-change-before-production";
   throw new Error("AUTH_SECRET precisa ter ao menos 32 caracteres em producao.");
 }
 
@@ -2171,7 +2171,7 @@ function upsertSession(body, userAgent) {
 
 function getKioskStatus(req, sessionOverride = null) {
   syncQueueState();
-  const session = sessionOverride || verifyKioskSession(getCookie(req, "fz_kiosk"), AUTH_SECRET);
+  const session = sessionOverride || verifyKioskSession(getCookie(req, "senhahub_kiosk"), AUTH_SECRET);
   const user = getAuthUser(req);
   const row = session
     ? db.prepare("SELECT * FROM print_kiosks WHERE id = ? AND active = 1").get(session.kioskId)

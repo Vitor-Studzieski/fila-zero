@@ -14,7 +14,7 @@ function buildTicketReceipt(payload = {}) {
     command(ESC, 0x61, 1),
     command(ESC, 0x45, 1),
     command(GS, 0x21, 0x11),
-    asciiLine("FILA ZERO"),
+    asciiLine("SENHAHUB"),
     command(GS, 0x21, 0),
     command(ESC, 0x45, 0),
     asciiLine(sectorName.toUpperCase()),

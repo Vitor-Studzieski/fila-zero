@@ -77,7 +77,7 @@ function renderReceipt(payload = {}) {
   return [
     "",
     line,
-    center("FILA ZERO", width),
+    center("SENHAHUB", width),
     center(String(payload.sectorName || "").toUpperCase(), width),
     "",
     center("SENHA", width),

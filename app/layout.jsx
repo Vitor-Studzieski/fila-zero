@@ -2,16 +2,16 @@ import Script from "next/script";
 
 export const metadata = {
   title: {
-    default: "Fila Zero - Supermercado Pompeia",
-    template: "%s | Fila Zero"
+    default: "SenhaHub - Supermercado Pompeia",
+    template: "%s | SenhaHub"
   },
-  applicationName: "Fila Zero",
+  applicationName: "SenhaHub",
   description: "Fila virtual, acompanhamento de atendimento e lista de compras do Supermercado Pompeia.",
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
       { url: "/icons/favicon-32.png", sizes: "32x32", type: "image/png" },
-      { url: "/icons/fila-zero-192.png", sizes: "192x192", type: "image/png" }
+      { url: "/icons/senhahub-192.png", sizes: "192x192", type: "image/png" }
     ],
     apple: [
       { url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }
@@ -20,7 +20,7 @@ export const metadata = {
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Fila Zero"
+    title: "SenhaHub"
   },
   formatDetection: {
     telephone: false

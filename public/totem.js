@@ -1,5 +1,5 @@
 (function initializeTotem() {
-  const GENERAL_QR_URL = "https://fila-zero-mauve.vercel.app/login?next=%2F";
+  const GENERAL_QR_URL = "https://senhahub-mauve.vercel.app/login?next=%2F";
   const PRIORITY_CATEGORIES = [
     { id: "deficiencia_ou_mobilidade_reduzida", label: "Pessoa com deficiência ou mobilidade reduzida", icon: "♿" },
     { id: "tea", label: "Pessoa com transtorno do espectro autista", icon: "♢" },
@@ -268,7 +268,7 @@
       state.status = await api("/api/kiosk/pair", {
         method: "POST",
         body: { kioskId: "totem-pompeia-01" },
-        csrf: "fz_csrf"
+        csrf: "senhahub_csrf"
       });
       renderStatus();
     } catch (error) {
@@ -295,7 +295,7 @@
           priority: state.serviceType === "preferencial",
           priorityReason: state.priorityReason
         },
-        csrf: "fz_kiosk_csrf",
+        csrf: "senhahub_kiosk_csrf",
         csrfHeader: "x-kiosk-csrf"
       });
       showResult(result);

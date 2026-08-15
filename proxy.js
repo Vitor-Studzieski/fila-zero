@@ -25,7 +25,7 @@ export async function proxy(request) {
   const { pathname } = request.nextUrl;
   if (!protectedPages.has(pathname)) return NextResponse.next();
 
-  const session = await verifySessionToken(request.cookies.get("fz_auth")?.value);
+  const session = await verifySessionToken(request.cookies.get("senhahub_auth")?.value);
   if (session?.user && pageRoles[pathname]?.includes(normalizeRole(session.user.role))) return NextResponse.next();
   if (session?.user) return NextResponse.redirect(new URL(roleHome(session.user), request.url));
 
@@ -66,7 +66,7 @@ async function signValue(value) {
 function authSecret() {
   const secret = process.env.AUTH_SECRET || "";
   if (secret.length >= 32) return secret;
-  if (process.env.NODE_ENV !== "production") return "fila-zero-demo-auth-secret-change-before-production";
+  if (process.env.NODE_ENV !== "production") return "senhahub-demo-auth-secret-change-before-production";
   return "";
 }
 

@@ -1,5 +1,5 @@
 {
-  "project_name": "Fila Zero - Supermercado Pompeia",
+  "project_name": "SenhaHub - Supermercado Pompeia",
   "language": "pt-BR",
   "prototype_type": "Produto full-stack funcional",
   "description": "Sistema de fila virtual em Next.js com backend real em Node.js, banco SQLite, API centralizada, autenticação operacional, permissões por perfil, atualização em tempo real via Server-Sent Events, notificações no navegador, painel do atendente e painel administrativo.",

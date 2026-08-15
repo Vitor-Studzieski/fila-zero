@@ -1,6 +1,6 @@
 param(
   [string]$ProjectPath = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)),
-  [string]$TaskName = "Fila Zero - Agente de Impressao"
+  [string]$TaskName = "SenhaHub - Agente de Impressao"
 )
 
 $ErrorActionPreference = "Stop"
@@ -65,7 +65,7 @@ Register-ScheduledTask `
   -Trigger $Trigger `
   -Principal $Principal `
   -Settings $Settings `
-  -Description "Consome a fila do Fila Zero e imprime senhas na Bematech MP-4200 TH." `
+  -Description "Consome a fila do SenhaHub e imprime senhas na Bematech MP-4200 TH." `
   -Force | Out-Null
 
 Start-ScheduledTask -TaskName $TaskName

@@ -1,4 +1,4 @@
--- Fila Zero PWA and Web Push (applied as migration 20260724182303)
+-- SenhaHub PWA and Web Push (applied as migration 20260724182303)
 -- Additive migration: subscriptions, preferences, idempotent delivery events and API rate limits.
 
 create table if not exists public.web_push_subscriptions (

@@ -1,6 +1,6 @@
 # Estudo da feature de impressão
 
-Projeto: Fila Zero Supermercado Pompeia  
+Projeto: SenhaHub Supermercado Pompeia
 Feature: totem de senhas físicas + fila de impressão + Bematech MP-4200 TH  
 Status: guia técnico e operacional para estudo
 
@@ -25,7 +25,7 @@ Cliente
 Navegador do totem em /totem
   │  HTTPS + cookie do totem + CSRF
   ▼
-API do Fila Zero
+API do SenhaHub
   │
   ├── Produção: server/supabase-runtime.js
   │       │
@@ -109,10 +109,10 @@ O backend:
 3. confirma o `kioskId` esperado;
 4. garante que o registro do totem existe e está ativo;
 5. cria uma sessão assinada do totem;
-6. grava cookies `fz_kiosk` e `fz_kiosk_csrf`;
+6. grava cookies `senhahub_kiosk` e `senhahub_kiosk_csrf`;
 7. registra o evento de pareamento.
 
-O cookie `fz_kiosk` contém uma credencial assinada com validade de 30 dias. O cookie CSRF separado é exigido nas operações de alteração.
+O cookie `senhahub_kiosk` contém uma credencial assinada com validade de 30 dias. O cookie CSRF separado é exigido nas operações de alteração.
 
 ### 4.3 Escolha do setor
 
@@ -332,7 +332,7 @@ Sequência aproximada do cupom:
 
 1. reset da impressora;
 2. alinhamento centralizado;
-3. nome `FILA ZERO` em destaque;
+3. nome `SENHAHUB` em destaque;
 4. nome do setor em letras maiúsculas;
 5. texto `SENHA`;
 6. código da senha em fonte grande;

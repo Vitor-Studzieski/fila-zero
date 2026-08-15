@@ -1,5 +1,5 @@
 param(
-  [string]$TaskName = "Fila Zero - Agente de Impressao"
+  [string]$TaskName = "SenhaHub - Agente de Impressao"
 )
 
 $ErrorActionPreference = "Stop"

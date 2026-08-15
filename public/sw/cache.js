@@ -1,5 +1,5 @@
-(function exposeFilaZeroCache(scope) {
-  const config = scope.FZ_SW_CONFIG;
+(function exposeSenhaHubCache(scope) {
+  const config = scope.SENHAHUB_SW_CONFIG;
 
   function isNetworkOnly(request, url) {
     if (request.method !== "GET") return true;
@@ -104,7 +104,7 @@
     );
   }
 
-  scope.FilaZeroCache = {
+  scope.SenhaHubCache = {
     cacheFirst,
     isHashedStatic,
     isNetworkOnly,

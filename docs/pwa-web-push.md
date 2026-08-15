@@ -2,7 +2,7 @@
 
 ## Visao geral
 
-O Fila Zero pode ser instalado como PWA e acompanhar a fila mesmo quando a pagina perde conectividade. As notificacoes Web Push sao opcionais e dependem de consentimento explicito do cliente.
+O SenhaHub pode ser instalado como PWA e acompanhar a fila mesmo quando a pagina perde conectividade. As notificacoes Web Push sao opcionais e dependem de consentimento explicito do cliente.
 
 O navegador registra `public/sw.js`, que importa modulos separados para versao, cache e push. A API mantem as inscricoes no SQLite durante o desenvolvimento e no Supabase em producao.
 

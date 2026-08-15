@@ -20,8 +20,8 @@ test("gera cupom ESC/POS sem QR e com corte para a Bematech", () => {
     ticketCode: "A042",
     sectorName: "Acougue",
     issuedAt: "2026-07-29T20:00:00.000Z",
-    installUrl: "https://fila-zero-mauve.vercel.app/instalar",
-    trackUrl: "https://fila-zero-mauve.vercel.app/acompanhar/token-de-teste-1234567890",
+    installUrl: "https://senhahub-mauve.vercel.app/instalar",
+    trackUrl: "https://senhahub-mauve.vercel.app/acompanhar/token-de-teste-1234567890",
     paperWidthMm: 80
   });
 
@@ -44,16 +44,16 @@ test("totem exibe o QR geral separado do QR individual da senha", () => {
   assert.match(html, /Confirme sua escolha/);
   assert.doesNotMatch(html, /id="totemStepConfirm"/);
   assert.match(script, /kiosk\?\.appUrl/);
-  assert.match(script, /fila-zero-mauve\.vercel\.app\/login\?next=%2F/);
+  assert.match(script, /senhahub-mauve\.vercel\.app\/login\?next=%2F/);
   assert.match(script, /trackUrl/);
   assert.match(script, /setStep\(state\.serviceType === "preferencial" \? "priority" : "type"\)/);
 });
 
 test("carrega configuracao local sem sobrescrever variaveis do processo", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "fila-zero-agent-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "senhahub-agent-"));
   const configFile = path.join(directory, ".env.print-agent");
   fs.writeFileSync(configFile, [
-    "PRINT_API_URL=https://fila-zero-mauve.vercel.app",
+    "PRINT_API_URL=https://senhahub-mauve.vercel.app",
     "PRINT_AGENT_TOKEN=abcdefghijklmnopqrstuvwxyz1234567890",
     "KIOSK_PRINTER_PORT=COM9",
     "PRINT_SERIAL_BAUD_RATE=9600"
@@ -81,7 +81,7 @@ test("usa a porta configurada pelo agente ao criar a impressora", () => {
 });
 
 test("journal impede reimpressao de trabalho ja enviado", () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "fila-zero-journal-"));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "senhahub-journal-"));
   try {
     const first = new PrintedJobJournal(directory);
     first.add("job-123");
@@ -172,7 +172,7 @@ function sampleJob() {
       ticketCode: "A001",
       sectorName: "Acougue",
       issuedAt: "2026-07-29T20:00:00.000Z",
-      installUrl: "https://fila-zero-mauve.vercel.app/instalar",
+      installUrl: "https://senhahub-mauve.vercel.app/instalar",
       paperWidthMm: 80
     }
   };

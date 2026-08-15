@@ -19,7 +19,7 @@ let dataDir;
 let adminCookie = "";
 
 test.before(async () => {
-  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fila-zero-test-"));
+  dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "senhahub-test-"));
   server = spawn(process.execPath, ["--no-warnings", "server/server.js"], {
     cwd: path.resolve(__dirname, ".."),
     env: {
@@ -153,7 +153,7 @@ test("migration do totem protege fila de impressao e funcoes do agente", () => {
 test("emissao digital ignora configuracao antiga de QR e nao exige presenca", async () => {
   const port = 3400 + Math.floor(Math.random() * 300);
   const baseUrl = `http://127.0.0.1:${port}`;
-  const isolatedDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "fila-zero-presence-"));
+  const isolatedDataDir = fs.mkdtempSync(path.join(os.tmpdir(), "senhahub-presence-"));
   const email = `presence-${crypto.randomUUID()}@${TEST_DOMAIN}`;
   const password = strongPassword();
   const presenceServer = spawn(process.execPath, ["--no-warnings", "server/server.js"], {
@@ -195,7 +195,7 @@ test("emissao digital ignora configuracao antiga de QR e nao exige presenca", as
     });
     assert.equal(loginResponse.status, 200);
     const setCookie = loginResponse.headers.get("set-cookie") || "";
-    const cookie = `${setCookie.match(/fz_auth=[^;,]+/)?.[0]}; ${setCookie.match(/fz_csrf=[^;,]+/)?.[0]}`;
+    const cookie = `${setCookie.match(/senhahub_auth=[^;,]+/)?.[0]}; ${setCookie.match(/senhahub_csrf=[^;,]+/)?.[0]}`;
     const csrf = csrfHeader(cookie);
 
     const ticketResponse = await fetch(`${baseUrl}/api/tickets`, {
@@ -372,12 +372,12 @@ test("totem emite senha fisica na fila unica e conclui a impressao sem duplicar"
   });
   assert.equal(pairResponse.status, 200);
   const setCookie = pairResponse.headers.get("set-cookie") || "";
-  const kioskAuth = setCookie.match(/fz_kiosk=[^;,]+/)?.[0];
-  const kioskCsrf = setCookie.match(/fz_kiosk_csrf=[^;,]+/)?.[0];
+  const kioskAuth = setCookie.match(/senhahub_kiosk=[^;,]+/)?.[0];
+  const kioskCsrf = setCookie.match(/senhahub_kiosk_csrf=[^;,]+/)?.[0];
   assert.ok(kioskAuth);
   assert.ok(kioskCsrf);
   const kioskCookie = `${kioskAuth}; ${kioskCsrf}`;
-  const kioskCsrfToken = kioskCsrf.slice("fz_kiosk_csrf=".length);
+  const kioskCsrfToken = kioskCsrf.slice("senhahub_kiosk_csrf=".length);
   const idempotencyKey = crypto.randomUUID();
 
   const issue = () => fetch(`${BASE_URL}/api/kiosk/tickets`, {
@@ -398,7 +398,7 @@ test("totem emite senha fisica na fila unica e conclui a impressao sem duplicar"
   assert.equal(first.ticket.priorityReason, "tea");
   assert.equal(first.printJob.status, "pending");
   assert.equal(first.printJob.payload.paperWidthMm, 80);
-  assert.equal(first.printJob.payload.installUrl, "https://fila-zero-mauve.vercel.app/instalar");
+  assert.equal(first.printJob.payload.installUrl, "https://senhahub-mauve.vercel.app/instalar");
   assert.match(first.printJob.payload.trackUrl, /\/acompanhar\/[A-Za-z0-9_-]+$/);
 
   const trackingToken = new URL(first.printJob.payload.trackUrl).pathname.split("/").pop();
@@ -634,7 +634,7 @@ test("cliente cancela senha ativa e libera o setor para outra senha", async () =
 });
 
 test("contador de senha usa 000 a 999 e reinicia depois do limite", async () => {
-  const database = new DatabaseSync(path.join(dataDir, "fila-zero.sqlite"));
+  const database = new DatabaseSync(path.join(dataDir, "senhahub.sqlite"));
   database.prepare(`
     INSERT INTO ticket_counters (sector_id, business_date, last_number, updated_at)
     VALUES (?, ?, ?, ?)
@@ -667,8 +667,8 @@ async function login(email, password) {
   });
   assert.ok(response.ok, response.statusText);
   const setCookie = response.headers.get("set-cookie") || "";
-  const auth = setCookie.match(/fz_auth=[^;,]+/)?.[0];
-  const csrf = setCookie.match(/fz_csrf=[^;,]+/)?.[0];
+  const auth = setCookie.match(/senhahub_auth=[^;,]+/)?.[0];
+  const csrf = setCookie.match(/senhahub_csrf=[^;,]+/)?.[0];
   assert.ok(auth, "Cookie de autenticacao ausente.");
   assert.ok(csrf, "Cookie CSRF ausente.");
   return `${auth}; ${csrf}`;
@@ -728,7 +728,7 @@ function strongPassword() {
 }
 
 function resetSectorTickets(sectorId) {
-  const database = new DatabaseSync(path.join(dataDir, "fila-zero.sqlite"));
+  const database = new DatabaseSync(path.join(dataDir, "senhahub.sqlite"));
   database.prepare(`
     UPDATE tickets
     SET status = 'expirado', expired_at = ?, updated_at = ?
@@ -738,7 +738,7 @@ function resetSectorTickets(sectorId) {
 }
 
 function forceTicketCalledAt(ticketId, calledAt) {
-  const database = new DatabaseSync(path.join(dataDir, "fila-zero.sqlite"));
+  const database = new DatabaseSync(path.join(dataDir, "senhahub.sqlite"));
   database.prepare("UPDATE tickets SET called_at = ? WHERE id = ?").run(calledAt, ticketId);
   database.close();
 }
@@ -760,7 +760,7 @@ async function api(pathname, options = {}) {
 }
 
 function csrfHeader(cookie = "") {
-  const token = String(cookie).match(/fz_csrf=([^;]+)/)?.[1];
+  const token = String(cookie).match(/senhahub_csrf=([^;]+)/)?.[1];
   return token ? { "x-csrf-token": token } : {};
 }
 

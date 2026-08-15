@@ -10,11 +10,11 @@
   window.addEventListener("appinstalled", renderPlatform);
 
   function renderPlatform() {
-    const installed = window.FilaZeroPwaUtils?.isStandaloneDisplay?.() || false;
+    const installed = window.SenhaHubPwaUtils?.isStandaloneDisplay?.() || false;
     const platform = detectPlatform();
     if (installed) {
       stateTitle.textContent = "Aplicativo instalado";
-      stateDescription.textContent = "O Fila Zero ja esta aberto como aplicativo neste dispositivo.";
+      stateDescription.textContent = "O SenhaHub ja esta aberto como aplicativo neste dispositivo.";
       installAction.hidden = true;
       openAppAction.textContent = "Abrir minha conta";
       return;
@@ -23,7 +23,7 @@
     stateTitle.textContent = platform === "ios" ? "Instalacao pelo Safari" : "Pronto para instalar";
     stateDescription.textContent = platform === "ios"
       ? "No iPhone, a instalacao e concluida pelo menu Compartilhar."
-      : "Toque no botao abaixo para adicionar o Fila Zero ao celular.";
+      : "Toque no botao abaixo para adicionar o SenhaHub ao celular.";
     installAction.textContent = platform === "ios" ? "Ver como instalar no iPhone" : "Instalar aplicativo";
     steps.innerHTML = platform === "ios"
       ? [
@@ -34,14 +34,14 @@
       : [
           "<li><span>1</span><p>Toque em Instalar aplicativo.</p></li>",
           "<li><span>2</span><p>Confirme a instalacao quando o navegador solicitar.</p></li>",
-          "<li><span>3</span><p>Abra o Fila Zero pelo novo icone.</p></li>"
+          "<li><span>3</span><p>Abra o SenhaHub pelo novo icone.</p></li>"
         ].join("");
   }
 
   async function requestInstall() {
     installAction.disabled = true;
     try {
-      const pwa = window.filaZeroPwa;
+      const pwa = window.senhaHubPwa;
       if (pwa?.requestInstallation) {
         await pwa.requestInstallation();
       }

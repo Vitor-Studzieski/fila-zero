@@ -278,17 +278,17 @@ function buildNotificationPayload(type, context = {}) {
     },
     queue_changed: {
       title: "Sua fila foi atualizada",
-      body: `Abra o Fila Zero para consultar a situação atual no setor ${sector}.`
+      body: `Abra o SenhaHub para consultar a situação atual no setor ${sector}.`
     },
     push_test: {
-      title: "Alertas do Fila Zero estão ativos",
+      title: "Alertas do SenhaHub estão ativos",
       body: "Este dispositivo está pronto para receber avisos da sua fila."
     }
   };
   const message = messages[type];
   const payload = {
     type,
-    title: cleanText(message.title, 80, "Fila Zero"),
+    title: cleanText(message.title, 80, "SenhaHub"),
     body: cleanText(message.body, 180),
     url: safeNotificationPath(context.url || (type === "push_test" ? "/?view=account" : "/?view=status")),
     ticketId: cleanText(context.ticketId, 80),
@@ -319,8 +319,8 @@ function normalizeBusinessEvent(input = {}) {
 
 function safeNotificationPath(value) {
   try {
-    const url = new URL(String(value || "/"), "https://fila-zero.local");
-    if (url.origin !== "https://fila-zero.local" || url.pathname !== "/") return "/?view=status";
+    const url = new URL(String(value || "/"), "https://senhahub.local");
+    if (url.origin !== "https://senhahub.local" || url.pathname !== "/") return "/?view=status";
     if ([...url.searchParams.keys()].some((key) => key !== "view")) return "/?view=status";
     const view = url.searchParams.get("view");
     if (view && !["status", "account"].includes(view)) return "/?view=status";

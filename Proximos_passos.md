@@ -2,7 +2,7 @@
 
 ## Contexto
 
-O Fila Zero passará por uma nova etapa de evolução com foco na experiência do cliente durante a solicitação e acompanhamento das senhas de atendimento.
+O SenhaHub passará por uma nova etapa de evolução com foco na experiência do cliente durante a solicitação e acompanhamento das senhas de atendimento.
 
 A implementação envolve uma refatoração completa da experiência do Totem, criação de dois modos de funcionamento — **Totem Central** e **Totem Específico por Balcão** —, implementação de atendimento preferencial, geração de QR Codes individuais para acompanhamento das senhas, reformulação da impressão física e melhorias na segurança dos dispositivos.
 
@@ -12,7 +12,7 @@ Paralelamente, será realizada uma refatoração da Dashboard de Gestão e serã
 
 # 1. Objetivo da Feature
 
-Modernizar o fluxo de geração e acompanhamento de senhas do Fila Zero, proporcionando uma experiência mais simples, intuitiva e integrada entre Totem, impressão física e aplicação digital.
+Modernizar o fluxo de geração e acompanhamento de senhas do SenhaHub, proporcionando uma experiência mais simples, intuitiva e integrada entre Totem, impressão física e aplicação digital.
 
 A nova experiência deverá permitir que o cliente:
 
@@ -44,7 +44,7 @@ A nova interface deverá priorizar:
 * navegação simplificada;
 * visualização rápida da situação dos setores;
 * responsividade;
-* consistência visual com o restante do Fila Zero.
+* consistência visual com o restante do SenhaHub.
 
 O objetivo será transformar a Dashboard em uma ferramenta de acompanhamento e tomada de decisão, evitando que ela funcione apenas como uma página carregada de dados.
 
@@ -115,7 +115,7 @@ A primeira tela manterá o conceito existente atualmente, apresentando as três 
 * Frios/Laticínios;
 * Padaria.
 
-Nesta mesma tela deverá existir o **QR Code geral do Fila Zero**, permitindo que o cliente acesse a solução diretamente pelo celular caso não queira utilizar o Totem.
+Nesta mesma tela deverá existir o **QR Code geral do SenhaHub**, permitindo que o cliente acesse a solução diretamente pelo celular caso não queira utilizar o Totem.
 
 O QR Code deverá possuir boa visibilidade sem competir visualmente com as opções principais de atendimento.
 
@@ -260,11 +260,11 @@ A interface não deverá depender exclusivamente de cores para identificar uma s
 
 ---
 
-# 8. QR Code geral do Fila Zero
+# 8. QR Code geral do SenhaHub
 
 O Totem Central deverá possuir um QR Code institucional da solução.
 
-Esse QR Code deverá direcionar o usuário para a experiência digital do Fila Zero.
+Esse QR Code deverá direcionar o usuário para a experiência digital do SenhaHub.
 
 Ele será diferente do QR Code presente na impressão.
 
@@ -272,7 +272,7 @@ Existirão, portanto, dois conceitos diferentes:
 
 **QR Code geral**
 
-`Totem → Fila Zero`
+`Totem → SenhaHub`
 
 **QR Code individual**
 
@@ -382,7 +382,7 @@ A impressão deverá priorizar leitura rápida e evitar elementos desnecessário
 
 Estrutura conceitual:
 
-**FILA ZERO**
+**SENHAHUB**
 
 **AÇOUGUE**
 
@@ -410,7 +410,7 @@ O QR Code deverá apontar diretamente para o acompanhamento daquele atendimento.
 
 Portanto:
 
-`QR Code da impressão ≠ página inicial do Fila Zero`
+`QR Code da impressão ≠ página inicial do SenhaHub`
 
 O comportamento correto será:
 
@@ -439,7 +439,7 @@ O botão de confirmação deverá ser temporariamente bloqueado enquanto uma sol
 
 Os dispositivos utilizados como Totem deverão funcionar em ambiente controlado semelhante a **Kiosk Mode**.
 
-O cliente deverá possuir acesso apenas à aplicação Fila Zero.
+O cliente deverá possuir acesso apenas à aplicação SenhaHub.
 
 Deverá ser impedido, dentro das limitações da plataforma utilizada:
 
@@ -480,7 +480,7 @@ Tela Inicial
 ├── Açougue
 ├── Frios/Laticínios
 ├── Padaria
-└── QR Code Fila Zero
+└── QR Code SenhaHub
         │
         ▼
 Escolha do setor
@@ -570,11 +570,11 @@ Além das implementações de software, deverão ser preparadas entregas especí
 
 # 20. Criação da apresentação
 
-Deverá ser criada uma nova apresentação do Fila Zero demonstrando:
+Deverá ser criada uma nova apresentação do SenhaHub demonstrando:
 
 * problema identificado;
 * proposta da solução;
-* funcionamento do Fila Zero;
+* funcionamento do SenhaHub;
 * evolução do projeto;
 * arquitetura geral da experiência;
 * Totem Central;
@@ -670,7 +670,7 @@ Esta iniciativa poderá ser tratada como uma **Feature principal**, subdividida 
 
 ```text
 FEATURE
-Evolução da Experiência Fila Zero
+Evolução da Experiência SenhaHub
 │
 ├── Dashboard
 │   └── Refatoração UI/UX
@@ -720,4 +720,4 @@ Evolução da Experiência Fila Zero
     └── Análise de feedback
 ```
 
-Dessa forma, a implementação deixa de ser tratada como diversas alterações isoladas e passa a representar uma única evolução de produto: **modernizar todo o ciclo de interação do cliente com o Fila Zero, desde a geração da senha física até o acompanhamento digital do atendimento.**
+Dessa forma, a implementação deixa de ser tratada como diversas alterações isoladas e passa a representar uma única evolução de produto: **modernizar todo o ciclo de interação do cliente com o SenhaHub, desde a geração da senha física até o acompanhamento digital do atendimento.**

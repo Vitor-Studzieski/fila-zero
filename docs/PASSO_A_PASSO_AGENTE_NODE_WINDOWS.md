@@ -1,6 +1,6 @@
 # Passo a passo: agente Node.js de impressão no Windows
 
-Projeto: Fila Zero Supermercado Pompeia  
+Projeto: SenhaHub Supermercado Pompeia
 Componente: agente Node.js + Bematech MP-4200 TH  
 Objetivo: instalar, testar, operar e diagnosticar a impressão de senhas físicas
 
@@ -124,7 +124,7 @@ Confirme antes de instalar:
 Recomenda-se uma pasta como:
 
 ```text
-C:\FilaZero
+C:\SenhaHub
 ```
 
 Não instale o agente dentro de Downloads ou de uma pasta temporária.
@@ -145,7 +145,7 @@ O primeiro comando deve mostrar uma versão `22.x`. Se `node` não for encontrad
 Copie ou clone o projeto para uma pasta fixa:
 
 ```powershell
-Set-Location C:\FilaZero
+Set-Location C:\SenhaHub
 ```
 
 Confirme os arquivos:
@@ -176,7 +176,7 @@ notepad .env.print-agent
 Preencha:
 
 ```env
-PRINT_API_URL=https://fila-zero-mauve.vercel.app
+PRINT_API_URL=https://senhahub-mauve.vercel.app
 PRINT_AGENT_TOKEN=cole-o-mesmo-segredo-configurado-no-servidor
 KIOSK_ID=totem-pompeia-01
 
@@ -422,21 +422,21 @@ O instalador:
 A tarefa é criada como:
 
 ```text
-Fila Zero - Agente de Impressao
+SenhaHub - Agente de Impressao
 ```
 
 Conferir:
 
 ```powershell
-Get-ScheduledTask -TaskName "Fila Zero - Agente de Impressao"
-Get-ScheduledTaskInfo -TaskName "Fila Zero - Agente de Impressao"
+Get-ScheduledTask -TaskName "SenhaHub - Agente de Impressao"
+Get-ScheduledTaskInfo -TaskName "SenhaHub - Agente de Impressao"
 ```
 
 Parar e iniciar manualmente:
 
 ```powershell
-Stop-ScheduledTask -TaskName "Fila Zero - Agente de Impressao"
-Start-ScheduledTask -TaskName "Fila Zero - Agente de Impressao"
+Stop-ScheduledTask -TaskName "SenhaHub - Agente de Impressao"
+Start-ScheduledTask -TaskName "SenhaHub - Agente de Impressao"
 ```
 
 Remover:
@@ -466,7 +466,7 @@ Remover a tarefa não apaga automaticamente os logs nem o journal.
 O simulador valida a fila sem Bematech física:
 
 ```powershell
-$env:PRINT_API_URL="https://fila-zero-mauve.vercel.app"
+$env:PRINT_API_URL="https://senhahub-mauve.vercel.app"
 $env:PRINT_AGENT_TOKEN="o-mesmo-token-do-servidor"
 $env:KIOSK_ID="totem-pompeia-01"
 npm run print:simulate -- --once

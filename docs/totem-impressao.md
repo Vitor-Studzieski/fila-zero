@@ -16,8 +16,8 @@ O totem emite senhas fisicas na mesma fila usada pelo aplicativo. A emissao cria
 Cadastre em Production e Preview:
 
 ```env
-PUBLIC_APP_URL=https://fila-zero-mauve.vercel.app
-PUBLIC_INSTALL_URL=https://fila-zero-mauve.vercel.app/instalar
+PUBLIC_APP_URL=https://senhahub-mauve.vercel.app
+PUBLIC_INSTALL_URL=https://senhahub-mauve.vercel.app/instalar
 KIOSK_ID=totem-pompeia-01
 KIOSK_NAME=Totem Supermercado Pompeia
 KIOSK_PRINTER_NAME=Bematech MP - 4200 TH
@@ -57,7 +57,7 @@ O pareamento deve ser feito novamente se os cookies do navegador forem apagados 
 No computador que consumira a fila, configure:
 
 ```env
-PRINT_API_URL=https://fila-zero-mauve.vercel.app
+PRINT_API_URL=https://senhahub-mauve.vercel.app
 PRINT_AGENT_TOKEN=<o-mesmo-segredo-configurado-na-vercel>
 KIOSK_ID=totem-pompeia-01
 ```
@@ -78,7 +78,7 @@ Requisitos no computador do totem:
 - Node.js 22 LTS;
 - Bematech MP-4200 TH instalada e visivel como `COM3`;
 - impressora configurada no modo de comandos ESC/POS;
-- acesso HTTPS a `https://fila-zero-mauve.vercel.app`.
+- acesso HTTPS a `https://senhahub-mauve.vercel.app`.
 
 No computador Windows, clone ou copie o projeto para uma pasta fixa. Depois copie `.env.print-agent.example` para `.env.print-agent` e preencha `PRINT_AGENT_TOKEN` com o mesmo segredo cadastrado na Vercel.
 

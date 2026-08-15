@@ -1,6 +1,6 @@
 # Guia de decisões de infraestrutura e operação
 
-Projeto: Fila Zero Supermercado Pompeia  
+Projeto: SenhaHub Supermercado Pompeia
 Data da análise: 11/08/2026  
 Status: documento para discussão e planejamento
 
@@ -280,4 +280,4 @@ O piloto do totem só deve ser considerado aprovado quando:
 - [Configuração Supabase](supabase-setup.md)
 - [Totem e impressão](totem-impressao.md)
 - [Necessidades de desenvolvimento](../NECESSIDADES_DESENVOLVIMENTO.md)
-- [Relatório de auditoria](../RELATORIO_AUDITORIA_FILA_ZERO.md)
+- [Relatório de auditoria](../RELATORIO_AUDITORIA_SENHAHUB.md)

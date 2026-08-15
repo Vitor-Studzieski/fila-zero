@@ -3,7 +3,7 @@ import HtmlTemplate from "../_components/HtmlTemplate";
 
 export const metadata = {
   title: "Totem de senhas",
-  description: "Emissao de senhas fisicas do Fila Zero."
+  description: "Emissao de senhas fisicas do SenhaHub."
 };
 
 export default function TotemPage() {

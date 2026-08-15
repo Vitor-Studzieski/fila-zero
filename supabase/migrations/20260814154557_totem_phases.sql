@@ -1,7 +1,7 @@
 alter table public.print_kiosks
   add column if not exists mode text not null default 'central',
   add column if not exists sector_id text,
-  add column if not exists app_url text not null default 'https://fila-zero-mauve.vercel.app';
+  add column if not exists app_url text not null default 'https://senhahub-mauve.vercel.app';
 
 alter table public.tickets
   add column if not exists tracking_token text;
@@ -17,7 +17,7 @@ create or replace function public.issue_physical_ticket(
   p_sector_id text,
   p_idempotency_key text,
   p_install_url text,
-  p_app_url text default 'https://fila-zero-mauve.vercel.app',
+  p_app_url text default 'https://senhahub-mauve.vercel.app',
   p_priority boolean default false,
   p_priority_reason text default null,
   p_auto_call_delay_seconds integer default 30

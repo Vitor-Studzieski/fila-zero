@@ -1,4 +1,4 @@
--- Fila Zero Supabase schema
+-- SenhaHub Supabase schema
 -- Consolidated migration: initial schema, offer insight indexes, and shopping agent signals.
 -- Run this file in Supabase SQL Editor before switching the app from SQLite to Supabase.
 

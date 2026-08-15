@@ -43,7 +43,7 @@
   function trackingMessage(ticket) {
     if (ticket.status === "chamado") return "Sua senha foi chamada. Dirija-se ao balcão.";
     if (ticket.status === "em_atendimento") return "Seu atendimento está acontecendo agora.";
-    if (ticket.status === "atendido") return "Atendimento concluído. Obrigado por usar o Fila Zero.";
+    if (ticket.status === "atendido") return "Atendimento concluído. Obrigado por usar o SenhaHub.";
     if (ticket.status === "cancelado" || ticket.status === "expirado") return "Esta senha não está mais ativa.";
     if (Number(ticket.ahead) === 0) return "Você é o próximo. Fique atento ao chamado.";
     return "Você será avisado quando estiver próximo do atendimento.";

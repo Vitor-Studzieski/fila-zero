@@ -342,7 +342,7 @@ async function internalJobsRoute(request) {
 }
 
 async function kioskStatusRoute(request, sessionOverride = null) {
-  const session = sessionOverride || verifyKioskSession(getCookie(request, "fz_kiosk"), AUTH_SECRET);
+  const session = sessionOverride || verifyKioskSession(getCookie(request, "senhahub_kiosk"), AUTH_SECRET);
   const [user, kioskRows, sectors] = await Promise.all([
     getAuthUser(request),
     session ? select("print_kiosks", `id=eq.${encodeURIComponent(session.kioskId)}&active=eq.true&limit=1`) : [],
@@ -473,7 +473,7 @@ function publicTicketView(ticket) {
 }
 
 async function kioskPrintJobRoute(request, jobId) {
-  const kiosk = verifyKioskSession(getCookie(request, "fz_kiosk"), AUTH_SECRET);
+  const kiosk = verifyKioskSession(getCookie(request, "senhahub_kiosk"), AUTH_SECRET);
   if (!kiosk) return json({ error: "Totem nao vinculado." }, 401);
   const row = (await select(
     "print_jobs",
@@ -2200,7 +2200,7 @@ async function getProfile(userId, fallbackEmail = "") {
 }
 
 async function getAuthUser(request) {
-  const token = getCookie(request, "fz_auth");
+  const token = getCookie(request, "senhahub_auth");
   const session = verifySessionToken(token);
   if (!session?.user?.id) return null;
   const [profile, appSession] = await Promise.all([
@@ -2263,7 +2263,7 @@ async function requireUser(request, roles) {
 async function verifyCsrf(request, user) {
   if (!user || !["POST", "PUT", "PATCH", "DELETE"].includes(request.method)) return Boolean(user);
   const headerToken = String(request.headers.get("x-csrf-token") || "");
-  const cookieToken = getCookie(request, "fz_csrf") || "";
+  const cookieToken = getCookie(request, "senhahub_csrf") || "";
   const expected = user.csrf_token || "";
   return safeEqual(headerToken, expected) && safeEqual(cookieToken, expected);
 }
@@ -2581,7 +2581,7 @@ function satisfactionSummary(rows) {
 function authSecret() {
   const secret = process.env.AUTH_SECRET || "";
   if (secret.length >= 32) return secret;
-  if (process.env.NODE_ENV !== "production") return "fila-zero-demo-auth-secret-change-before-production";
+  if (process.env.NODE_ENV !== "production") return "senhahub-demo-auth-secret-change-before-production";
   throw new Error("AUTH_SECRET precisa ter ao menos 32 caracteres em producao.");
 }
 
@@ -2623,8 +2623,8 @@ function authCookies(sessionToken, csrfToken) {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
   return {
     "set-cookie": [
-      `fz_auth=${encodeURIComponent(sessionToken)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`,
-      `fz_csrf=${encodeURIComponent(csrfToken)}; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`
+      `senhahub_auth=${encodeURIComponent(sessionToken)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`,
+      `senhahub_csrf=${encodeURIComponent(csrfToken)}; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`
     ]
   };
 }
@@ -2632,8 +2632,8 @@ function authCookies(sessionToken, csrfToken) {
 function clearAuthCookies() {
   return {
     "set-cookie": [
-      "fz_auth=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0",
-      "fz_csrf=; SameSite=Lax; Path=/; Max-Age=0"
+      "senhahub_auth=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0",
+      "senhahub_csrf=; SameSite=Lax; Path=/; Max-Age=0"
     ]
   };
 }
