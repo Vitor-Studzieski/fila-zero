@@ -19,6 +19,21 @@ const {
   verifyKioskSession,
   verifyPrintAgentRequest
 } = require("./print-kiosk-service");
+const {
+  evaluatePasswordPolicy,
+  isStrongPassword,
+  passwordPolicyError
+} = require("./password-policy");
+const {
+  createRequestContext,
+  dispatchObservabilityAlert,
+  durationMs,
+  errorDetails,
+  finishRequest,
+  logStructured,
+  summarizePrintAttempts
+} = require("./observability");
+const { healthResponse } = require("./production-readiness");
 
 const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || "");
@@ -26,7 +41,7 @@ const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY |
 const AUTH_SECRET = authSecret();
 const CRON_SECRET = String(process.env.CRON_SECRET || "");
 const KIOSK_CONFIGURATION = loadKioskConfiguration(process.env);
-const AUTO_CONFIRM_PUBLIC_CUSTOMERS = process.env.SUPABASE_AUTO_CONFIRM_CUSTOMERS !== "0";
+const AUTO_CONFIRM_PUBLIC_CUSTOMERS = process.env.SUPABASE_AUTO_CONFIRM_CUSTOMERS === "1";
 const PRESENCE_CHECK_ENABLED = false;
 const PUSH_CONFIGURATION = loadPushConfiguration(process.env);
 const pushNotificationService = new PushNotificationService({
@@ -38,6 +53,7 @@ const BUSINESS_TIME_ZONE = "America/Sao_Paulo";
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
 const MAX_ACTIVE_TICKETS_PER_CUSTOMER = 3;
 const AUTO_CALL_DELAY_SECONDS = 30;
+const TRACKING_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const CALL_ABSENCE_SECONDS = 10 * 60;
 const STANDBY_SECONDS = 10 * 60;
 const STANDBY_WARNING_SECONDS = 2 * 60;
@@ -77,11 +93,49 @@ let offerInsightsCache = null;
 
 async function handleRequest(request) {
   const url = new URL(request.url);
+  const context = createRequestContext({
+    method: request.method,
+    path: url.pathname,
+    headers: request.headers
+  });
+  logStructured("info", "request.started", {
+    requestId: context.requestId,
+    method: context.method,
+    path: context.path
+  });
+  let response;
   try {
+    response = await handleRequestInternal(request, context);
+  } catch (error) {
+    if (error?.code === "INVALID_JSON") {
+      response = json({ error: "O corpo da requisicao precisa ser um JSON valido." }, 400);
+    } else {
+      logStructured("error", "request.unhandled_error", {
+        requestId: context.requestId,
+        method: context.method,
+        path: context.path,
+        ...errorDetails(error)
+      });
+      response = json({ error: "Erro interno do servidor." }, 500);
+    }
+  }
+  const decorated = withRequestId(response, context.requestId);
+  finishRequest(context, decorated.status);
+  return decorated;
+}
+
+async function handleRequestInternal(request, context = null) {
+  const url = new URL(request.url);
+  try {
+    if (request.method === "GET" && url.pathname === "/api/health") {
+      const health = healthResponse(process.env);
+      return json(health, health.ok ? 200 : 503);
+    }
     if (!isSupabaseReady()) {
       return json({ error: "Supabase nao configurado." }, 500);
     }
-    if (request.method === "GET" && url.pathname === "/api/internal/jobs") return internalJobsRoute(request);
+    if (request.method === "GET" && url.pathname === "/api/internal/jobs") return internalJobsRoute(request, context);
+    if (request.method === "GET" && url.pathname === "/api/observability") return observabilityRoute(request);
     if (request.method === "GET" && url.pathname === "/api/config") {
       return json({ presenceCheckEnabled: PRESENCE_CHECK_ENABLED });
     }
@@ -154,7 +208,13 @@ async function handleRequest(request) {
 
     return json({ error: "Rota nao encontrada." }, 404);
   } catch (error) {
-    console.error(error);
+    if (error?.code === "INVALID_JSON") throw error;
+    logStructured("error", "request.handler_error", {
+      requestId: context?.requestId,
+      method: request.method,
+      path: url.pathname,
+      ...errorDetails(error)
+    });
     return json({ error: "Erro interno do servidor." }, 500);
   }
 }
@@ -200,6 +260,8 @@ async function changePassword(request) {
   if (!email || !currentPassword || !validateStrongPassword(newPassword)) {
     return json({ error: "Informe e-mail, senha atual e uma nova senha forte com ao menos 12 caracteres, letras maiusculas, minusculas e numeros." }, 400);
   }
+  const passwordPolicy = await validatePasswordPolicy(newPassword);
+  if (passwordPolicy.error) return json({ error: passwordPolicy.error }, passwordPolicy.httpStatus);
 
   const attemptKey = `${clientIp(request)}:${email || "unknown"}:change-password`;
   if (await isLoginLocked(attemptKey)) return json({ error: "Muitas tentativas. Aguarde alguns minutos e tente novamente." }, 401);
@@ -259,6 +321,8 @@ async function resetPassword(request) {
   if (!accessToken || !validateStrongPassword(newPassword)) {
     return json({ error: "Link de recuperacao invalido ou senha fraca. Use ao menos 12 caracteres, letras maiusculas, minusculas e numeros." }, 400);
   }
+  const passwordPolicy = await validatePasswordPolicy(newPassword);
+  if (passwordPolicy.error) return json({ error: passwordPolicy.error }, passwordPolicy.httpStatus);
 
   const attemptKey = `${clientIp(request)}:reset-password`;
   if (await isLoginLocked(attemptKey)) return json({ error: "Muitas tentativas. Aguarde alguns minutos e tente novamente." }, 429);
@@ -287,7 +351,17 @@ async function registerCustomer(request) {
   const body = await readJson(request);
   const data = validateCustomerRegistration(body);
   if (data.error) return json(data, 400);
+  const passwordPolicy = await validatePasswordPolicy(data.password);
+  if (passwordPolicy.error) return json({ error: passwordPolicy.error }, passwordPolicy.httpStatus);
 
+  const ipRate = await consumeSecurityRateLimit("register:ip", clientIp(request), 12, 15 * 60);
+  if (ipRate !== true) {
+    return json({ error: ipRate === false ? "Muitas tentativas de cadastro. Aguarde alguns minutos." : "Cadastro temporariamente indisponivel." }, ipRate === false ? 429 : 503);
+  }
+  const emailRate = await consumeSecurityRateLimit("register:email", data.email, 5, 60 * 60);
+  if (emailRate !== true) {
+    return json({ error: emailRate === false ? "Muitas tentativas de cadastro. Aguarde alguns minutos." : "Cadastro temporariamente indisponivel." }, emailRate === false ? 429 : 503);
+  }
   const attemptKey = `${clientIp(request)}:${data.email}:register`;
   if (await isLoginLocked(attemptKey)) return json({ error: "Muitas tentativas. Aguarde alguns minutos e tente novamente." }, 401);
 
@@ -329,23 +403,174 @@ async function me(request) {
   return json({ user: user ? userDto(user) : null, csrfToken: user?.csrf_token || null });
 }
 
-async function internalJobsRoute(request) {
-  if (!CRON_SECRET) return json({ error: "CRON_SECRET nao configurado." }, 503);
+async function internalJobsRoute(request, context = null) {
+  const requestId = context?.requestId || request.headers.get("x-request-id") || null;
+  const executionId = crypto.randomUUID();
+  const startedAt = isoNow();
+  if (!CRON_SECRET) {
+    await recordCronExecutionStart(executionId, requestId, startedAt);
+    const finishedAt = isoNow();
+    await recordCronExecutionFinish(executionId, {
+      finishedAt,
+      status: "failed",
+      durationMs: durationMs(startedAt, finishedAt),
+      errorCode: "CRON_SECRET_MISSING",
+      errorMessage: "CRON_SECRET nao configurado."
+    });
+    await dispatchObservabilityAlert({
+      event: "cron.failed",
+      requestId,
+      jobName: "internal_jobs",
+      executionId,
+      errorCode: "CRON_SECRET_MISSING",
+      errorMessage: "CRON_SECRET nao configurado."
+    });
+    return json({ error: "CRON_SECRET nao configurado." }, 503);
+  }
   const authorization = String(request.headers.get("authorization") || "");
   const bearer = authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
   const supplied = String(request.headers.get("x-cron-secret") || bearer || "");
   if (!safeEqual(supplied, CRON_SECRET)) return json({ error: "Nao autorizado." }, 401);
 
-  const startedAt = Date.now();
-  await maybeRunScheduledJobs({ wait: true });
-  return json({ ok: true, durationMs: Date.now() - startedAt, executedAt: isoNow() });
+  await recordCronExecutionStart(executionId, requestId, startedAt);
+  logStructured("info", "cron.started", {
+    requestId,
+    jobName: "internal_jobs",
+    executionId
+  });
+  try {
+    await maybeRunScheduledJobs({ wait: true });
+    const finishedAt = isoNow();
+    const executionDurationMs = durationMs(startedAt, finishedAt);
+    await recordCronExecutionFinish(executionId, {
+      finishedAt,
+      status: "succeeded",
+      durationMs: executionDurationMs,
+      result: { ok: true }
+    });
+    logStructured("info", "cron.finished", {
+      requestId,
+      jobName: "internal_jobs",
+      executionId,
+      status: "succeeded",
+      durationMs: executionDurationMs
+    });
+    return json({ ok: true, durationMs: executionDurationMs, executedAt: finishedAt, requestId });
+  } catch (error) {
+    const finishedAt = isoNow();
+    const details = errorDetails(error);
+    const executionDurationMs = durationMs(startedAt, finishedAt);
+    await recordCronExecutionFinish(executionId, {
+      finishedAt,
+      status: "failed",
+      durationMs: executionDurationMs,
+      errorCode: details.errorCode,
+      errorMessage: details.errorMessage
+    });
+    logStructured("error", "cron.finished", {
+      requestId,
+      jobName: "internal_jobs",
+      executionId,
+      status: "failed",
+      durationMs: executionDurationMs,
+      ...details
+    });
+    await dispatchObservabilityAlert({
+      event: "cron.failed",
+      requestId,
+      jobName: "internal_jobs",
+      executionId,
+      durationMs: executionDurationMs,
+      ...details
+    });
+    return json({ error: "Falha ao executar jobs internos." }, 500);
+  }
+}
+
+async function recordCronExecutionStart(id, requestId, startedAt) {
+  try {
+    await insert("cron_executions", {
+      id,
+      job_name: "internal_jobs",
+      request_id: requestId || null,
+      started_at: startedAt,
+      status: "running",
+      created_at: startedAt
+    }, false);
+  } catch (error) {
+    logStructured("warn", "observability.persistence_failed", {
+      entity: "cron_execution",
+      operation: "start",
+      ...errorDetails(error)
+    });
+  }
+}
+
+async function recordCronExecutionFinish(id, { finishedAt, status, durationMs: elapsedMs, result, errorCode, errorMessage }) {
+  try {
+    await update("cron_executions", id, {
+      finished_at: finishedAt,
+      duration_ms: Number.isFinite(Number(elapsedMs)) ? Number(elapsedMs) : null,
+      status,
+      result: result || null,
+      error_code: errorCode || null,
+      error_message: errorMessage || null
+    });
+  } catch (error) {
+    logStructured("warn", "observability.persistence_failed", {
+      entity: "cron_execution",
+      operation: "finish",
+      ...errorDetails(error)
+    });
+  }
+}
+
+async function observabilityRoute(request) {
+  const user = await requireUser(request, ADMIN_ROLES);
+  if (user.response) return user.response;
+
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const [cronRecent, cronExecutionsLast24h, cronFailuresLast24h, pendingJobs, printingJobs, failedJobs, printedJobs, attempts] = await Promise.all([
+    select("cron_executions", "select=id,job_name,request_id,started_at,finished_at,duration_ms,status,result,error_code,error_message&order=started_at.desc&limit=20"),
+    count("cron_executions", `started_at=gte.${encodeURIComponent(since)}`),
+    count("cron_executions", `started_at=gte.${encodeURIComponent(since)}&status=eq.failed`),
+    count("print_jobs", "status=eq.pending"),
+    count("print_jobs", "status=eq.printing"),
+    count("print_jobs", "status=eq.failed"),
+    count("print_jobs", "status=eq.printed"),
+    select("print_job_attempts", "select=job_id,attempt_number,duration_ms,status,started_at,finished_at&order=started_at.desc&limit=1000")
+  ]);
+  const attemptMetrics = summarizePrintAttempts(attempts);
+  const latestCron = cronRecent[0] || null;
+  const latestCronFailure = cronRecent.find((item) => item.status === "failed") || null;
+
+  return json({
+    generatedAt: isoNow(),
+    alerts: {
+      webhookConfigured: Boolean(String(process.env.OBSERVABILITY_ALERT_WEBHOOK_URL || "").trim())
+    },
+    cron: {
+      executionsLast24h: Number(cronExecutionsLast24h || 0),
+      failuresLast24h: Number(cronFailuresLast24h || 0),
+      latest: latestCron,
+      latestFailure: latestCronFailure,
+      recent: cronRecent
+    },
+    printing: {
+      pendingJobs: Number(pendingJobs || 0),
+      printingJobs: Number(printingJobs || 0),
+      failedJobs: Number(failedJobs || 0),
+      printedJobs: Number(printedJobs || 0),
+      ...attemptMetrics
+    }
+  });
 }
 
 async function kioskStatusRoute(request, sessionOverride = null) {
   const session = sessionOverride || verifyKioskSession(getCookie(request, "senhahub_kiosk"), AUTH_SECRET);
   const [user, kioskRows, sectors] = await Promise.all([
     getAuthUser(request),
-    session ? select("print_kiosks", `id=eq.${encodeURIComponent(session.kioskId)}&active=eq.true&limit=1`) : [],
+    session ? select("print_kiosks", `id=eq.${encodeURIComponent(session.kioskId)}&session_nonce=eq.${encodeURIComponent(session.sessionNonce)}&active=eq.true&limit=1`) : [],
     getSectors()
   ]);
   const kiosk = kioskRows[0];
@@ -371,6 +596,7 @@ async function pairKioskRoute(request) {
     return json({ error: "Totem nao encontrado." }, 400);
   }
   const now = isoNow();
+  const sessionNonce = crypto.randomBytes(24).toString("base64url");
   await upsert("print_kiosks", {
     id: KIOSK_CONFIGURATION.id,
     name: KIOSK_CONFIGURATION.name,
@@ -382,10 +608,11 @@ async function pairKioskRoute(request) {
     paper_width_mm: KIOSK_CONFIGURATION.paperWidthMm,
     install_url: KIOSK_CONFIGURATION.installUrl,
     app_url: KIOSK_CONFIGURATION.appUrl,
+    session_nonce: sessionNonce,
     created_at: now,
     updated_at: now
   }, "id");
-  const session = createKioskSession(KIOSK_CONFIGURATION.id, AUTH_SECRET);
+  const session = createKioskSession(KIOSK_CONFIGURATION.id, AUTH_SECRET, Date.now(), sessionNonce);
   await registerEvent("totem_vinculado", "kiosk", KIOSK_CONFIGURATION.id, null, null, { userId: user.id });
   const response = await kioskStatusRoute(request, session);
   const payload = await response.json();
@@ -398,6 +625,11 @@ async function unpairKioskRoute(request) {
   if (!(await verifyCsrf(request, user))) {
     return json({ error: "Token de seguranca invalido. Recarregue a pagina e tente novamente." }, 403);
   }
+  await update("print_kiosks", KIOSK_CONFIGURATION.id, {
+    active: false,
+    session_nonce: crypto.randomBytes(24).toString("base64url"),
+    updated_at: isoNow()
+  });
   return json(
     { ok: true },
     200,
@@ -414,9 +646,12 @@ async function createPhysicalTicketRoute(request) {
   const kioskRows = await select("print_kiosks", `id=eq.${encodeURIComponent(kiosk.kioskId)}&active=eq.true&limit=1`);
   const configuredKiosk = kioskRows[0];
   if (!configuredKiosk) return json({ error: "Totem indisponivel." }, 400);
+  if (!safeEqual(configuredKiosk.session_nonce, kiosk.sessionNonce)) return json({ error: "Sessao do totem revogada. Vincule o totem novamente." }, 401);
   if (configuredKiosk.mode === "sector" && configuredKiosk.sector_id !== input.sectorId) {
     return json({ error: "Este totem esta configurado para outro setor." }, 400);
   }
+  const kioskRate = await consumeSecurityRateLimit("kiosk:issue", kiosk.kioskId, 12, 60);
+  if (kioskRate !== true) return json({ error: kioskRate === false ? "Limite de emissao atingido. Aguarde um minuto." : "Emissao temporariamente indisponivel." }, kioskRate === false ? 429 : 503);
   const priority = normalizePriority(body);
   const result = await rpc("issue_physical_ticket", {
     p_kiosk_id: kiosk.kioskId,
@@ -447,6 +682,10 @@ async function ticketTrackingRoute(request, token) {
   const rows = await select("tickets", `tracking_token=eq.${encodeURIComponent(token)}&limit=1`);
   const row = rows[0];
   if (!row) return json({ error: "Senha nao encontrada." }, 404);
+  const createdAt = new Date(row.created_at).getTime();
+  if (!Number.isFinite(createdAt) || Date.now() - createdAt > TRACKING_TOKEN_TTL_MS) {
+    return json({ error: "Este QR Code expirou." }, 404);
+  }
   return json({ ticket: publicTicketView(await safeTicketDto(row)) });
 }
 
@@ -460,7 +699,6 @@ function publicTicketView(ticket) {
     serviceLabel: ticket.serviceLabel,
     status: ticket.status,
     priority: ticket.priority,
-    priorityReason: ticket.priorityReason,
     position: ticket.position,
     ahead: ticket.ahead,
     secondsToCall: ticket.secondsToCall,
@@ -475,6 +713,8 @@ function publicTicketView(ticket) {
 async function kioskPrintJobRoute(request, jobId) {
   const kiosk = verifyKioskSession(getCookie(request, "senhahub_kiosk"), AUTH_SECRET);
   if (!kiosk) return json({ error: "Totem nao vinculado." }, 401);
+  const configuredKiosk = (await select("print_kiosks", `id=eq.${encodeURIComponent(kiosk.kioskId)}&session_nonce=eq.${encodeURIComponent(kiosk.sessionNonce)}&active=eq.true&limit=1`))[0];
+  if (!configuredKiosk) return json({ error: "Sessao do totem revogada." }, 401);
   const row = (await select(
     "print_jobs",
     `id=eq.${encodeURIComponent(jobId)}&kiosk_id=eq.${encodeURIComponent(kiosk.kioskId)}&limit=1`
@@ -488,8 +728,10 @@ async function claimPrintJobRoute(request) {
   if (agent.error) return json({ error: agent.error }, agent.status);
   const body = await readJson(request);
   const kioskId = cleanId(body.kioskId) || KIOSK_CONFIGURATION.id;
+  if (kioskId !== agent.kioskId) return json({ error: "Agente nao autorizado para este totem." }, 403);
   const row = await rpc("claim_next_print_job", { p_kiosk_id: kioskId });
   if (row?.error) return json({ error: "Nao foi possivel consultar a fila de impressao." }, 500);
+  if (row?.id) await recordPrintAttemptStart(row, kioskId);
   return json({ job: printJobDto(row) });
 }
 
@@ -497,14 +739,87 @@ async function finishPrintJobRoute(request, jobId) {
   const agent = verifyPrintAgentRequest(request.headers);
   if (agent.error) return json({ error: agent.error }, agent.status);
   const body = await readJson(request);
+  const kioskId = cleanId(body.kioskId) || KIOSK_CONFIGURATION.id;
+  if (kioskId !== agent.kioskId) return json({ error: "Agente nao autorizado para este totem." }, 403);
   const row = await rpc("finish_print_job", {
     p_job_id: jobId,
-    p_kiosk_id: cleanId(body.kioskId) || KIOSK_CONFIGURATION.id,
+    p_kiosk_id: kioskId,
     p_success: body.success === true,
     p_error: cleanLimitedText(body.error, 500) || null
   });
   if (!row || row.error) return json({ error: "Nao foi possivel concluir o trabalho de impressao." }, 400);
+  await recordPrintAttemptFinish(jobId, row.status, pErrorOrNull(body.error));
+  if (row.status === "failed") {
+    await dispatchObservabilityAlert({
+      event: "print_job.failed",
+      jobId,
+      kioskId,
+      errorMessage: pErrorOrNull(body.error) || "Falha de impressao."
+    });
+  }
   return json({ ok: true, job: printJobDto(row) });
+}
+
+function pErrorOrNull(value) {
+  return cleanLimitedText(value, 500) || null;
+}
+
+async function recordPrintAttemptStart(row, kioskId) {
+  const now = isoNow();
+  try {
+    const previous = (await select(
+      "print_job_attempts",
+      `job_id=eq.${encodeURIComponent(row.id)}&status=eq.printing&order=started_at.desc&limit=20`
+    ));
+    for (const attempt of previous) {
+      await update("print_job_attempts", attempt.id, {
+        status: "reprocessed",
+        finished_at: now,
+        duration_ms: durationMs(attempt.started_at, now),
+        error_message: "Tentativa retomada após expirar o tempo de processamento."
+      });
+    }
+    await insert("print_job_attempts", {
+      id: crypto.randomUUID(),
+      job_id: row.id,
+      kiosk_id: kioskId,
+      attempt_number: Number(row.attempts || 1),
+      started_at: row.claimed_at || now,
+      status: "printing",
+      created_at: now
+    }, false);
+  } catch (error) {
+    logStructured("warn", "observability.persistence_failed", {
+      entity: "print_job_attempt",
+      operation: "start",
+      jobId: row.id,
+      ...errorDetails(error)
+    });
+  }
+}
+
+async function recordPrintAttemptFinish(jobId, status, errorMessage) {
+  try {
+    const attempt = (await select(
+      "print_job_attempts",
+      `job_id=eq.${encodeURIComponent(jobId)}&status=eq.printing&order=started_at.desc&limit=1`
+    ))[0];
+    if (!attempt) return;
+    const finishedAt = isoNow();
+    await update("print_job_attempts", attempt.id, {
+      status: status === "printed" ? "printed" : "failed",
+      finished_at: finishedAt,
+      duration_ms: durationMs(attempt.started_at, finishedAt),
+      error_message: errorMessage || null
+    });
+  } catch (error) {
+    logStructured("warn", "observability.persistence_failed", {
+      entity: "print_job_attempt",
+      operation: "finish",
+      jobId,
+      ...errorDetails(error)
+    });
+  }
 }
 
 function kioskDto(row) {
@@ -1750,14 +2065,23 @@ async function removeCartItem(itemId, customerId) {
 }
 
 async function createRating(body) {
+  const customerId = cleanId(body.customerId);
+  const ticketId = cleanId(body.ticketId);
+  if (!customerId || !ticketId) return fail("Avalie uma senha atendida.");
+  const ticket = (await select("tickets", `id=eq.${encodeURIComponent(ticketId)}&customer_id=eq.${encodeURIComponent(customerId)}&limit=1`))[0];
+  if (!ticket || (!ticket.finished_at && ticket.status !== "atendido")) return fail("A senha ainda nao pode ser avaliada.");
+  const previous = (await select("ratings", `customer_id=eq.${encodeURIComponent(customerId)}&ticket_id=eq.${encodeURIComponent(ticketId)}&limit=1`))[0];
+  if (previous) return fail("Esta senha ja foi avaliada.");
+  const score = String(body.score || "sem_nota").slice(0, 30);
+  if (!["Ruim", "Regular", "Ótima", "sem_nota"].includes(score)) return fail("Nota de avaliacao invalida.");
   const rating = await insert("ratings", {
-    customer_id: cleanId(body.customerId),
-    ticket_id: cleanId(body.ticketId),
-    score: String(body.score || "sem_nota").slice(0, 30),
+    customer_id: customerId,
+    ticket_id: ticketId,
+    score,
     comment: String(body.comment || "").slice(0, 500),
     created_at: isoNow()
   });
-  await registerEvent("avaliacao_recebida", "rating", rating.id, cleanId(body.customerId), null, { score: body.score });
+  await registerEvent("avaliacao_recebida", "rating", rating.id, customerId, null, { score });
   return { id: rating.id, createdAt: rating.created_at };
 }
 
@@ -1779,6 +2103,8 @@ async function createUser(body) {
   const name = String(body.name || "").trim();
   const role = ["customer", "attendant", "manager", "admin"].includes(body.role) ? body.role : "attendant";
   if (!email || !name || !validateStrongPassword(password)) return fail("Informe nome, e-mail e senha com ao menos 12 caracteres, letras maiusculas, minusculas e numeros.");
+  const passwordPolicy = await validatePasswordPolicy(password);
+  if (passwordPolicy.error) return fail(passwordPolicy.error);
   const auth = await supabaseFetch("/auth/v1/admin/users", {
     method: "POST",
     body: { email, password, email_confirm: true, user_metadata: { name, role } }
@@ -2183,9 +2509,9 @@ async function removePermission(profileId, sectorId) {
   await supabaseFetch(`/rest/v1/profile_sector_permissions?profile_id=eq.${encodeURIComponent(profileId)}&sector_id=eq.${encodeURIComponent(sectorId)}`, { method: "DELETE" });
 }
 
-async function getProfile(userId, fallbackEmail = "") {
+async function getProfile(userId, fallbackEmail = "", options = {}) {
   const cached = profileCache.get(userId);
-  if (cached && cached.expiresAt > Date.now()) {
+  if (!options.bypassCache && cached && cached.expiresAt > Date.now()) {
     return { ...cached.profile, email: cached.profile.email || fallbackEmail };
   }
   const [profileRows, permissions] = await Promise.all([
@@ -2204,7 +2530,7 @@ async function getAuthUser(request) {
   const session = verifySessionToken(token);
   if (!session?.user?.id) return null;
   const [profile, appSession] = await Promise.all([
-    getProfile(session.user.id, session.email),
+    getProfile(session.user.id, session.email, { bypassCache: true }),
     getActiveAuthSession(session)
   ]);
   if (!profile || profile.status !== "active" || !appSession) return null;
@@ -2328,6 +2654,22 @@ async function consumePushRateLimit(user, request, action, limit, windowSeconds)
     p_window_seconds: windowSeconds
   });
   return result === true;
+}
+
+async function consumeSecurityRateLimit(scope, value, limit, windowSeconds) {
+  const raw = `${scope}:${String(value || "unknown")}`;
+  const rateKey = `security:${crypto.createHash("sha256").update(raw).digest("hex")}`;
+  try {
+    const result = await rpc("consume_security_rate_limit", {
+      p_rate_key: rateKey,
+      p_limit: limit,
+      p_window_seconds: windowSeconds
+    });
+    return result === true;
+  } catch (error) {
+    console.error("security_rate_limit_failed", error.message);
+    return null;
+  }
 }
 
 function cleanLimitedText(value, maximum) {
@@ -2536,19 +2878,18 @@ function validateCustomerRegistration(body) {
 }
 
 function validateStrongPassword(password, minimum = 12) {
-  return (
-    typeof password === "string" &&
-    password.length >= minimum &&
-    /[a-z]/.test(password) &&
-    /[A-Z]/.test(password) &&
-    /\d/.test(password)
-  );
+  return isStrongPassword(password, minimum);
+}
+
+async function validatePasswordPolicy(password) {
+  return passwordPolicyError(await evaluatePasswordPolicy(password));
 }
 
 function normalizePriority(body) {
-  const enabled = body.priority === true || body.priority === "true" || body.priority === "1";
+  const requested = body.priority === true || body.priority === "true" || body.priority === "1";
   const reason = cleanId(body.priorityReason);
-  return { enabled, reason: enabled && PRIORITY_CATEGORIES.has(reason) ? reason : null };
+  const enabled = requested && PRIORITY_CATEGORIES.has(reason);
+  return { enabled, reason: enabled ? reason : null };
 }
 
 function hasAnyRole(user, roles) {
@@ -2645,16 +2986,25 @@ function getCookie(request, name) {
 }
 
 function clientIp(request) {
-  return String(request.headers.get("x-forwarded-for") || "local").split(",")[0].trim();
+  const trusted = request.headers.get("x-vercel-forwarded-for") || request.headers.get("x-real-ip");
+  return String(trusted || "unknown").split(",")[0].trim() || "unknown";
 }
 
 async function readJson(request) {
   const text = await request.text();
   if (!text) return {};
   try {
-    return JSON.parse(text);
+    const parsed = JSON.parse(text);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      const error = new Error("JSON body must be an object.");
+      error.code = "INVALID_JSON";
+      throw error;
+    }
+    return parsed;
   } catch {
-    return {};
+    const error = new Error("Invalid JSON body.");
+    error.code = "INVALID_JSON";
+    throw error;
   }
 }
 
@@ -2665,6 +3015,17 @@ function json(payload, status = 200, extraHeaders = {}) {
     else headers.set(name, value);
   });
   return new Response(JSON.stringify(payload), { status, headers });
+}
+
+function withRequestId(response, requestId) {
+  if (!response) return json({ error: "Resposta vazia do servidor." }, 500, { "x-request-id": requestId });
+  const headers = new Headers(response.headers);
+  headers.set("x-request-id", requestId);
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers
+  });
 }
 
 function securityHeaders(extra = {}) {

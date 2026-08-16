@@ -74,6 +74,7 @@
               <input name="password" type="password" autocomplete="new-password" placeholder="Crie uma senha segura" minlength="12" required />
               <button class="password-toggle" type="button" aria-label="Mostrar senha" data-toggle-password>Ver</button>
             </label>
+            <p class="login-hint"><strong>Senha segura</strong><span>Use 12 ou mais caracteres, com maiusculas, minusculas e numeros. Senhas comuns ou expostas em vazamentos sao recusadas.</span></p>
             <label class="password-field">
               Confirmar senha
               <input name="confirmPassword" type="password" autocomplete="new-password" placeholder="Repita a senha" minlength="12" required />
@@ -98,6 +99,7 @@
               <input name="newPassword" type="password" autocomplete="new-password" placeholder="Digite a nova senha" minlength="12" required />
               <button class="password-toggle" type="button" aria-label="Mostrar senha" data-toggle-password>Ver</button>
             </label>
+            <p class="login-hint"><strong>Protecao contra vazamentos</strong><span>A nova senha e validada no servidor sem enviar a senha completa para servicos externos.</span></p>
             <button class="yellow-action" data-online-required>Salvar nova senha</button>
             <p class="login-error" id="passwordError"></p>
           </form>
@@ -117,6 +119,7 @@
               <input name="newPassword" type="password" autocomplete="new-password" placeholder="Crie uma senha forte" minlength="12" required />
               <button class="password-toggle" type="button" aria-label="Mostrar senha" data-toggle-password>Ver</button>
             </label>
+            <p class="login-hint"><strong>Escolha uma senha exclusiva</strong><span>Senhas comuns ou encontradas em vazamentos nao podem ser usadas.</span></p>
             <label class="password-field">
               Confirmar nova senha
               <input name="confirmPassword" type="password" autocomplete="new-password" placeholder="Repita a senha" minlength="12" required />

@@ -23,8 +23,24 @@ const {
   verifyKioskSession,
   verifyPrintAgentRequest
 } = require("./print-kiosk-service");
+const {
+  evaluatePasswordPolicy,
+  isStrongPassword,
+  passwordPolicyError
+} = require("./password-policy");
+const {
+  createRequestContext,
+  dispatchObservabilityAlert,
+  durationMs,
+  errorDetails,
+  finishRequest,
+  logStructured,
+  summarizePrintAttempts
+} = require("./observability");
+const { healthResponse } = require("./production-readiness");
 
 const ROOT = path.resolve(__dirname, "..");
+loadEnvFile(path.join(ROOT, ".env.local"));
 loadEnvFile(path.join(ROOT, ".env"));
 
 const PORT = Number(process.env.PORT || 3000);
@@ -51,6 +67,7 @@ const pushNotificationService = new PushNotificationService({
 const PRESENCE_CHECK_ENABLED = false;
 const MAX_ACTIVE_TICKETS_PER_CUSTOMER = 3;
 const AUTO_CALL_DELAY_SECONDS = 30;
+const TRACKING_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const CALL_ABSENCE_SECONDS = 10 * 60;
 const STANDBY_SECONDS = 10 * 60;
 const TICKET_MIN_NUMBER = 0;
@@ -121,6 +138,7 @@ function startStandaloneServer() {
 
 function createHttpServer() {
   const server = http.createServer(async (req, res) => {
+    ensureRequestObservation(req, res);
     try {
       applySecurityHeaders(req, res);
       const url = new URL(req.url, `http://${req.headers.host}`);
@@ -130,7 +148,12 @@ function createHttpServer() {
       }
       await handlePage(req, res, url);
     } catch (error) {
-      console.error(error);
+      logStructured("error", "request.unhandled_error", {
+        requestId: req.observability?.requestId,
+        method: req.method,
+        path: req.url,
+        ...errorDetails(error)
+      });
       sendJson(res, 500, { error: "Erro interno do servidor." });
     }
   });
@@ -419,6 +442,7 @@ function bootstrap() {
       printer_port TEXT NOT NULL,
       paper_width_mm INTEGER NOT NULL DEFAULT 80,
       install_url TEXT NOT NULL,
+      session_nonce TEXT,
       last_seen_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
@@ -442,6 +466,35 @@ function bootstrap() {
       FOREIGN KEY (kiosk_id) REFERENCES print_kiosks(id)
     );
 
+    CREATE TABLE IF NOT EXISTS cron_executions (
+      id TEXT PRIMARY KEY,
+      job_name TEXT NOT NULL,
+      request_id TEXT,
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      duration_ms INTEGER,
+      status TEXT NOT NULL DEFAULT 'running',
+      result_json TEXT,
+      error_code TEXT,
+      error_message TEXT,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS print_job_attempts (
+      id TEXT PRIMARY KEY,
+      job_id TEXT NOT NULL,
+      kiosk_id TEXT NOT NULL,
+      attempt_number INTEGER NOT NULL,
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      duration_ms INTEGER,
+      status TEXT NOT NULL DEFAULT 'printing',
+      error_message TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (job_id) REFERENCES print_jobs(id) ON DELETE CASCADE,
+      FOREIGN KEY (kiosk_id) REFERENCES print_kiosks(id) ON DELETE RESTRICT
+    );
+
     CREATE INDEX IF NOT EXISTS idx_cart_items_created_at ON cart_items(created_at);
     CREATE INDEX IF NOT EXISTS idx_cart_items_product ON cart_items(product_id);
     CREATE INDEX IF NOT EXISTS idx_cart_items_customer_created ON cart_items(customer_id, created_at);
@@ -457,6 +510,10 @@ function bootstrap() {
     CREATE INDEX IF NOT EXISTS idx_push_notification_events_ticket_type ON push_notification_events(ticket_id, event_type);
     CREATE INDEX IF NOT EXISTS idx_push_rate_limits_updated_at ON push_rate_limits(updated_at);
     CREATE INDEX IF NOT EXISTS idx_print_jobs_kiosk_status_created ON print_jobs(kiosk_id, status, created_at);
+    CREATE INDEX IF NOT EXISTS idx_cron_executions_job_started ON cron_executions(job_name, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_cron_executions_status_started ON cron_executions(status, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_print_job_attempts_job_started ON print_job_attempts(job_id, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_print_job_attempts_status_finished ON print_job_attempts(status, finished_at DESC);
 
     CREATE TABLE IF NOT EXISTS login_attempts (
       attempt_key TEXT PRIMARY KEY,
@@ -465,6 +522,17 @@ function bootstrap() {
       locked_until INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS security_rate_limits (
+      rate_key TEXT PRIMARY KEY,
+      window_started_at TEXT NOT NULL,
+      request_count INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_ratings_customer_ticket_unique
+      ON ratings(customer_id, ticket_id)
+      WHERE ticket_id IS NOT NULL;
   `);
 
   migrateSchema();
@@ -525,7 +593,8 @@ function migrateSchema() {
   const kioskColumns = db.prepare("PRAGMA table_info(print_kiosks)").all().map((column) => column.name);
   [
     ["mode", "ALTER TABLE print_kiosks ADD COLUMN mode TEXT NOT NULL DEFAULT 'central'"],
-    ["sector_id", "ALTER TABLE print_kiosks ADD COLUMN sector_id TEXT"]
+    ["sector_id", "ALTER TABLE print_kiosks ADD COLUMN sector_id TEXT"],
+    ["session_nonce", "ALTER TABLE print_kiosks ADD COLUMN session_nonce TEXT"]
   ].forEach(([column, sql]) => {
     if (!kioskColumns.includes(column)) db.exec(sql);
   });
@@ -533,12 +602,14 @@ function migrateSchema() {
 
 function seedPrintKiosk() {
   const now = isoNow();
+  const existing = db.prepare("SELECT session_nonce FROM print_kiosks WHERE id = ?").get(KIOSK_CONFIGURATION.id);
+  const sessionNonce = existing?.session_nonce || crypto.randomBytes(24).toString("base64url");
   db.prepare(`
     INSERT INTO print_kiosks (
       id, name, active, mode, sector_id, printer_name, printer_port, paper_width_mm, install_url,
-      last_seen_at, created_at, updated_at
+      session_nonce, last_seen_at, created_at, updated_at
     )
-    VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
+    VALUES (?, ?, 1, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       mode = excluded.mode,
@@ -557,18 +628,77 @@ function seedPrintKiosk() {
     KIOSK_CONFIGURATION.printerPort,
     KIOSK_CONFIGURATION.paperWidthMm,
     KIOSK_CONFIGURATION.installUrl,
+    sessionNonce,
     now,
     now
   );
 }
 
+function ensureRequestObservation(req, res, url = null) {
+  if (req.observability) return req.observability;
+  const context = createRequestContext({
+    method: req.method,
+    path: url?.pathname || String(req.url || "").split("?")[0],
+    headers: req.headers
+  });
+  req.observability = context;
+  if (typeof res.setHeader === "function") res.setHeader("x-request-id", context.requestId);
+  logStructured("info", "request.started", {
+    requestId: context.requestId,
+    method: context.method,
+    path: context.path
+  });
+  if (typeof res.once === "function") {
+    res.once("finish", () => finishRequestObservation(req, res));
+  }
+  return context;
+}
+
+function finishRequestObservation(req, res) {
+  const context = req.observability;
+  if (!context || context.finished) return;
+  context.finished = true;
+  finishRequest(context, Number(res.statusCode || 200));
+}
+
 async function handleApi(req, res, url) {
+  ensureRequestObservation(req, res, url);
+  try {
+    await handleApiInternal(req, res, url);
+  } catch (error) {
+    if (error?.code === "INVALID_JSON") {
+      sendJson(res, 400, { error: "O corpo da requisicao precisa ser um JSON valido." });
+      return;
+    }
+    logStructured("error", "request.api_error", {
+      requestId: req.observability?.requestId,
+      method: req.method,
+      path: url.pathname,
+      ...errorDetails(error)
+    });
+    sendJson(res, 500, { error: "Erro interno do servidor." });
+  } finally {
+    finishRequestObservation(req, res);
+  }
+}
+
+async function handleApiInternal(req, res, url) {
+  if (req.method === "GET" && url.pathname === "/api/health") {
+    const health = healthResponse(process.env);
+    sendJson(res, health.ok ? 200 : 503, health);
+    return;
+  }
   if (req.method === "GET" && url.pathname === "/api/internal/jobs") {
-    handleInternalJobs(req, res);
+    await handleInternalJobs(req, res);
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/config") {
     sendJson(res, 200, { presenceCheckEnabled: PRESENCE_CHECK_ENABLED });
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/observability") {
+    if (!requireAuth(req, res, ADMIN_ROLES)) return;
+    sendJson(res, 200, getObservabilityMetrics());
     return;
   }
   maybeRunScheduledJobs();
@@ -632,6 +762,11 @@ async function handleApi(req, res, url) {
       sendJson(res, 404, { error: "Senha nao encontrada." });
       return;
     }
+    const createdAt = new Date(row.created_at).getTime();
+    if (!Number.isFinite(createdAt) || Date.now() - createdAt > TRACKING_TOKEN_TTL_MS) {
+      sendJson(res, 404, { error: "Este QR Code expirou." });
+      return;
+    }
     sendJson(res, 200, { ticket: publicTicketView(ticketDto(row)) });
     return;
   }
@@ -650,7 +785,10 @@ async function handleApi(req, res, url) {
       sendJson(res, 400, { error: "Totem nao encontrado." });
       return;
     }
-    const session = createKioskSession(KIOSK_CONFIGURATION.id, AUTH_SECRET);
+    const sessionNonce = crypto.randomBytes(24).toString("base64url");
+    db.prepare("UPDATE print_kiosks SET active = 1, session_nonce = ?, updated_at = ? WHERE id = ?")
+      .run(sessionNonce, isoNow(), KIOSK_CONFIGURATION.id);
+    const session = createKioskSession(KIOSK_CONFIGURATION.id, AUTH_SECRET, Date.now(), sessionNonce);
     kioskCookies(session, !dev).forEach((cookie) => appendCookie(res, cookie));
     registerEvent("totem_vinculado", "kiosk", KIOSK_CONFIGURATION.id, null, null, { userId: user.id });
     sendJson(res, 200, getKioskStatus(req, session));
@@ -661,6 +799,8 @@ async function handleApi(req, res, url) {
     const user = requireAuth(req, res, ADMIN_ROLES);
     if (!user) return;
     if (!verifyCsrf(req, res, user)) return;
+    db.prepare("UPDATE print_kiosks SET active = 0, session_nonce = ?, updated_at = ? WHERE id = ?")
+      .run(crypto.randomBytes(24).toString("base64url"), isoNow(), KIOSK_CONFIGURATION.id);
     clearKioskCookies(!dev).forEach((cookie) => appendCookie(res, cookie));
     sendJson(res, 200, { ok: true });
     return;
@@ -685,7 +825,11 @@ async function handleApi(req, res, url) {
       sendJson(res, 401, { error: "Totem nao vinculado." });
       return;
     }
-    const row = db.prepare("SELECT * FROM print_jobs WHERE id = ? AND kiosk_id = ?").get(kioskPrintJob[1], kiosk.kioskId);
+    const activeKiosk = db.prepare("SELECT id FROM print_kiosks WHERE id = ? AND active = 1 AND session_nonce = ?")
+      .get(kiosk.kioskId, kiosk.sessionNonce);
+    const row = activeKiosk
+      ? db.prepare("SELECT * FROM print_jobs WHERE id = ? AND kiosk_id = ?").get(kioskPrintJob[1], kiosk.kioskId)
+      : null;
     if (!row) {
       sendJson(res, 404, { error: "Trabalho de impressao nao encontrado." });
       return;
@@ -701,7 +845,12 @@ async function handleApi(req, res, url) {
       return;
     }
     const body = await readBody(req);
-    sendJson(res, 200, { job: claimNextPrintJob(cleanId(body.kioskId) || KIOSK_CONFIGURATION.id) });
+    const kioskId = cleanId(body.kioskId) || KIOSK_CONFIGURATION.id;
+    if (kioskId !== agent.kioskId) {
+      sendJson(res, 403, { error: "Agente nao autorizado para este totem." });
+      return;
+    }
+    sendJson(res, 200, { job: claimNextPrintJob(kioskId) });
     return;
   }
 
@@ -713,9 +862,14 @@ async function handleApi(req, res, url) {
       return;
     }
     const body = await readBody(req);
+    const kioskId = cleanId(body.kioskId) || KIOSK_CONFIGURATION.id;
+    if (kioskId !== agent.kioskId) {
+      sendJson(res, 403, { error: "Agente nao autorizado para este totem." });
+      return;
+    }
     const result = finishPrintJob(
       printFinish[1],
-      cleanId(body.kioskId) || KIOSK_CONFIGURATION.id,
+      kioskId,
       body.success === true,
       body.error
     );
@@ -1036,7 +1190,7 @@ async function handleApi(req, res, url) {
     if (!user) return;
     if (!verifyCsrf(req, res, user)) return;
     const body = await readBody(req);
-    const result = createUser(body);
+    const result = await createUser(body);
     broadcast();
     sendApiResult(res, 201, result);
     return;
@@ -1045,8 +1199,29 @@ async function handleApi(req, res, url) {
   sendJson(res, 404, { error: "Rota não encontrada." });
 }
 
-function handleInternalJobs(req, res) {
+async function handleInternalJobs(req, res) {
+  const context = req.observability || ensureRequestObservation(req, res);
+  const executionId = crypto.randomUUID();
+  const startedAt = isoNow();
+
   if (!CRON_SECRET) {
+    recordCronExecutionStart(executionId, context.requestId, startedAt);
+    const finishedAt = isoNow();
+    recordCronExecutionFinish(executionId, {
+      finishedAt,
+      status: "failed",
+      durationMs: durationMs(startedAt, finishedAt),
+      errorCode: "CRON_SECRET_MISSING",
+      errorMessage: "CRON_SECRET nao configurado."
+    });
+    await dispatchObservabilityAlert({
+      event: "cron.failed",
+      requestId: context.requestId,
+      jobName: "internal_jobs",
+      executionId,
+      errorCode: "CRON_SECRET_MISSING",
+      errorMessage: "CRON_SECRET nao configurado."
+    });
     sendJson(res, 503, { error: "CRON_SECRET nao configurado." });
     return;
   }
@@ -1057,13 +1232,149 @@ function handleInternalJobs(req, res) {
     sendJson(res, 401, { error: "Nao autorizado." });
     return;
   }
+
+  recordCronExecutionStart(executionId, context.requestId, startedAt);
+  logStructured("info", "cron.started", {
+    requestId: context.requestId,
+    jobName: "internal_jobs",
+    executionId
+  });
   try {
-    const startedAt = Date.now();
     runScheduledJobs();
-    sendJson(res, 200, { ok: true, durationMs: Date.now() - startedAt, executedAt: isoNow() });
+    const finishedAt = isoNow();
+    const executionDurationMs = durationMs(startedAt, finishedAt);
+    recordCronExecutionFinish(executionId, {
+      finishedAt,
+      status: "succeeded",
+      durationMs: executionDurationMs,
+      result: { ok: true }
+    });
+    logStructured("info", "cron.finished", {
+      requestId: context.requestId,
+      jobName: "internal_jobs",
+      executionId,
+      status: "succeeded",
+      durationMs: executionDurationMs
+    });
+    sendJson(res, 200, { ok: true, durationMs: executionDurationMs, executedAt: finishedAt, requestId: context.requestId });
   } catch (error) {
-    console.error("internal_jobs_failed", error);
+    const finishedAt = isoNow();
+    const details = errorDetails(error);
+    const executionDurationMs = durationMs(startedAt, finishedAt);
+    recordCronExecutionFinish(executionId, {
+      finishedAt,
+      status: "failed",
+      durationMs: executionDurationMs,
+      errorCode: details.errorCode,
+      errorMessage: details.errorMessage
+    });
+    logStructured("error", "cron.finished", {
+      requestId: context.requestId,
+      jobName: "internal_jobs",
+      executionId,
+      status: "failed",
+      durationMs: executionDurationMs,
+      ...details
+    });
+    await dispatchObservabilityAlert({
+      event: "cron.failed",
+      requestId: context.requestId,
+      jobName: "internal_jobs",
+      executionId,
+      durationMs: executionDurationMs,
+      ...details
+    });
     sendJson(res, 500, { error: "Falha ao executar jobs internos." });
+  }
+}
+
+function recordCronExecutionStart(id, requestId, startedAt) {
+  db.prepare(`
+    INSERT INTO cron_executions (
+      id, job_name, request_id, started_at, status, created_at
+    ) VALUES (?, ?, ?, ?, 'running', ?)
+  `).run(id, "internal_jobs", requestId || null, startedAt, startedAt);
+}
+
+function recordCronExecutionFinish(id, { finishedAt, status, durationMs: elapsedMs, result, errorCode, errorMessage }) {
+  db.prepare(`
+    UPDATE cron_executions
+    SET finished_at = ?, duration_ms = ?, status = ?, result_json = ?, error_code = ?, error_message = ?
+    WHERE id = ?
+  `).run(
+    finishedAt,
+    Number.isFinite(Number(elapsedMs)) ? Number(elapsedMs) : null,
+    status,
+    result ? JSON.stringify(result) : null,
+    errorCode || null,
+    errorMessage || null,
+    id
+  );
+}
+
+function getObservabilityMetrics() {
+  const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const cronRecentRows = db.prepare(`
+    SELECT id, job_name, request_id, started_at, finished_at, duration_ms, status,
+           result_json, error_code, error_message
+    FROM cron_executions
+    ORDER BY started_at DESC
+    LIMIT 20
+  `).all();
+  const cronRecent = cronRecentRows.map(({ result_json: resultJson, ...row }) => ({
+    ...row,
+    result: parseJsonValue(resultJson)
+  }));
+  const cronLast24h = db.prepare(`
+    SELECT COUNT(*) AS total,
+           SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failures
+    FROM cron_executions
+    WHERE started_at >= ?
+  `).get(since);
+  const printStatuses = db.prepare(`
+    SELECT status, COUNT(*) AS total
+    FROM print_jobs
+    GROUP BY status
+  `).all();
+  const attempts = db.prepare(`
+    SELECT job_id, attempt_number, duration_ms, status, started_at, finished_at
+    FROM print_job_attempts
+    ORDER BY started_at DESC
+    LIMIT 1000
+  `).all();
+  const attemptMetrics = summarizePrintAttempts(attempts);
+  const statusTotals = Object.fromEntries(printStatuses.map((item) => [item.status, Number(item.total)]));
+  const latestCron = cronRecent[0] || null;
+  const latestCronFailure = cronRecent.find((item) => item.status === "failed") || null;
+
+  return {
+    generatedAt: isoNow(),
+    alerts: {
+      webhookConfigured: Boolean(String(process.env.OBSERVABILITY_ALERT_WEBHOOK_URL || "").trim())
+    },
+    cron: {
+      executionsLast24h: Number(cronLast24h?.total || 0),
+      failuresLast24h: Number(cronLast24h?.failures || 0),
+      latest: latestCron,
+      latestFailure: latestCronFailure,
+      recent: cronRecent
+    },
+    printing: {
+      pendingJobs: statusTotals.pending || 0,
+      printingJobs: statusTotals.printing || 0,
+      failedJobs: statusTotals.failed || 0,
+      printedJobs: statusTotals.printed || 0,
+      ...attemptMetrics
+    }
+  };
+}
+
+function parseJsonValue(value) {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
   }
 }
 
@@ -1177,7 +1488,7 @@ function seedProductionBootstrapUser() {
     password,
     role: "manager",
     sectorIds: []
-  });
+  }, { skipPasswordPolicy: true });
 }
 
 function deactivateLegacySeedUsers() {
@@ -1195,7 +1506,7 @@ function deactivateLegacySeedUsers() {
 function seedUser(user) {
   const email = String(user.email || "").trim().toLowerCase();
   if (db.prepare("SELECT 1 FROM users WHERE email = ?").get(email)) return;
-  createUser({ ...user, email });
+  createUser({ ...user, email }, { skipPasswordPolicy: true });
 }
 
 function isLoginLocked(key) {
@@ -1269,6 +1580,8 @@ async function resetPassword(body, req) {
   if (!accessToken || !validateStrongPassword(newPassword)) {
     return { error: "Link de recuperacao invalido ou senha fraca. Use ao menos 12 caracteres, letras maiusculas, minusculas e numeros." };
   }
+  const passwordPolicy = await validatePasswordPolicy(newPassword);
+  if (passwordPolicy.error) return passwordPolicy;
   const attemptKey = `${clientIp(req)}:reset-password`;
   if (isLoginLocked(attemptKey)) return { error: "Muitas tentativas. Aguarde alguns minutos e tente novamente." };
   registerLoginFailure(attemptKey);
@@ -1304,16 +1617,23 @@ function validateCustomerRegistration(body) {
   return { email, name, password };
 }
 
-function registerLocalCustomer(body, req) {
+async function registerLocalCustomer(body, req) {
   const data = validateCustomerRegistration(body);
   if (data.error) return data;
+  const passwordPolicy = await validatePasswordPolicy(data.password);
+  if (passwordPolicy.error) return passwordPolicy;
+
+  if (!consumeSecurityRateLimit("register:ip", clientIp(req), 12, 15 * 60)
+    || !consumeSecurityRateLimit("register:email", data.email, 5, 60 * 60)) {
+    return { error: "Muitas tentativas de cadastro. Aguarde alguns minutos." };
+  }
 
   const attemptKey = `${clientIp(req)}:${data.email}:register`;
   if (isLoginLocked(attemptKey)) {
     return { error: "Muitas tentativas. Aguarde alguns minutos e tente novamente." };
   }
 
-  const result = createUser({
+  const result = await createUser({
     name: data.name,
     email: data.email,
     password: data.password,
@@ -1360,13 +1680,15 @@ function loginLocalUser(body, req) {
   return { sessionId, sessionToken, csrfToken, user: userDto(user) };
 }
 
-function changeLocalPassword(body, req) {
+async function changeLocalPassword(body, req) {
   const email = String(body.email || "").trim().toLowerCase();
   const currentPassword = String(body.currentPassword || "");
   const newPassword = String(body.newPassword || "");
   if (!email || !currentPassword || !validateStrongPassword(newPassword)) {
     return { error: "Informe e-mail, senha atual e uma nova senha forte com ao menos 12 caracteres, letras maiusculas, minusculas e numeros." };
   }
+  const passwordPolicy = await validatePasswordPolicy(newPassword);
+  if (passwordPolicy.error) return passwordPolicy;
 
   const attemptKey = `${clientIp(req)}:${email || "unknown"}:change-password`;
   if (isLoginLocked(attemptKey)) {
@@ -1432,9 +1754,11 @@ async function changeSupabasePassword(body, req) {
   const email = String(body.email || "").trim().toLowerCase();
   const currentPassword = String(body.currentPassword || "");
   const newPassword = String(body.newPassword || "");
-  if (!email || !currentPassword || newPassword.length < 8) {
-    return { error: "Informe e-mail, senha atual e nova senha com ao menos 8 caracteres." };
+  if (!email || !currentPassword || !validateStrongPassword(newPassword)) {
+    return { error: "Informe e-mail, senha atual e uma nova senha forte com ao menos 12 caracteres, letras maiusculas, minusculas e numeros." };
   }
+  const passwordPolicy = await validatePasswordPolicy(newPassword);
+  if (passwordPolicy.error) return passwordPolicy;
 
   const attemptKey = `${clientIp(req)}:${email || "unknown"}:change-password`;
   if (isLoginLocked(attemptKey)) {
@@ -1476,6 +1800,13 @@ async function revokeSupabaseAuthSessions(userId) {
 async function registerSupabaseCustomer(body, req) {
   const data = validateCustomerRegistration(body);
   if (data.error) return data;
+  const passwordPolicy = await validatePasswordPolicy(data.password);
+  if (passwordPolicy.error) return passwordPolicy;
+
+  if (!consumeSecurityRateLimit("register:ip", clientIp(req), 12, 15 * 60)
+    || !consumeSecurityRateLimit("register:email", data.email, 5, 60 * 60)) {
+    return { error: "Muitas tentativas de cadastro. Aguarde alguns minutos." };
+  }
 
   const attemptKey = `${clientIp(req)}:${data.email}:register`;
   if (isLoginLocked(attemptKey)) {
@@ -1487,7 +1818,7 @@ async function registerSupabaseCustomer(body, req) {
     body: {
       email: data.email,
       password: data.password,
-      email_confirm: true,
+      email_confirm: process.env.SUPABASE_AUTO_CONFIRM_CUSTOMERS === "1",
       user_metadata: { name: data.name, role: "customer" }
     }
   });
@@ -1746,6 +2077,26 @@ function verifyPushRequestOrigin(req, res) {
   return false;
 }
 
+function consumeSecurityRateLimit(scope, value, limit, windowSeconds) {
+  const raw = `${scope}:${String(value || "unknown")}`;
+  const rateKey = `security:${crypto.createHash("sha256").update(raw).digest("hex")}`;
+  const now = Date.now();
+  const current = db.prepare("SELECT * FROM security_rate_limits WHERE rate_key = ?").get(rateKey);
+  const windowStartedAt = current ? new Date(current.window_started_at).getTime() : 0;
+  const reset = !Number.isFinite(windowStartedAt) || now - windowStartedAt >= windowSeconds * 1000;
+  const count = reset ? 1 : Number(current.request_count || 0) + 1;
+  const startedAt = reset ? new Date(now).toISOString() : current.window_started_at;
+  db.prepare(`
+    INSERT INTO security_rate_limits (rate_key, window_started_at, request_count, updated_at)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(rate_key) DO UPDATE SET
+      window_started_at = excluded.window_started_at,
+      request_count = excluded.request_count,
+      updated_at = excluded.updated_at
+  `).run(rateKey, startedAt, count, isoNow());
+  return count <= limit;
+}
+
 function consumePushRateLimit(user, req, action, limit, windowSeconds) {
   const raw = `${user.id}:${clientIp(req)}:${action}`;
   const rateKey = `push:${crypto.createHash("sha256").update(raw).digest("hex")}`;
@@ -1983,7 +2334,7 @@ async function listSupabaseUsers() {
   }));
 }
 
-function createUser(body) {
+async function createUser(body, { skipPasswordPolicy = false } = {}) {
   if (isSupabaseConfigured()) {
     return fail("Crie usuarios em Supabase > Authentication > Users. O app apenas le os perfis do Supabase.");
   }
@@ -1993,6 +2344,10 @@ function createUser(body) {
   const name = String(body.name || "").trim();
   const password = String(body.password || "");
   if (!email || !name || !validateStrongPassword(password)) return fail("Informe nome, e-mail e senha com ao menos 12 caracteres, letras maiusculas, minusculas e numeros.");
+  if (!skipPasswordPolicy) {
+    const passwordPolicy = await validatePasswordPolicy(password);
+    if (passwordPolicy.error) return passwordPolicy;
+  }
 
   const existing = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
   if (existing) return fail("Já existe um usuário com este e-mail.");
@@ -2174,7 +2529,7 @@ function getKioskStatus(req, sessionOverride = null) {
   const session = sessionOverride || verifyKioskSession(getCookie(req, "senhahub_kiosk"), AUTH_SECRET);
   const user = getAuthUser(req);
   const row = session
-    ? db.prepare("SELECT * FROM print_kiosks WHERE id = ? AND active = 1").get(session.kioskId)
+    ? db.prepare("SELECT * FROM print_kiosks WHERE id = ? AND active = 1 AND session_nonce = ?").get(session.kioskId, session.sessionNonce)
     : null;
   return {
     paired: Boolean(row),
@@ -2207,6 +2562,7 @@ function createPhysicalTicket(kioskSession, body) {
   if (input.error) return input;
   const kiosk = db.prepare("SELECT * FROM print_kiosks WHERE id = ? AND active = 1").get(kioskSession.kioskId);
   if (!kiosk) return fail("Totem indisponivel.");
+  if (!safeEqual(kiosk.session_nonce, kioskSession.sessionNonce)) return fail("Sessao do totem revogada. Vincule o totem novamente.");
   const sector = getSector(input.sectorId);
   if (!sector) return fail("Setor nao encontrado.");
   if (kiosk.mode === "sector" && kiosk.sector_id !== sector.id) return fail("Este totem esta configurado para outro setor.");
@@ -2220,6 +2576,10 @@ function createPhysicalTicket(kioskSession, body) {
       printJob: printJobDto(previous),
       alreadyExists: true
     };
+  }
+
+  if (!consumeSecurityRateLimit("kiosk:issue", kioskSession.kioskId, 12, 60)) {
+    return fail("Limite de emissao atingido. Aguarde um minuto.");
   }
 
   const result = runInTransaction(() => {
@@ -2315,13 +2675,31 @@ function claimNextPrintJob(kioskId) {
     const now = isoNow();
     db.prepare("UPDATE print_kiosks SET last_seen_at = ?, updated_at = ? WHERE id = ?").run(now, now, kioskId);
     if (!row) return null;
+    const previousAttempts = db.prepare(`
+      SELECT id, started_at
+      FROM print_job_attempts
+      WHERE job_id = ? AND status = 'printing'
+    `).all(row.id);
+    previousAttempts.forEach((attempt) => {
+      db.prepare(`
+        UPDATE print_job_attempts
+        SET status = 'reprocessed', finished_at = ?, duration_ms = ?, error_message = ?
+        WHERE id = ?
+      `).run(now, durationMs(attempt.started_at, now), "Tentativa retomada após expirar o tempo de processamento.", attempt.id);
+    });
     db.prepare(`
       UPDATE print_jobs
       SET status = 'printing', attempts = attempts + 1, claimed_at = ?,
           failed_at = NULL, last_error = NULL, updated_at = ?
       WHERE id = ?
     `).run(now, now, row.id);
-    return printJobDto(db.prepare("SELECT * FROM print_jobs WHERE id = ?").get(row.id));
+    const claimed = db.prepare("SELECT * FROM print_jobs WHERE id = ?").get(row.id);
+    db.prepare(`
+      INSERT INTO print_job_attempts (
+        id, job_id, kiosk_id, attempt_number, started_at, status, created_at
+      ) VALUES (?, ?, ?, ?, ?, 'printing', ?)
+    `).run(crypto.randomUUID(), row.id, kioskId, Number(claimed.attempts), now, now);
+    return printJobDto(claimed);
   });
 }
 
@@ -2337,6 +2715,28 @@ function finishPrintJob(jobId, kioskId, success, errorMessage) {
     WHERE id = ? AND kiosk_id = ? AND status = 'printing'
   `).run(success ? "printed" : "failed", success ? now : null, success ? null : now, error, now, jobId, kioskId);
   db.prepare("UPDATE print_kiosks SET last_seen_at = ?, updated_at = ? WHERE id = ?").run(now, now, kioskId);
+  const attempt = db.prepare(`
+    SELECT id, started_at
+    FROM print_job_attempts
+    WHERE job_id = ? AND status = 'printing'
+    ORDER BY started_at DESC
+    LIMIT 1
+  `).get(jobId);
+  if (attempt) {
+    db.prepare(`
+      UPDATE print_job_attempts
+      SET status = ?, finished_at = ?, duration_ms = ?, error_message = ?
+      WHERE id = ?
+    `).run(success ? "printed" : "failed", now, durationMs(attempt.started_at, now), error, attempt.id);
+  }
+  if (!success) {
+    void dispatchObservabilityAlert({
+      event: "print_job.failed",
+      jobId,
+      kioskId,
+      errorMessage: error
+    });
+  }
   return {
     ok: true,
     job: printJobDto(db.prepare("SELECT * FROM print_jobs WHERE id = ?").get(jobId))
@@ -2845,11 +3245,20 @@ function updateSector(sectorId, body) {
 }
 
 function createRating(body) {
+  const customerId = cleanId(body.customerId);
+  const ticketId = cleanId(body.ticketId);
+  if (!customerId || !ticketId) return fail("Avalie uma senha atendida.");
+  const ticket = db.prepare("SELECT * FROM tickets WHERE id = ? AND customer_id = ?").get(ticketId, customerId);
+  if (!ticket || (!ticket.finished_at && ticket.status !== "atendido")) return fail("A senha ainda nao pode ser avaliada.");
+  const previous = db.prepare("SELECT 1 FROM ratings WHERE customer_id = ? AND ticket_id = ? LIMIT 1").get(customerId, ticketId);
+  if (previous) return fail("Esta senha ja foi avaliada.");
+  const score = String(body.score || "sem_nota").slice(0, 30);
+  if (!["Ruim", "Regular", "Ótima", "sem_nota"].includes(score)) return fail("Nota de avaliacao invalida.");
   const id = `rating-${crypto.randomUUID()}`;
   const now = isoNow();
   db.prepare("INSERT INTO ratings (id, customer_id, ticket_id, score, comment, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-    .run(id, cleanId(body.customerId) || "anonymous", cleanId(body.ticketId), String(body.score || "sem_nota"), String(body.comment || ""), now);
-  registerEvent("avaliacao_recebida", "rating", id, cleanId(body.customerId), null, { score: body.score });
+    .run(id, customerId, ticketId, score, String(body.comment || "").slice(0, 500), now);
+  registerEvent("avaliacao_recebida", "rating", id, customerId, null, { score });
   return { id, createdAt: now };
 }
 
@@ -3413,7 +3822,6 @@ function publicTicketView(ticket) {
     serviceLabel: ticket.serviceLabel,
     status: ticket.status,
     priority: ticket.priority,
-    priorityReason: ticket.priorityReason,
     position: ticket.position,
     ahead: ticket.ahead,
     secondsToCall: ticket.secondsToCall,
@@ -3678,13 +4086,11 @@ function verifyPassword(password, salt, expectedHash) {
 }
 
 function validateStrongPassword(password, minimum = 12) {
-  return (
-    typeof password === "string" &&
-    password.length >= minimum &&
-    /[a-z]/.test(password) &&
-    /[A-Z]/.test(password) &&
-    /\d/.test(password)
-  );
+  return isStrongPassword(password, minimum);
+}
+
+async function validatePasswordPolicy(password) {
+  return passwordPolicyError(await evaluatePasswordPolicy(password));
 }
 
 function safeEqual(left, right) {
@@ -3701,7 +4107,10 @@ function getCookie(req, name) {
 }
 
 function clientIp(req) {
-  return String(req.headers["x-forwarded-for"] || req.socket?.remoteAddress || "local").split(",")[0].trim();
+  const trusted = process.env.TRUST_PROXY_HEADERS === "1"
+    ? (req.headers["x-vercel-forwarded-for"] || req.headers["x-real-ip"])
+    : "";
+  return String(trusted || req.socket?.remoteAddress || "unknown").split(",")[0].trim() || "unknown";
 }
 
 function placeholders(values) {
@@ -3718,7 +4127,8 @@ function sendJson(res, status, payload) {
 }
 
 function sendApiResult(res, status, payload) {
-  sendJson(res, payload?.error ? 400 : status, payload);
+  const { httpStatus, ...publicPayload } = payload || {};
+  sendJson(res, payload?.error ? httpStatus || 400 : status, publicPayload);
 }
 
 function readBody(req) {
@@ -3737,9 +4147,18 @@ function readBody(req) {
         return;
       }
       try {
-        resolve(JSON.parse(body));
+        const parsed = JSON.parse(body);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          const error = new Error("JSON body must be an object.");
+          error.code = "INVALID_JSON";
+          reject(error);
+          return;
+        }
+        resolve(parsed);
       } catch {
-        resolve({});
+        const error = new Error("Invalid JSON body.");
+        error.code = "INVALID_JSON";
+        reject(error);
       }
     });
     req.on("error", reject);

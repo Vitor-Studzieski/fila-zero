@@ -1,4 +1,4 @@
-# Supabase setup
+# Supabase setup e operação segura
 
 Este projeto continua podendo usar o dominio/deploy da Vercel, mas o banco e as contas podem migrar para o Supabase.
 
@@ -52,7 +52,30 @@ VAPID_SUBJECT=mailto:contato@seu-dominio.com
 
 Em producao, mantenha `SUPABASE_AUTO_CONFIRM_CUSTOMERS=0`. A emissao digital nao exige QR Code nem geolocalizacao nesta fase; variaveis antigas `PRESENCE_CHECK_ENABLED`, `QR_TOKEN_*` e `STORE_*` podem ser removidas da Vercel.
 
-## Como criar as tabelas
+## Reconciliação de migrations
+
+Este projeto já possui um banco remoto com dados reais. Portanto, não cole todas as migrations no SQL Editor e não execute `db reset --linked` em produção.
+
+Antes de aplicar qualquer alteração, compare os arquivos locais com o histórico remoto:
+
+```bash
+supabase migration list
+```
+
+No diagnóstico de 16/08/2026, os arquivos locais incluem as migrations de sessões, fases do Totem e índices de métricas, enquanto o histórico remoto registra somente parte delas. Isso é uma divergência de histórico, não uma prova de que as tabelas ou índices estejam ausentes: o banco remoto já possui `app_sessions`, `print_kiosks`, `print_jobs`, as tabelas de Web Push, `ticket_counters` e os índices de métricas.
+
+Procedimento obrigatório antes de reconciliar:
+
+1. Comparar cada arquivo local com os objetos existentes no banco remoto.
+2. Confirmar que a alteração não será reaplicada sobre dados reais.
+3. Registrar o resultado da comparação no cartão de migrations.
+4. Só então avaliar uma correção de histórico com a CLI, preservando os arquivos SQL locais.
+
+Não edite manualmente `supabase_migrations.schema_migrations` e não aplique novamente migrations que já criaram objetos no banco. A reconciliação permanece pendente até essa comparação ser concluída.
+
+## Como criar as tabelas em um projeto novo
+
+As instruções abaixo valem somente para um projeto novo ou descartável, sem dados de produção:
 
 No Supabase:
 
@@ -106,6 +129,8 @@ Tambem cria os setores iniciais:
 - `frios`
 - `padaria`
 
+Em um projeto existente, use o procedimento de reconciliação acima. Não use este bloco para “corrigir” o histórico remoto.
+
 ## Como criar contas
 
 No Supabase, va em:
@@ -116,34 +141,7 @@ Authentication > Users > Add user
 
 Crie o usuario com e-mail e senha.
 
-Para definir o perfil, use `User Metadata`:
-
-Cliente:
-
-```json
-{
-  "name": "Cliente Demo",
-  "role": "customer"
-}
-```
-
-Funcionario:
-
-```json
-{
-  "name": "Funcionario Acougue",
-  "role": "attendant"
-}
-```
-
-Gestor:
-
-```json
-{
-  "name": "Gestor",
-  "role": "manager"
-}
-```
+Não use `User Metadata` para autorizar perfis. Esses dados podem ser alterados pelo próprio usuário e não devem decidir permissões. O papel oficial deve permanecer em `public.profiles.role`, alterado pelo backend administrativo com a chave `service_role`, que nunca pode chegar ao navegador.
 
 Depois de criar funcionario, conceda o setor no SQL Editor:
 
@@ -174,6 +172,52 @@ Nesse modo, o app usa Supabase/Postgres para:
 - controle de tentativas de login.
 
 O SQLite permanece apenas como fallback local quando `DATA_BACKEND` nao for `supabase`.
+
+## Validação do `DATABASE_URL`
+
+O `DATABASE_URL` é usado somente por CLI, `psql`, migrations e backups. Nunca o coloque no frontend, no Git ou no chat. Depois de configurar a variável localmente, valide apenas a conexão e o contexto:
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "select current_database(), current_user, now();"
+```
+
+Não copie o valor da URL para a saída do terminal ou para um commit.
+
+## RLS e Supabase Advisor
+
+As tabelas internas usadas pelo backend permanecem com RLS habilitado, políticas explícitas de negação para `anon`/`authenticated` e acesso operacional somente pelo `service_role`. Isso documenta a intenção e evita que uma concessão futura abra as tabelas por acidente.
+
+Não crie policies genéricas como `to authenticated using (true)`. Isso pode expor filas, sessões, impressão, auditoria e dados de usuários. A migration de hardening cria `senhahub_deny_external_access` nas tabelas internas e deixa a função de rate limit executável somente por `service_role`.
+
+## Preflight e health check
+
+Antes de um deploy de produção, execute localmente com o `.env` de produção carregado:
+
+```bash
+npm run preflight:production
+```
+
+O preflight reprova a promoção quando faltam `DATABASE_URL`, `AUTH_SECRET`, `CRON_SECRET`, `PRINT_AGENT_TOKEN`, `KIOSK_ID`, `PUBLIC_APP_URL`, Supabase ou quando contas demo/cadastro sem confirmação estão ativos. Ele também valida as chaves VAPID quando `PUSH_NOTIFICATIONS_ENABLED=1`.
+
+Depois do deploy, monitore:
+
+```text
+GET https://senhahub.vercel.app/api/health
+```
+
+O endpoint não revela nomes ou valores de variáveis; responde `200` somente quando o ambiente está pronto e `503` quando há configuração obrigatória ausente.
+
+## Validações que dependem de ambiente real
+
+Continuam pendentes até serem executadas com segurança:
+
+- SMTP, domínio, SPF, DKIM, DMARC e recuperação de senha em produção;
+- tampa aberta, falta de papel, corte de 80 mm, reinício do Windows e queda de internet;
+- Web Push em Android e iPhone com o PWA instalado;
+- auditoria completa de acessibilidade;
+- concorrência diretamente no Supabase.
+
+Não execute testes destrutivos no projeto de produção. Para concorrência e restauração, use um projeto de teste ou dados isolados.
 
 ## Ativando Web Push
 

@@ -82,7 +82,7 @@ document.querySelector("#resetForm").addEventListener("submit", async (event) =>
     return;
   }
   if (!isStrongPassword(data.newPassword)) {
-    error.textContent = "Use ao menos 12 caracteres, letras maiusculas, minusculas e numeros.";
+    error.textContent = "Use ao menos 12 caracteres, letras maiusculas, minusculas e numeros. Evite senhas comuns.";
     showLoginToast(error.textContent);
     return;
   }
@@ -115,6 +115,11 @@ document.querySelector("#registerForm").addEventListener("submit", async (event)
 
   if (data.password !== data.confirmPassword) {
     error.textContent = "As senhas precisam ser iguais.";
+    showLoginToast(error.textContent);
+    return;
+  }
+  if (!isStrongPassword(data.password)) {
+    error.textContent = "Use ao menos 12 caracteres, letras maiusculas, minusculas e numeros. Evite senhas comuns.";
     showLoginToast(error.textContent);
     return;
   }

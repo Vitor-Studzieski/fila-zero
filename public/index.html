@@ -351,12 +351,12 @@
           <section class="screen" data-screen="rating">
             <h2>Como foi sua experiência?</h2>
             <div class="rating-row">
-              <button data-rating="Ruim">1<span>Ruim</span></button>
-              <button data-rating="Regular">2<span>Regular</span></button>
-              <button data-rating="Ótima">3<span>Ótima</span></button>
+              <button type="button" data-rating="Ruim" aria-pressed="false">1<span>Ruim</span></button>
+              <button type="button" data-rating="Regular" aria-pressed="false">2<span>Regular</span></button>
+              <button type="button" data-rating="Ótima" aria-pressed="false">3<span>Ótima</span></button>
             </div>
-            <label class="textarea-label">Comentário opcional</label>
-            <textarea placeholder="Conte-nos como foi sua experiência..."></textarea>
+            <label class="textarea-label" for="ratingComment">Comentário opcional</label>
+            <textarea id="ratingComment" placeholder="Conte-nos como foi sua experiência..."></textarea>
             <button class="blue-action" id="sendRating" data-online-required>Enviar avaliação</button>
             <p class="toast" id="ratingToast">Avaliação enviada. Obrigado!</p>
           </section>

@@ -172,7 +172,8 @@ async function agentFetch(config, path, body, signal) {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      "x-print-agent-token": config.token
+      "x-print-agent-token": config.token,
+      "x-print-agent-kiosk-id": config.kioskId
     },
     body: JSON.stringify(body),
     signal

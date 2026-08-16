@@ -55,7 +55,8 @@ async function agentFetch(path, options) {
     method: options.method,
     headers: {
       "content-type": "application/json",
-      "x-print-agent-token": AGENT_TOKEN
+      "x-print-agent-token": AGENT_TOKEN,
+      "x-print-agent-kiosk-id": KIOSK_ID
     },
     body: JSON.stringify(options.body)
   });

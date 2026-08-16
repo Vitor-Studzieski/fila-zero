@@ -32,6 +32,7 @@ test.before(async () => {
       DEMO_USERS_JSON: JSON.stringify(testCredentials.seedUsers),
       AUTH_SECRET: crypto.randomBytes(32).toString("hex"),
       PRINT_AGENT_TOKEN: printAgentToken,
+      KIOSK_ID: "totem-pompeia-01",
       CRON_SECRET: cronSecret
     },
     stdio: "ignore"
@@ -311,11 +312,22 @@ test("rota interna de jobs exige o segredo do cron", async () => {
   assert.equal(unauthorized.status, 401);
 
   const authorized = await fetch(`${BASE_URL}/api/internal/jobs`, {
-    headers: { authorization: `Bearer ${cronSecret}` }
+    headers: {
+      authorization: `Bearer ${cronSecret}`,
+      "x-request-id": "observability-cron-test"
+    }
   });
   assert.equal(authorized.status, 200);
+  assert.equal(authorized.headers.get("x-request-id"), "observability-cron-test");
   const payload = await authorized.json();
   assert.equal(payload.ok, true);
+
+  const observabilityResponse = await fetch(`${BASE_URL}/api/observability`, { headers: { cookie: adminCookie } });
+  assert.equal(observabilityResponse.status, 200);
+  const observability = await observabilityResponse.json();
+  assert.ok(observability.cron.executionsLast24h >= 1);
+  assert.equal(observability.cron.latest.status, "succeeded");
+  assert.equal(typeof observability.printing.pendingJobs, "number");
 });
 
 test("logout revoga a sessao imediatamente", async () => {
@@ -407,6 +419,7 @@ test("totem emite senha fisica na fila unica e conclui a impressao sem duplicar"
   assert.equal(trackingResponse.status, 200);
   assert.equal(tracking.ticket.ticket, first.ticket.ticket);
   assert.equal(tracking.ticket.priority, true);
+  assert.equal(Object.hasOwn(tracking.ticket, "priorityReason"), false);
 
   const duplicateResponse = await issue();
   const duplicate = await duplicateResponse.json();
@@ -428,7 +441,11 @@ test("totem emite senha fisica na fila unica e conclui a impressao sem duplicar"
 
   const claimResponse = await fetch(`${BASE_URL}/api/print/jobs/claim`, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-print-agent-token": printAgentToken },
+    headers: {
+      "content-type": "application/json",
+      "x-print-agent-token": printAgentToken,
+      "x-print-agent-kiosk-id": "totem-pompeia-01"
+    },
     body: JSON.stringify({ kioskId: "totem-pompeia-01" })
   });
   const claimed = await claimResponse.json();
@@ -438,12 +455,22 @@ test("totem emite senha fisica na fila unica e conclui a impressao sem duplicar"
 
   const finishResponse = await fetch(`${BASE_URL}/api/print/jobs/${encodeURIComponent(claimed.job.id)}/finish`, {
     method: "POST",
-    headers: { "content-type": "application/json", "x-print-agent-token": printAgentToken },
+    headers: {
+      "content-type": "application/json",
+      "x-print-agent-token": printAgentToken,
+      "x-print-agent-kiosk-id": "totem-pompeia-01"
+    },
     body: JSON.stringify({ kioskId: "totem-pompeia-01", success: true })
   });
   const finished = await finishResponse.json();
   assert.equal(finishResponse.status, 200);
   assert.equal(finished.job.status, "printed");
+
+  const observabilityResponse = await fetch(`${BASE_URL}/api/observability`, { headers: { cookie: adminCookie } });
+  const observability = await observabilityResponse.json();
+  assert.equal(observabilityResponse.status, 200);
+  assert.ok(observability.printing.completedAttempts >= 1);
+  assert.ok(observability.printing.averageDurationMs >= 0);
 
   const statusResponse = await fetch(`${BASE_URL}/api/kiosk/print-jobs/${encodeURIComponent(claimed.job.id)}`, {
     headers: { cookie: kioskCookie }
@@ -451,6 +478,17 @@ test("totem emite senha fisica na fila unica e conclui a impressao sem duplicar"
   const status = await statusResponse.json();
   assert.equal(statusResponse.status, 200);
   assert.equal(status.job.status, "printed");
+
+  const unpairResponse = await fetch(`${BASE_URL}/api/kiosk/unpair`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: adminCookie, ...csrfHeader(adminCookie) },
+    body: "{}"
+  });
+  assert.equal(unpairResponse.status, 200);
+  const revokedStatus = await fetch(`${BASE_URL}/api/kiosk/print-jobs/${encodeURIComponent(claimed.job.id)}`, {
+    headers: { cookie: kioskCookie }
+  });
+  assert.equal(revokedStatus.status, 404);
 
   const called = await api("/api/sectors/frios/call-next", { method: "POST", cookie: adminCookie });
   assert.equal(called.ticket.id, first.ticket.id);

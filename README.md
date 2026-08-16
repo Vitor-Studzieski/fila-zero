@@ -87,6 +87,12 @@ DATA_BACKEND
 SUPABASE_AUTO_CONFIRM_CUSTOMERS
 AUTH_SECRET
 CRON_SECRET
+DATABASE_URL
+PUBLIC_APP_URL
+KIOSK_ID
+KIOSK_PRINTER_PORT
+PRINT_AGENT_TOKEN
+OBSERVABILITY_ALERT_WEBHOOK_URL (opcional)
 BOOTSTRAP_ADMIN_EMAIL
 BOOTSTRAP_ADMIN_PASSWORD
 DEMO_USERS_JSON
@@ -102,13 +108,23 @@ Use `DATA_BACKEND=supabase` para rodar login, filas, carrinho, setores, metricas
 
 `CRON_SECRET` protege a rota interna `/api/internal/jobs`, usada pela Vercel Cron para executar expiracao de senhas, chamadas automaticas e notificacoes mesmo sem trafego de usuarios. Gere um segredo exclusivo e cadastre o mesmo valor no ambiente local e na Vercel.
 
+Antes de promover uma versão para produção, execute `npm run preflight:production`. O comando valida a presença dos segredos, conexão PostgreSQL configurada, backend Supabase, política de cadastro, cron, totem, agente de impressão e VAPID quando o Web Push estiver habilitado. Ele nunca imprime os valores secretos. O endpoint `/api/health` retorna apenas `ok` ou `unavailable` para monitoramento.
+
+`OBSERVABILITY_ALERT_WEBHOOK_URL` e opcional. Quando configurada somente no servidor, recebe alertas JSON de falhas do Cron e de trabalhos de impressão. Mesmo sem webhook, cada execução fica registrada e pode ser consultada por um perfil administrativo em `/api/observability`, enquanto os logs estruturados incluem `requestId`, duração e resultado.
+
 `KIOSK_MODE=central` permite escolher o setor no Totem. Com `KIOSK_MODE=sector` e `KIOSK_SECTOR_ID=acougue`, o dispositivo inicia direto no atendimento daquele balcão. O QR Code geral leva ao SenhaHub; cada senha impressa recebe um QR Code individual para `/acompanhar/<token>`.
+
+### Politica de senhas
+
+O servidor exige pelo menos 12 caracteres, letras maiusculas, minusculas e numeros, bloqueia escolhas comuns e consulta vazamentos pelo endpoint publico gratuito do Have I Been Pwned usando k-anonymity. A senha completa nunca e enviada: apenas os cinco primeiros caracteres do hash SHA-1. Se o endpoint estiver indisponivel, a criacao ou troca da senha e interrompida para evitar validar uma senha sem essa protecao. Nenhum servico pago e necessario.
 
 Para ativar as notificacoes Web Push, execute `npx web-push generate-vapid-keys`, cadastre o par gerado e um contato valido em `VAPID_SUBJECT`, e so entao defina `PUSH_NOTIFICATIONS_ENABLED=1`. A chave privada nunca deve chegar ao navegador ou ser versionada.
 
 O guia completo de instalacao, notificacoes, cache e testes da PWA esta em [docs/pwa-web-push.md](docs/pwa-web-push.md).
 
 O fluxo de emissao fisica, pareamento do totem e simulacao da impressao esta em [docs/totem-impressao.md](docs/totem-impressao.md).
+
+O monitoramento de Cron, request IDs, logs estruturados e métricas de impressão está em [docs/observabilidade.md](docs/observabilidade.md).
 
 ## Banco de dados local
 
@@ -161,6 +177,10 @@ Executa os testes de orquestracao da fila, PWA e Web Push.
 ## Observacoes para deploy
 
 O projeto possui adaptacao para Vercel em `app/api/[...path]/route.js`. Em producao, configure `DATA_BACKEND=supabase` para que a API use Supabase/Postgres em vez de SQLite local.
+
+O acompanhamento das tarefas fica em [BACKLOG_SENHAHUB.md](BACKLOG_SENHAHUB.md). Esse é o único documento de status do projeto.
+
+O registro da demonstração técnica e do formulário de feedback fica em [docs/INOVASKILL_VALIDACAO.md](docs/INOVASKILL_VALIDACAO.md).
 
 As acoes autenticadas usam cookie `HttpOnly` e token CSRF. Se o login funcionar, mas acoes como carrinho ou senha falharem com erro de token de seguranca, recarregue a pagina para sincronizar o cookie `senhahub_csrf`.
 

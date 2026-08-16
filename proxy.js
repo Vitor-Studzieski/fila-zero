@@ -25,13 +25,30 @@ export async function proxy(request) {
   const { pathname } = request.nextUrl;
   if (!protectedPages.has(pathname)) return NextResponse.next();
 
-  const session = await verifySessionToken(request.cookies.get("senhahub_auth")?.value);
-  if (session?.user && pageRoles[pathname]?.includes(normalizeRole(session.user.role))) return NextResponse.next();
-  if (session?.user) return NextResponse.redirect(new URL(roleHome(session.user), request.url));
+  // The signed cookie is only a bearer credential. The role is read again
+  // through the protected API so a role/status change is not accepted until
+  // the next long-lived cookie refresh.
+  const user = await loadCurrentUser(request);
+  if (user && pageRoles[pathname]?.includes(normalizeRole(user.role))) return NextResponse.next();
+  if (user) return NextResponse.redirect(new URL(roleHome(user), request.url));
 
   const loginUrl = new URL("/login", request.url);
   loginUrl.searchParams.set("next", pathname);
   return NextResponse.redirect(loginUrl);
+}
+
+async function loadCurrentUser(request) {
+  try {
+    const response = await fetch(new URL("/api/auth/me", request.url), {
+      headers: { cookie: request.headers.get("cookie") || "" },
+      cache: "no-store"
+    });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    return payload?.user || null;
+  } catch {
+    return null;
+  }
 }
 
 async function verifySessionToken(token) {

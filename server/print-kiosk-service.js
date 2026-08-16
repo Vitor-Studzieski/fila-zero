@@ -25,11 +25,12 @@ function loadKioskConfiguration(env = process.env) {
   };
 }
 
-function createKioskSession(kioskId, secret, now = Date.now()) {
+function createKioskSession(kioskId, secret, now = Date.now(), sessionNonce = crypto.randomBytes(24).toString("base64url")) {
   const csrfToken = crypto.randomBytes(32).toString("hex");
   const payload = {
     kioskId: cleanId(kioskId),
     csrfToken,
+    sessionNonce: cleanText(sessionNonce, 160),
     expiresAt: new Date(now + KIOSK_SESSION_SECONDS * 1000).toISOString()
   };
   const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -37,6 +38,7 @@ function createKioskSession(kioskId, secret, now = Date.now()) {
     kioskId: payload.kioskId,
     token: `kiosk.${encoded}.${sign(encoded, secret)}`,
     csrfToken,
+    sessionNonce: payload.sessionNonce,
     expiresAt: payload.expiresAt
   };
 }
@@ -48,7 +50,7 @@ function verifyKioskSession(token, secret, now = Date.now()) {
   if (!safeEqual(signature, sign(encoded, secret))) return null;
   try {
     const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
-    if (!cleanId(payload.kioskId) || !payload.csrfToken) return null;
+    if (!cleanId(payload.kioskId) || !payload.csrfToken || !cleanText(payload.sessionNonce, 160)) return null;
     if (new Date(payload.expiresAt).getTime() <= now) return null;
     return payload;
   } catch {
@@ -86,14 +88,22 @@ function verifyKioskRequest(headers, secret) {
 
 function verifyPrintAgentRequest(headers, env = process.env) {
   const configured = String(env.PRINT_AGENT_TOKEN || "");
+  const configuredKioskId = cleanId(env.KIOSK_ID);
   if (configured.length < 32) {
     return { error: "Agente de impressao nao configurado.", status: 503 };
+  }
+  if (!configuredKioskId) {
+    return { error: "Totem do agente de impressao nao configurado.", status: 503 };
   }
   const received = headerValue(headers, "x-print-agent-token");
   if (!safeEqual(received, configured)) {
     return { error: "Credencial do agente invalida.", status: 401 };
   }
-  return { ok: true };
+  const receivedKioskId = cleanId(headerValue(headers, "x-print-agent-kiosk-id"));
+  if (receivedKioskId !== configuredKioskId) {
+    return { error: "Agente de impressao nao autorizado para este totem.", status: 403 };
+  }
+  return { ok: true, kioskId: configuredKioskId };
 }
 
 function validatePhysicalTicketInput(body = {}) {

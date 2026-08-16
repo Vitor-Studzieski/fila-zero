@@ -1630,7 +1630,7 @@ async function sendRating() {
       customerId: identity.customerId,
       ticketId: getCurrentQueueData()?.id || null,
       score: selected?.dataset.rating || "sem_nota",
-      comment: document.querySelector("textarea").value
+      comment: document.querySelector("#ratingComment").value
     }
   });
   document.querySelector("#ratingToast").classList.add("visible");
@@ -1681,8 +1681,12 @@ function bindEvents() {
   document.querySelector("#vibrationAlertToggle")?.addEventListener("change", (event) => updateAlertPreference("vibration", event.target.checked));
   document.querySelectorAll("[data-rating]").forEach((button) => {
     button.addEventListener("click", () => {
-      document.querySelectorAll("[data-rating]").forEach((item) => item.classList.remove("selected"));
+      document.querySelectorAll("[data-rating]").forEach((item) => {
+        item.classList.remove("selected");
+        item.setAttribute("aria-pressed", "false");
+      });
       button.classList.add("selected");
+      button.setAttribute("aria-pressed", "true");
     });
   });
   document.querySelector("#sendRating").addEventListener("click", sendRating);
