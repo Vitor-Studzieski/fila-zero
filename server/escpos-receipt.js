@@ -6,35 +6,40 @@ function buildTicketReceipt(payload = {}) {
   const ticketCode = cleanText(payload.ticketCode, 16) || "---";
   const sectorName = cleanText(payload.sectorName, 60) || "SETOR";
   const issuedAt = formatIssuedAt(payload.issuedAt);
-  const trackingUrl = cleanUrl(payload.trackUrl || payload.installUrl);
-  const priorityLabel = payload.priority ? "ATENDIMENTO PREFERENCIAL" : "ATENDIMENTO NORMAL";
+  const trackingUrl = cleanUrl(payload.trackUrl);
 
   return Buffer.concat([
     command(ESC, 0x40),
+    // A MP-4200 TH pode iniciar em ESC/Bematech; selecione ESC/POS
+    // temporariamente para que fonte, corte e QR Code sejam interpretados.
+    command(GS, 0xf9, 0x20, 0x01),
     command(ESC, 0x61, 1),
     command(ESC, 0x45, 1),
-    command(GS, 0x21, 0x11),
-    asciiLine("SENHAHUB"),
-    command(GS, 0x21, 0),
-    command(ESC, 0x45, 0),
+    command(GS, 0x21, 0x01),
+    asciiLine("SUPERMERCADO POMPEIA"),
+    command(GS, 0x21, 0x00),
+    asciiLine("SenhaHub"),
     asciiLine(sectorName.toUpperCase()),
     command(ESC, 0x64, 1),
-    asciiLine("SENHA"),
     command(ESC, 0x45, 1),
+    asciiLine("SENHA"),
     command(GS, 0x21, 0x33),
     asciiLine(ticketCode),
     command(GS, 0x21, 0),
     command(ESC, 0x45, 0),
-    asciiLine(priorityLabel),
     command(ESC, 0x64, 1),
     asciiLine(`Emitida em ${issuedAt}`),
     command(ESC, 0x64, 2),
-    asciiLine("Acompanhe sua senha pelo celular"),
     qrCode(trackingUrl),
     asciiLine("Escaneie o QR Code para acompanhar"),
     command(ESC, 0x64, 3),
-    command(GS, 0x56, 66, 4)
+    cutPaper()
   ]);
+}
+
+function cutPaper() {
+  // GS V 66 n: avanca n pontos e executa o corte total.
+  return command(GS, 0x56, 0x42, 0x04);
 }
 
 function qrCode(value) {

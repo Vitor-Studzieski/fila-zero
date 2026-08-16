@@ -328,23 +328,26 @@ O log principal registra início, busca, impressão, falhas, tentativas e encerr
 
 O arquivo `server/escpos-receipt.js` gera um `Buffer` com comandos ESC/POS.
 
+Antes do conteúdo, o agente seleciona temporariamente o modo ESC/POS da MP-4200 TH. A impressora possui modos ESC/Bematech e ESC/POS; sem essa seleção, os bytes de formatação e do QR Code podem ser impressos como texto.
+
 Sequência aproximada do cupom:
 
 1. reset da impressora;
 2. alinhamento centralizado;
-3. nome `SENHAHUB` em destaque;
-4. nome do setor em letras maiúsculas;
-5. texto `SENHA`;
-6. código da senha em fonte grande;
-7. horário no fuso `America/Sao_Paulo`;
-8. avanço de papel;
-9. corte automático.
+3. nome `SUPERMERCADO POMPEIA`;
+4. nome `SenhaHub`;
+5. nome do setor em letras maiúsculas;
+6. texto `SENHA`;
+7. código da senha em fonte grande;
+8. data e horário no fuso `America/Sao_Paulo`;
+9. QR Code individual para acompanhar a senha;
+10. corte automático.
 
 O texto é normalizado para ASCII. Isso remove acentos para evitar caracteres incompatíveis com a configuração serial da impressora.
 
-O cupom físico atual não contém QR Code. O QR Code de instalação aparece na tela do totem e aponta para `/instalar`.
+O cupom físico contém o QR Code individual da senha e aponta para `/acompanhar/<token>`. O QR Code de instalação continua aparecendo na tela do totem e aponta para `/instalar`.
 
-O simulador de terminal possui uma representação visual própria e pode mostrar um marcador textual de QR. Isso é apenas uma simulação; não significa que o cupom ESC/POS físico contenha QR.
+O simulador de terminal possui uma representação visual própria e pode mostrar um marcador textual de QR. No agente físico, o QR Code é enviado em comandos ESC/POS para a impressora.
 
 ## 8. Configuração do servidor
 

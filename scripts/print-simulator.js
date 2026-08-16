@@ -78,17 +78,16 @@ function renderReceipt(payload = {}) {
   return [
     "",
     line,
-    center("SENHAHUB", width),
+    center("SUPERMERCADO POMPEIA", width),
+    center("SenhaHub", width),
     center(String(payload.sectorName || "").toUpperCase(), width),
     "",
     center("SENHA", width),
     center(String(payload.ticketCode || "---"), width),
-    center(payload.priority ? "ATENDIMENTO PREFERENCIAL" : "ATENDIMENTO NORMAL", width),
     "",
-    center(`Emitida as ${issuedAt}`, width),
-    "",
+    center(`Emitida em ${issuedAt}`, width),
     center("[ QR CODE DA SENHA ]", width),
-    center(String(payload.trackUrl || payload.installUrl || ""), width),
+    center("Escaneie o QR Code para acompanhar", width),
     line,
     ""
   ].join("\n");

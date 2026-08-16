@@ -3807,7 +3807,7 @@ textarea:focus {
 
 .tracking-header {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   color: #ffffff;
   gap: 18px;
@@ -3818,10 +3818,14 @@ textarea:focus {
   font-size: 26px;
 }
 
-.tracking-header span {
-  color: #dceaff;
-  font-size: 14px;
-  font-weight: 700;
+.tracking-market-logo {
+  background: #ffffff;
+  border: 3px solid rgba(255, 255, 255, .8);
+  border-radius: 14px;
+  height: 58px;
+  object-fit: cover;
+  padding: 3px;
+  width: 58px;
 }
 
 .tracking-loading,
@@ -3845,22 +3849,49 @@ textarea:focus {
   color: #607087;
 }
 
-.tracking-eyebrow {
-  color: #1557a6;
+.tracking-ticket-overview {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 22px;
+}
+
+.tracking-ticket-panel {
+  border-radius: 18px;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.tracking-ticket-panel span {
+  color: #63758e;
   font-size: 13px;
   font-weight: 800;
-  letter-spacing: .08em;
-  margin: 0 0 4px;
+  letter-spacing: .04em;
   text-transform: uppercase;
 }
 
-.tracking-ticket {
+.tracking-ticket-panel strong {
   color: #123f78;
-  display: block;
-  font-size: clamp(64px, 18vw, 112px);
+  font-size: clamp(36px, 11vw, 64px);
   letter-spacing: .03em;
   line-height: 1;
-  margin: 8px 0 10px;
+  overflow-wrap: anywhere;
+}
+
+.tracking-ticket-current {
+  background: #f1f5fa;
+  border: 1px solid #dfe7f1;
+}
+
+.tracking-ticket-yours {
+  background: #fff3bd;
+  border: 1px solid #f0c93d;
+}
+
+.tracking-ticket-yours strong {
+  color: #0f477f;
 }
 
 .tracking-card h1 {
@@ -3920,19 +3951,35 @@ textarea:focus {
 .tracking-metrics span { color: #718096; font-size: 13px; }
 .tracking-metrics strong { color: #123f78; font-size: 28px; }
 
-.tracking-progress {
-  height: 10px;
-  background: #e7edf5;
-  border-radius: 99px;
-  overflow: hidden;
+.tracking-time-card {
+  align-items: center;
+  background: #eff5fc;
+  border: 1px solid #c9d9eb;
+  border-radius: 18px;
+  display: grid;
+  gap: 5px;
+  justify-items: center;
+  margin-top: 18px;
+  padding: 16px;
+  text-align: center;
 }
 
-.tracking-progress span {
-  background: #1760b6;
-  border-radius: inherit;
-  display: block;
-  height: 100%;
-  transition: width .3s ease;
+.tracking-time-card span {
+  color: #56708f;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.tracking-time-card strong {
+  color: #145dab;
+  font-size: clamp(42px, 12vw, 64px);
+  letter-spacing: .06em;
+  line-height: 1;
+}
+
+.tracking-time-card small {
+  color: #718096;
+  font-size: 12px;
 }
 
 .tracking-message {
@@ -3944,8 +3991,11 @@ textarea:focus {
 @media (max-width: 480px) {
   .tracking-stage { padding: 18px 12px 40px; }
   .tracking-header { padding-bottom: 26px; }
-  .tracking-header span { font-size: 12px; }
+  .tracking-header strong { font-size: 23px; }
+  .tracking-market-logo { height: 50px; width: 50px; }
   .tracking-card, .tracking-loading, .tracking-error { padding: 22px; }
+  .tracking-ticket-panel { padding: 13px; }
+  .tracking-ticket-panel span { font-size: 11px; }
 }
 
 /* PWA installation page */

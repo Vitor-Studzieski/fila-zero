@@ -3817,6 +3817,8 @@ function publicTicketView(ticket) {
   return {
     ticketNumber: ticket.ticketNumber,
     ticket: ticket.ticket,
+    current: ticket.current,
+    currentCustomerName: ticket.currentCustomerName,
     sector: ticket.sector,
     counterLabel: ticket.counterLabel,
     serviceLabel: ticket.serviceLabel,

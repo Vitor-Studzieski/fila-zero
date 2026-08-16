@@ -34,7 +34,7 @@ async function main() {
       ticketCode: "T001",
       sectorName: "Teste de impressao",
       issuedAt: new Date().toISOString(),
-      installUrl: `${config.apiUrl}/instalar`,
+      trackUrl: `${config.apiUrl}/acompanhar/teste-de-impressao`,
       paperWidthMm: 80
     }));
     logger.info("Cupom de teste enviado para a impressora.", { port: config.printerPort });

@@ -4,6 +4,8 @@
   const content = document.querySelector("#trackingContent");
   const error = document.querySelector("#trackingError");
   let timer = null;
+  let countdownTimer = null;
+  let currentTicket = null;
 
   if (!/^[A-Za-z0-9_-]{20,100}$/.test(token)) {
     showError();
@@ -28,6 +30,8 @@
     loading.hidden = true;
     error.hidden = true;
     content.hidden = false;
+    currentTicket = ticket;
+    document.querySelector("#trackingCurrent").textContent = ticket.current || "--";
     document.querySelector("#trackingTicket").textContent = ticket.ticket || "--";
     document.querySelector("#trackingSector").textContent = ticket.sector || "Setor";
     document.querySelector("#trackingPriority").hidden = !ticket.priority;
@@ -35,9 +39,35 @@
     document.querySelector("#trackingStatusDot").dataset.state = statusTone(ticket.status);
     document.querySelector("#trackingAhead").textContent = String(ticket.ahead ?? 0);
     document.querySelector("#trackingPosition").textContent = `${ticket.position || 1}ª`;
-    document.querySelector("#trackingProgressBar").style.width = `${Math.max(8, Math.min(100, Number(ticket.progress) || 8))}%`;
+    updateRemainingTime();
     document.querySelector("#trackingMessage").textContent = trackingMessage(ticket);
     document.querySelector("#trackingUpdated").textContent = `Atualizado às ${new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}`;
+  }
+
+  function updateRemainingTime() {
+    if (!currentTicket) return;
+    const timeElement = document.querySelector("#trackingTime");
+    if (["atendido", "cancelado", "expirado"].includes(currentTicket.status)) {
+      timeElement.textContent = "--:--";
+      return;
+    }
+    if (["chamado", "em_atendimento"].includes(currentTicket.status)) {
+      timeElement.textContent = "00:00";
+      return;
+    }
+    const target = new Date(currentTicket.estimatedCallAt || 0).getTime();
+    const fallback = Number(currentTicket.secondsToCall) || 0;
+    const remaining = Number.isFinite(target) && target > 0
+      ? Math.max(0, Math.ceil((target - Date.now()) / 1000))
+      : fallback;
+    timeElement.textContent = formatTime(remaining);
+  }
+
+  function formatTime(totalSeconds) {
+    const seconds = Math.max(0, Number(totalSeconds) || 0);
+    const minutes = Math.floor(seconds / 60);
+    const remainder = seconds % 60;
+    return `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
   }
 
   function trackingMessage(ticket) {
@@ -61,8 +91,11 @@
 
   function showError() {
     clearTimeout(timer);
+    clearInterval(countdownTimer);
     loading.hidden = true;
     content.hidden = true;
     error.hidden = false;
   }
+
+  countdownTimer = setInterval(updateRemainingTime, 1000);
 })();

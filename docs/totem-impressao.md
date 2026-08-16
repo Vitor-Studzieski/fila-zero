@@ -125,6 +125,6 @@ Para remover a inicializacao automatica:
 
 `PRINT_STATUS_CHECK_ENABLED=0` e o modo inicial mais compativel. Depois de validar que a impressora responde ao comando ESC/POS `DLE EOT`, altere para `1` para detectar tampa aberta, falta de papel e falhas antes de confirmar a impressao.
 
-O papel impresso contem somente o setor, o numero da senha e o horario. O QR Code de instalacao fica exclusivamente na tela do totem.
+O papel impresso segue esta ordem: `SUPERMERCADO POMPEIA`, `SenhaHub`, setor, `SENHA`, numero da senha, data e horario de emissao e o QR Code individual para acompanhar a senha. O QR Code impresso aponta para `/acompanhar/<token>` e nao para a tela de instalacao.
 
 O agente registra localmente cada trabalho enviado antes de confirma-lo na API. Se a internet cair apos a impressao, uma nova tentativa confirma o mesmo trabalho sem imprimir novamente. Uma queda de energia exatamente entre o corte do papel e esse registro ainda pode gerar uma segunda via, limitacao inerente a impressoras sem confirmacao transacional.

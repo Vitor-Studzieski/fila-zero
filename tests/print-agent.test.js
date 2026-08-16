@@ -15,7 +15,7 @@ const {
   readAgentConfiguration
 } = require("../scripts/print-agent/runtime");
 
-test("gera cupom ESC/POS sem QR e com corte para a Bematech", () => {
+test("gera cupom ESC/POS com layout SenhaHub, QR individual e corte", () => {
   const receipt = buildTicketReceipt({
     ticketCode: "A042",
     sectorName: "Acougue",
@@ -26,9 +26,18 @@ test("gera cupom ESC/POS sem QR e com corte para a Bematech", () => {
   });
 
   assert.ok(receipt.length > 50);
+  assert.ok(receipt.includes(Buffer.from("SUPERMERCADO POMPEIA", "ascii")));
+  assert.ok(receipt.includes(Buffer.from("SenhaHub", "ascii")));
+  assert.ok(receipt.includes(Buffer.from("ACOUGUE", "ascii")));
+  assert.ok(receipt.includes(Buffer.from("SENHA", "ascii")));
   assert.ok(receipt.includes(Buffer.from("A042", "ascii")));
-  assert.equal(receipt.includes(Buffer.from([0x1d, 0x76, 0x30, 0])), false);
+  assert.ok(receipt.includes(Buffer.from([0x1d, 0xf9, 0x20, 0x01])));
   assert.ok(receipt.includes(Buffer.from([0x1d, 0x28, 0x6b])));
+  assert.ok(receipt.includes(Buffer.from("token-de-teste-1234567890", "ascii")));
+  const layout = ["SUPERMERCADO POMPEIA", "SenhaHub", "ACOUGUE", "SENHA", "A042", "Emitida em"]
+    .map((value) => receipt.indexOf(Buffer.from(value, "ascii")));
+  assert.ok(layout.every((position, index) => position >= 0 && (index === 0 || position > layout[index - 1])));
+  assert.equal(receipt.includes(Buffer.from("ATENDIMENTO", "ascii")), false);
   assert.ok(receipt.includes(Buffer.from([0x1d, 0x56, 66, 4])));
 });
 
@@ -173,6 +182,7 @@ function sampleJob() {
       sectorName: "Acougue",
       issuedAt: "2026-07-29T20:00:00.000Z",
       installUrl: "https://senhahub.vercel.app/instalar",
+      trackUrl: "https://senhahub.vercel.app/acompanhar/token-de-teste-1234567890",
       paperWidthMm: 80
     }
   };

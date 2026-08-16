@@ -418,6 +418,9 @@ test("totem emite senha fisica na fila unica e conclui a impressao sem duplicar"
   const tracking = await trackingResponse.json();
   assert.equal(trackingResponse.status, 200);
   assert.equal(tracking.ticket.ticket, first.ticket.ticket);
+  assert.ok("current" in tracking.ticket);
+  assert.equal(typeof tracking.ticket.secondsToCall, "number");
+  assert.ok(tracking.ticket.estimatedCallAt);
   assert.equal(tracking.ticket.priority, true);
   assert.equal(Object.hasOwn(tracking.ticket, "priorityReason"), false);
 
