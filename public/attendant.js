@@ -2,8 +2,10 @@ let staffState = { sectors: [] };
 let staffSource = null;
 let currentUser = null;
 let staffPollingTimer = null;
+let staffRealtimeRetryTimer = null;
+let staffLoadInFlight = null;
 let pendingSkipTicketId = null;
-const STAFF_POLL_INTERVAL_MS = 12000;
+const STAFF_POLL_INTERVAL_MS = 5000;
 
 initAttendant();
 
@@ -12,22 +14,58 @@ async function initAttendant() {
   document.querySelector("#logoutButton").addEventListener("click", logout);
   document.querySelector("#skipCancel").addEventListener("click", closeSkipModal);
   document.querySelector("#skipForm").addEventListener("submit", submitSkipTicket);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    loadStaffState().catch(() => {});
+    if (!staffSource) connectStaffRealtime();
+  });
   await loadStaffState();
   connectStaffRealtime();
 }
 
 async function loadStaffState() {
-  staffState = await api("/api/staff/state");
-  renderAttendant();
+  if (staffLoadInFlight) return staffLoadInFlight;
+  staffLoadInFlight = api("/api/staff/state")
+    .then(applyStaffState)
+    .finally(() => {
+      staffLoadInFlight = null;
+    });
+  return staffLoadInFlight;
 }
 
 function connectStaffRealtime() {
   staffSource?.close();
   staffSource = null;
-  startStaffPolling();
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) loadStaffState().catch(() => {});
+  clearTimeout(staffRealtimeRetryTimer);
+  clearInterval(staffPollingTimer);
+  staffPollingTimer = null;
+
+  if (typeof EventSource !== "function") {
+    startStaffPolling();
+    return;
+  }
+
+  const source = new EventSource("/api/events?scope=staff");
+  staffSource = source;
+  source.addEventListener("state", (event) => {
+    try {
+      applyStaffState(JSON.parse(event.data));
+      clearInterval(staffPollingTimer);
+      staffPollingTimer = null;
+    } catch {
+      // A resposta inválida não deve derrubar o painel; o polling assume.
+      startStaffPolling();
+    }
   });
+  source.onerror = () => {
+    if (staffSource !== source) return;
+    source.close();
+    staffSource = null;
+    startStaffPolling();
+    clearTimeout(staffRealtimeRetryTimer);
+    staffRealtimeRetryTimer = setTimeout(connectStaffRealtime, STAFF_POLL_INTERVAL_MS * 2);
+  };
+
 }
 
 function startStaffPolling() {
@@ -36,6 +74,15 @@ function startStaffPolling() {
     if (document.hidden) return;
     loadStaffState().catch(() => {});
   }, STAFF_POLL_INTERVAL_MS);
+}
+
+function applyStaffState(nextState) {
+  const nextSignature = JSON.stringify(nextState?.sectors || []);
+  const previousSignature = JSON.stringify(staffState?.sectors || []);
+  staffState = nextState || { sectors: [] };
+  if (nextSignature !== previousSignature || !document.querySelector("#attendantSectors article")) {
+    renderAttendant();
+  }
 }
 
 function renderAttendant() {

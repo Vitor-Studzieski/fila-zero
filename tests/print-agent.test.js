@@ -45,7 +45,9 @@ test("totem exibe o QR geral separado do QR individual da senha", () => {
   const html = fs.readFileSync(path.resolve(__dirname, "../public/totem.html"), "utf8");
   const script = fs.readFileSync(path.resolve(__dirname, "../public/totem.js"), "utf8");
   assert.match(html, /id="totemGeneralQr"/);
-  assert.match(html, /id="resultTrackQr"/);
+  assert.doesNotMatch(html, /id="resultTrackQr"/);
+  assert.doesNotMatch(html, /Acompanhe sua posição pelo celular/);
+  assert.doesNotMatch(html, /Escaneie o QR Code para acompanhar sua fila/);
   assert.match(html, /id="issueNormalTicketButton"/);
   assert.match(html, /id="issuePriorityTicketButton"/);
   assert.match(html, /id="backNormalTicketButton"/);
@@ -54,7 +56,9 @@ test("totem exibe o QR geral separado do QR individual da senha", () => {
   assert.doesNotMatch(html, /id="totemStepConfirm"/);
   assert.match(script, /kiosk\?\.appUrl/);
   assert.match(script, /senhahub\.vercel\.app\/login\?next=%2F/);
-  assert.match(script, /trackUrl/);
+  assert.match(script, /RESULT_DISPLAY_MS = 4000/);
+  assert.match(script, /setTimeout\(resetOperation, RESULT_DISPLAY_MS\)/);
+  assert.doesNotMatch(script, /renderTrackingQr|resultTrackQr|resultTrackUrl/);
   assert.match(script, /setStep\(state\.serviceType === "preferencial" \? "priority" : "type"\)/);
 });
 

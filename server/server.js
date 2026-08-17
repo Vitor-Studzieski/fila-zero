@@ -3718,17 +3718,197 @@ function getCustomerState(customerId) {
 function getStaffState(user = null) {
   expireStaleActiveTickets({ broadcast: false });
   const visibleSectors = getSectors().filter((sector) => !user || canAccessSector(user, sector.id));
+  if (!visibleSectors.length) return { serverTime: isoNow(), sectors: [] };
+
+  const sectorIds = visibleSectors.map((sector) => sector.id);
+  const sectorFilters = placeholders(sectorIds);
+  const ticketRows = db.prepare(`
+    SELECT * FROM tickets
+    WHERE sector_id IN (${sectorFilters}) AND status IN (${placeholders(ACTIVE_STATUSES)})
+    ORDER BY sector_id ASC, priority DESC, queue_order ASC
+  `).all(...sectorIds, ...ACTIVE_STATUSES);
+  const counterRows = db.prepare(`
+    SELECT sector_id, business_date, last_number
+    FROM ticket_counters
+    WHERE sector_id IN (${sectorFilters})
+  `).all(...sectorIds);
+  const serviceRows = db.prepare(`
+    SELECT sector_id, service_started_at, finished_at
+    FROM (
+      SELECT sector_id, service_started_at, finished_at,
+        ROW_NUMBER() OVER (PARTITION BY sector_id ORDER BY finished_at DESC) AS row_number
+      FROM tickets
+      WHERE sector_id IN (${sectorFilters})
+        AND service_started_at IS NOT NULL
+        AND finished_at IS NOT NULL
+    )
+    WHERE row_number <= 20
+  `).all(...sectorIds);
+  const callRows = db.prepare(`
+    SELECT sector_id, action, created_at, customer_name, number, code, status, priority
+    FROM (
+      SELECT calls.sector_id, calls.action, calls.created_at,
+        tickets.customer_name, tickets.number, tickets.code, tickets.status, tickets.priority,
+        ROW_NUMBER() OVER (PARTITION BY calls.sector_id ORDER BY calls.created_at DESC) AS row_number
+      FROM calls
+      JOIN tickets ON tickets.id = calls.ticket_id
+      WHERE calls.sector_id IN (${sectorFilters})
+    )
+    WHERE row_number <= 6
+  `).all(...sectorIds);
+  const ticketsBySector = groupRowsByKey(ticketRows, "sector_id");
+  const countersBySector = new Map(counterRows.map((counter) => [counter.sector_id, counter]));
+  const statsBySector = staffAverageStatsFromRows(serviceRows, visibleSectors);
+  const callsBySector = recentCallsFromRows(callRows, sectorIds);
   const sectors = visibleSectors.map((sector) => {
-    const tickets = db.prepare(`
-      SELECT * FROM tickets
-      WHERE sector_id = ? AND status IN (${placeholders(ACTIVE_STATUSES)})
-      ORDER BY priority DESC, queue_order ASC
-    `).all(sector.id, ...ACTIVE_STATUSES).map(ticketDto);
-    const active = tickets.find((ticket) => CALL_BLOCKING_STATUSES.includes(ticket.status));
-    return { ...sectorDto(sector), currentCustomerName: active?.customerName || "", tickets, recentCalls: recentSectorCalls(sector.id) };
+    const rows = ticketsBySector.get(sector.id) || [];
+    const stats = statsBySector.get(sector.id) || { seconds: sector.average_service_seconds, samples: 0 };
+    const active = latestBlockingTicket(rows);
+    const current = active?.code || currentCodeFromCounter(sector, countersBySector.get(sector.id));
+    const activeDelay = active ? activeServiceDelayFromRow(active, stats.seconds) : 0;
+    return {
+      ...staffSectorDto(sector, stats, current, active ? ticketName(active) : ""),
+      tickets: rows.map((row) => staffTicketDtoLocal(row, sector, stats, current, rows, activeDelay)),
+      recentCalls: callsBySector.get(sector.id) || []
+    };
   });
 
   return { serverTime: isoNow(), sectors };
+}
+
+function groupRowsByKey(rows, key) {
+  const groups = new Map();
+  for (const row of rows) {
+    const group = groups.get(row[key]) || [];
+    group.push(row);
+    groups.set(row[key], group);
+  }
+  return groups;
+}
+
+function staffAverageStatsFromRows(rows, sectors) {
+  const rowsBySector = groupRowsByKey(rows, "sector_id");
+  return new Map(sectors.map((sector) => {
+    const durations = (rowsBySector.get(sector.id) || [])
+      .map((row) => secondsBetween(row.service_started_at, row.finished_at))
+      .filter((seconds) => Number.isFinite(seconds) && seconds > 0);
+    return [sector.id, {
+      seconds: average(durations) || sector.average_service_seconds,
+      samples: durations.length
+    }];
+  }));
+}
+
+function recentCallsFromRows(rows, sectorIds) {
+  const callsBySector = new Map(sectorIds.map((sectorId) => [sectorId, []]));
+  for (const row of rows) {
+    const calls = callsBySector.get(row.sector_id);
+    if (!calls || calls.length >= 6) continue;
+    calls.push({
+      action: row.action,
+      customerName: ticketName(row),
+      ticketNumber: row.number,
+      ticket: row.code,
+      status: row.status,
+      priority: Boolean(row.priority),
+      createdAt: row.created_at
+    });
+  }
+  return callsBySector;
+}
+
+function latestBlockingTicket(rows) {
+  return rows
+    .filter((row) => CALL_BLOCKING_STATUSES.includes(row.status))
+    .sort((left, right) => new Date(right.service_started_at || right.called_at || right.updated_at).getTime()
+      - new Date(left.service_started_at || left.called_at || left.updated_at).getTime())[0] || null;
+}
+
+function staffSectorDto(row, stats, current, currentCustomerName = "") {
+  return {
+    id: row.id,
+    name: row.name,
+    prefix: row.prefix,
+    counterLabel: row.counter_label,
+    serviceLabel: row.service_label,
+    queueSize: row.queue_size,
+    averageServiceSeconds: stats.seconds || row.average_service_seconds,
+    averageServiceSamples: stats.samples || 0,
+    estimateBasedOnRecentServices: Number(stats.samples || 0) > 0,
+    capacity: row.capacity,
+    status: row.status,
+    current,
+    currentCustomerName
+  };
+}
+
+function staffTicketDtoLocal(row, sector, stats, current, sectorRows, activeDelay) {
+  const isWaiting = CALL_ELIGIBLE_STATUSES.includes(row.status);
+  const ahead = isWaiting ? countAheadInRowsLocal(row, sectorRows) : 0;
+  const position = isWaiting ? ahead + 1 : 1;
+  const averageSeconds = stats.seconds || sector.average_service_seconds;
+  const eligibleDelay = isWaiting ? secondsUntil(row.eligible_at || row.created_at) : 0;
+  const secondsToCall = isWaiting ? Math.max(eligibleDelay, activeDelay + ahead * averageSeconds) : 0;
+  const estimatedCallAt = isWaiting ? new Date(Date.now() + secondsToCall * 1000).toISOString() : null;
+  return {
+    id: row.id,
+    customerId: row.customer_id,
+    customerName: ticketName(row),
+    ticketNumber: row.number,
+    deviceId: row.device_id,
+    sectorId: row.sector_id,
+    sector: sector.name,
+    ticket: row.code,
+    current,
+    counterLabel: sector.counter_label,
+    serviceLabel: sector.service_label,
+    status: row.status,
+    source: row.source || "digital",
+    kioskId: row.kiosk_id || null,
+    priority: Boolean(row.priority),
+    priorityReason: row.priority_reason,
+    position,
+    ahead,
+    secondsToCall,
+    averageServiceSeconds: averageSeconds,
+    averageServiceSamples: stats.samples || 0,
+    estimateBasedOnRecentServices: Number(stats.samples || 0) > 0,
+    countdownTotalSeconds: isWaiting ? Math.max(secondsToCall, secondsBetween(row.created_at, estimatedCallAt)) : 0,
+    estimatedCallAt,
+    progress: progressFor(row.status, position),
+    smartWaitReason: row.smart_wait_reason,
+    locationVerified: Boolean(row.location_verified),
+    qrVerified: Boolean(row.qr_verified),
+    locationDistanceMeters: row.location_distance_meters,
+    absenceCount: row.absence_count || 0,
+    calledAt: row.called_at,
+    eligibleAt: row.eligible_at,
+    standbyStartedAt: row.standby_started_at,
+    standbyExpiresAt: row.standby_expires_at,
+    standbySecondsRemaining: row.standby_expires_at ? secondsUntil(row.standby_expires_at) : 0,
+    serviceStartedAt: row.service_started_at,
+    finishedAt: row.finished_at,
+    createdAt: row.created_at
+  };
+}
+
+function countAheadInRowsLocal(ticket, rows) {
+  return rows.filter((row) => CALL_ELIGIBLE_STATUSES.includes(row.status) && (
+    Number(row.priority || 0) > Number(ticket.priority || 0)
+    || (Number(row.priority || 0) === Number(ticket.priority || 0) && Number(row.queue_order) < Number(ticket.queue_order))
+  )).length;
+}
+
+function activeServiceDelayFromRow(active, averageSeconds) {
+  const startedAt = active.service_started_at || active.called_at || active.updated_at;
+  const elapsed = secondsBetween(startedAt, isoNow());
+  const limit = active.status === "chamado" ? CALL_ABSENCE_SECONDS : averageSeconds;
+  return Math.max(0, limit - elapsed);
+}
+
+function currentCodeFromCounter(sector, counter) {
+  const currentNumber = counter?.business_date === businessDateFor() ? Number(counter.last_number) : TICKET_MIN_NUMBER;
+  return formatTicket(sector.prefix, currentNumber);
 }
 
 function recentSectorCalls(sectorId) {

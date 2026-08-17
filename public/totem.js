@@ -1,5 +1,6 @@
 (function initializeTotem() {
   const GENERAL_QR_URL = "https://senhahub.vercel.app/login?next=%2F";
+  const RESULT_DISPLAY_MS = 4000;
   const PRIORITY_CATEGORIES = [
     { id: "deficiencia_ou_mobilidade_reduzida", label: "Pessoa com deficiência ou mobilidade reduzida", icon: "♿" },
     { id: "tea", label: "Pessoa com transtorno do espectro autista", icon: "♢" },
@@ -17,7 +18,8 @@
     currentStep: "sector",
     idempotencyKey: null,
     pollingTimer: null,
-    queueRefreshTimer: null
+    queueRefreshTimer: null,
+    resultTimer: null
   };
   const elements = {
     loading: document.querySelector("#totemLoading"),
@@ -51,8 +53,6 @@
     resultSector: document.querySelector("#resultSector"),
     resultTicket: document.querySelector("#resultTicket"),
     resultPriorityBadge: document.querySelector("#resultPriorityBadge"),
-    resultTrackQr: document.querySelector("#resultTrackQr"),
-    resultTrackUrl: document.querySelector("#resultTrackUrl"),
     printState: document.querySelector("#printState")
   };
 
@@ -311,20 +311,21 @@
   }
 
   function showResult(result) {
+    clearTimeout(state.resultTimer);
     showOnly(elements.result);
     elements.resultSector.textContent = result.ticket.sector;
     elements.resultTicket.textContent = result.ticket.ticket;
     elements.resultPriorityBadge.hidden = !result.ticket.priority;
-    const trackUrl = result.printJob?.payload?.trackUrl || "";
-    renderTrackingQr(trackUrl);
-    elements.resultTrackUrl.textContent = trackUrl ? "Escaneie o QR Code para acompanhar sua fila." : "QR Code indisponível neste momento.";
     setPrintState(result.printJob?.status || "pending");
+    state.resultTimer = setTimeout(resetOperation, RESULT_DISPLAY_MS);
   }
 
   async function pollPrintJob(jobId) {
+    if (elements.result.hidden) return;
     clearTimeout(state.pollingTimer);
     try {
       const result = await api(`/api/kiosk/print-jobs/${encodeURIComponent(jobId)}`);
+      if (elements.result.hidden) return;
       setPrintState(result.job.status, result.job.lastError);
       if (["pending", "printing"].includes(result.job.status)) state.pollingTimer = setTimeout(() => pollPrintJob(jobId), 1200);
     } catch {
@@ -345,6 +346,9 @@
 
   function resetOperation() {
     clearTimeout(state.pollingTimer);
+    clearTimeout(state.resultTimer);
+    state.pollingTimer = null;
+    state.resultTimer = null;
     state.selectedSector = null;
     state.serviceType = null;
     state.priorityReason = null;
@@ -372,15 +376,6 @@
     elements.generalQrCard.hidden = false;
     if (elements.generalQr.childElementCount) return;
     renderQr(elements.generalQr, GENERAL_QR_URL, "QR indisponível");
-  }
-
-  function renderTrackingQr(trackUrl) {
-    elements.resultTrackQr.innerHTML = "";
-    if (!trackUrl) {
-      elements.resultTrackQr.textContent = "QR indisponível";
-      return;
-    }
-    renderQr(elements.resultTrackQr, trackUrl, "QR indisponível");
   }
 
   function renderQr(target, value, fallback) {

@@ -7660,14 +7660,9 @@ textarea:focus {
   text-align: right;
 }
 
-.totem-result-details {
-  display: grid;
-  gap: 8px;
-  margin: 14px auto 4px;
-}
-
-.totem-result-details span {
+.totem-result-priority {
   display: inline-block;
+  margin: 14px auto 4px;
   border-radius: 999px;
   background: #fff0b7;
   color: #745300;
@@ -7676,29 +7671,10 @@ textarea:focus {
   padding: 8px 12px;
 }
 
-.totem-result-details p {
-  color: #53657b;
-  margin: 0;
-}
-
-.totem-result-qr {
-  width: min(210px, 60vw);
-  min-height: 70px;
-  margin: 16px auto 8px;
-  padding: 10px;
-}
-
-.totem-result-qr svg,
 .totem-general-qr svg {
   display: block;
   width: 100%;
   height: auto;
-}
-
-.totem-result-url {
-  color: #607087;
-  font-size: 14px;
-  margin: 0 auto 16px;
 }
 
 @media (max-width: 760px) {
