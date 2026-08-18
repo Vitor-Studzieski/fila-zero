@@ -69,31 +69,19 @@ async function agentFetch(path, options) {
 
 function renderReceipt(payload = {}) {
   const width = 42;
-  const line = "-".repeat(width);
   const tickets = Array.isArray(payload.tickets) && payload.tickets.length ? payload.tickets : [payload];
-  const issuedAt = (ticket) => new Intl.DateTimeFormat("pt-BR", {
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: "America/Sao_Paulo"
-  }).format(new Date(ticket.issuedAt || payload.issuedAt));
-  const ticketBlocks = tickets.flatMap((ticket, index) => [
+  const ticketBlocks = tickets.flatMap((ticket) => [
     center(String(ticket.sectorName || payload.sectorName || "").toUpperCase(), width),
-    "",
     center("SENHA", width),
-    center(String(ticket.ticketCode || payload.ticketCode || "---"), width),
-    "",
-    center(`Emitida em ${issuedAt(ticket)}`, width),
-    ...(index < tickets.length - 1 ? [line] : [])
+    center(String(ticket.ticketCode || payload.ticketCode || "---"), width)
   ]);
   return [
     "",
-    line,
     center("SUPERMERCADO POMPEIA", width),
     center("SenhaHub", width),
     ...ticketBlocks,
     center("[ QR CODE DA SENHA ]", width),
     center("Escaneie o QR Code para acompanhar", width),
-    line,
     ""
   ].join("\n");
 }

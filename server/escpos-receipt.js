@@ -5,18 +5,14 @@ const LF = 0x0a;
 function buildTicketReceipt(payload = {}) {
   const tickets = normalizeReceiptTickets(payload);
   const trackingUrl = cleanUrl(payload.trackUrl);
-  const ticketBlocks = tickets.flatMap((ticket, index) => [
+  const ticketBlocks = tickets.flatMap((ticket) => [
     asciiLine(ticket.sectorName.toUpperCase()),
-    command(ESC, 0x64, 1),
     command(ESC, 0x45, 1),
     asciiLine("SENHA"),
     command(GS, 0x21, 0x33),
     asciiLine(ticket.ticketCode),
     command(GS, 0x21, 0),
-    command(ESC, 0x45, 0),
-    command(ESC, 0x64, 1),
-    asciiLine(`Emitida em ${ticket.issuedAt}`),
-    ...(index < tickets.length - 1 ? [command(ESC, 0x64, 1), asciiLine("------------------------------")] : [])
+    command(ESC, 0x45, 0)
   ]);
 
   return Buffer.concat([
@@ -31,7 +27,7 @@ function buildTicketReceipt(payload = {}) {
     command(GS, 0x21, 0x00),
     asciiLine("SenhaHub"),
     ...ticketBlocks,
-    command(ESC, 0x64, 2),
+    command(ESC, 0x64, 1),
     qrCode(trackingUrl),
     asciiLine("Escaneie o QR Code para acompanhar"),
     command(ESC, 0x64, 3),

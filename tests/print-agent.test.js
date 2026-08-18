@@ -34,10 +34,12 @@ test("gera cupom ESC/POS com layout SenhaHub, QR individual e corte", () => {
   assert.ok(receipt.includes(Buffer.from([0x1d, 0xf9, 0x20, 0x01])));
   assert.ok(receipt.includes(Buffer.from([0x1d, 0x28, 0x6b])));
   assert.ok(receipt.includes(Buffer.from("token-de-teste-1234567890", "ascii")));
-  const layout = ["SUPERMERCADO POMPEIA", "SenhaHub", "ACOUGUE", "SENHA", "A042", "Emitida em"]
+  const layout = ["SUPERMERCADO POMPEIA", "SenhaHub", "ACOUGUE", "SENHA", "A042"]
     .map((value) => receipt.indexOf(Buffer.from(value, "ascii")));
   assert.ok(layout.every((position, index) => position >= 0 && (index === 0 || position > layout[index - 1])));
   assert.equal(receipt.includes(Buffer.from("ATENDIMENTO", "ascii")), false);
+  assert.equal(receipt.includes(Buffer.from("Emitida em", "ascii")), false);
+  assert.equal(receipt.includes(Buffer.from("------------------------------", "ascii")), false);
   assert.ok(receipt.includes(Buffer.from([0x1d, 0x56, 66, 4])));
 });
 
@@ -57,6 +59,8 @@ test("gera duas senhas no mesmo cupom mantendo um unico QR Code", () => {
   assert.ok(receipt.includes(Buffer.from("A001", "ascii")));
   assert.ok(receipt.includes(Buffer.from("FRIOS E LATICINIOS", "ascii")));
   assert.ok(receipt.includes(Buffer.from("F002", "ascii")));
+  assert.equal(receipt.includes(Buffer.from("Emitida em", "ascii")), false);
+  assert.equal(receipt.includes(Buffer.from("------------------------------", "ascii")), false);
   assert.equal(countBuffer(receipt, Buffer.from([0x1d, 0x28, 0x6b, 4, 0, 49, 65, 50, 0])), 1);
   assert.ok(receipt.includes(Buffer.from([0x1d, 0x56, 66, 4])));
 });

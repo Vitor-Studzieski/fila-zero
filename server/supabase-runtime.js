@@ -751,6 +751,16 @@ async function trackedTicketRows(row) {
     : [row];
 }
 
+function parsePayload(payload) {
+  if (!payload) return {};
+  if (typeof payload === "object") return payload;
+  try {
+    return JSON.parse(payload);
+  } catch {
+    return {};
+  }
+}
+
 function publicTicketView(ticket) {
   if (!ticket) return null;
   return {
