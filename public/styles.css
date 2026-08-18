@@ -1793,6 +1793,13 @@ textarea {
   min-height: 40px;
 }
 
+.ops-action-feedback {
+  margin: -4px 0 0;
+  color: #991b1b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .ops-ticket-section {
   display: grid;
   gap: 8px;
@@ -3697,6 +3704,161 @@ textarea:focus {
   .manager-iccf-layout .manager-panel-body {
     padding-right: 14px;
     padding-left: 14px;
+  }
+}
+
+/* Totem: seleção de vários setores e confirmação da emissão. */
+.totem-sector.selected {
+  border-color: #1557a6;
+  background: linear-gradient(145deg, #f4f8fd 0%, #eaf3ff 100%);
+  box-shadow: 0 18px 34px rgb(13 59 102 / 17%), inset 0 0 0 2px rgb(21 87 166 / 18%);
+}
+
+.totem-sector.selected::before {
+  background: #1557a6;
+}
+
+.totem-sector.selected .totem-sector-arrow {
+  background: #1557a6;
+  color: #ffffff;
+}
+
+.totem-selection-summary {
+  display: grid;
+  gap: 5px;
+}
+
+.totem-selection-summary strong {
+  color: #123f78;
+  font-size: 19px;
+}
+
+.totem-selection-summary small {
+  color: #607087;
+  font-size: 14px;
+}
+
+.totem-sector-actions {
+  align-items: center;
+}
+
+.totem-sector-actions .totem-primary {
+  min-width: 240px;
+}
+
+.totem-sector-navigation {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.totem-sector-navigation .totem-primary {
+  min-width: 240px;
+}
+
+.totem-issue-summary {
+  display: grid;
+  gap: 16px;
+  max-width: 760px;
+}
+
+.totem-issue-sectors {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.totem-issue-summary-item {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  border: 1px solid #d5deeb;
+  border-radius: 14px;
+  padding: 14px;
+  background: #ffffff;
+}
+
+.totem-issue-summary-item > span {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border-radius: 12px;
+  background: #0d3b66;
+  color: #ffffff;
+  font-weight: 900;
+}
+
+.totem-issue-summary-item strong {
+  color: #123f78;
+  font-size: 17px;
+}
+
+.totem-result-tickets {
+  display: grid;
+  gap: 10px;
+  width: min(100%, 680px);
+  margin: 0 auto 22px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.totem-result-ticket {
+  display: grid;
+  gap: 4px;
+  border: 1px solid #c6d9ef;
+  border-radius: 12px;
+  padding: 12px 16px;
+  background: #f4f8fd;
+}
+
+.totem-result-ticket strong {
+  color: #123f78;
+  font-size: 26px;
+}
+
+.totem-result-ticket span {
+  color: #607087;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.totem-result-ticket.failed {
+  border-color: #efb5b8;
+  background: #fff5f5;
+}
+
+.totem-result-ticket.failed strong,
+.totem-result-ticket.failed span {
+  color: #a52a2f;
+}
+
+@media (max-width: 760px) {
+  .totem-sector-actions,
+  .totem-step-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .totem-sector-actions .totem-primary,
+  .totem-step-actions .totem-primary,
+  .totem-step-actions .totem-secondary {
+    width: 100%;
+  }
+
+  .totem-sector-navigation {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .totem-sector-navigation .totem-primary,
+  .totem-sector-navigation .totem-secondary {
+    width: 100%;
+  }
+
+  .totem-issue-sectors,
+  .totem-result-tickets {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -772,6 +772,12 @@ async function handleApiInternal(req, res, url) {
   }
 
   if (req.method === "GET" && url.pathname === "/api/kiosk/status") {
+    const kioskSession = verifyKioskSession(getCookie(req, "senhahub_kiosk"), AUTH_SECRET);
+    const user = getAuthUser(req);
+    if (!kioskSession && !hasAnyRole(user, ADMIN_ROLES)) {
+      sendJson(res, 401, { error: "Acesso do totem nao autorizado." });
+      return;
+    }
     sendJson(res, 200, getKioskStatus(req));
     return;
   }
@@ -1378,7 +1384,29 @@ function parseJsonValue(value) {
   }
 }
 
+const LEGACY_PAGE_REDIRECTS = {
+  "/index.html": "/",
+  "/login.html": "/login",
+  "/attendant.html": "/attendant",
+  "/admin.html": "/admin",
+  "/admin-operacao.html": "/admin/operacao",
+  "/admin-setores.html": "/admin/setores",
+  "/admin-totens.html": "/admin/totens",
+  "/admin-usuarios.html": "/admin/usuarios",
+  "/iccf.html": "/iccf",
+  "/totem.html": "/totem",
+  "/install.html": "/instalar",
+  "/acompanhar.html": "/login"
+};
+
 async function handlePage(req, res, url) {
+  const legacyTarget = LEGACY_PAGE_REDIRECTS[normalizePagePath(url.pathname)];
+  if (legacyTarget) {
+    res.writeHead(302, { location: `${legacyTarget}${url.search}` });
+    res.end();
+    return;
+  }
+
   const requested = normalizePagePath(url.pathname);
   const pageRoles = {
     "/": CUSTOMER_ROLES,
@@ -1390,15 +1418,31 @@ async function handlePage(req, res, url) {
     "/admin/usuarios": ADMIN_ROLES,
     "/iccf": ADMIN_ROLES
   };
-  if (pageRoles[requested]) {
+  const requiredRoles = pageRoles[requested]
+    || (requested.startsWith("/admin/") ? ADMIN_ROLES : null)
+    || (requested.startsWith("/attendant/") ? STAFF_ROLES : null)
+    || (requested.startsWith("/iccf/") ? ADMIN_ROLES : null);
+  if (requiredRoles) {
     const user = getAuthUser(req);
-    const required = pageRoles[requested];
     if (!user) {
       res.writeHead(302, { location: `/login?next=${encodeURIComponent(requested)}` });
       res.end();
       return;
     }
-    if (!hasAnyRole(user, required)) {
+    if (!hasAnyRole(user, requiredRoles)) {
+      res.writeHead(302, { location: roleHome(user) });
+      res.end();
+      return;
+    }
+  }
+  if ((requested === "/totem" || requested.startsWith("/totem/")) && !verifyKioskSession(getCookie(req, "senhahub_kiosk"), AUTH_SECRET)) {
+    const user = getAuthUser(req);
+    if (!user) {
+      res.writeHead(302, { location: `/login?next=${encodeURIComponent(requested)}` });
+      res.end();
+      return;
+    }
+    if (!hasAnyRole(user, ADMIN_ROLES)) {
       res.writeHead(302, { location: roleHome(user) });
       res.end();
       return;
@@ -1413,12 +1457,8 @@ async function handlePage(req, res, url) {
 }
 
 function normalizePagePath(pathname) {
-  if (pathname === "/index.html") return "/";
-  if (pathname === "/attendant.html") return "/attendant";
-  if (pathname === "/admin.html") return "/admin";
-  if (pathname === "/iccf.html") return "/iccf";
-  if (pathname === "/login.html") return "/login";
-  return pathname;
+  const normalized = String(pathname || "/").replace(/\/+$/, "") || "/";
+  return normalized;
 }
 
 function openEventStream(req, res, url, user = getAuthUser(req)) {

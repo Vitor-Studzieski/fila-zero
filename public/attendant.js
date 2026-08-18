@@ -5,6 +5,8 @@ let staffPollingTimer = null;
 let staffRealtimeRetryTimer = null;
 let staffLoadInFlight = null;
 let pendingSkipTicketId = null;
+const callNextInFlight = new Set();
+const callNextFeedback = new Map();
 const STAFF_POLL_INTERVAL_MS = 5000;
 
 initAttendant();
@@ -92,7 +94,12 @@ function renderAttendant() {
     const waiting = sector.tickets.filter((ticket) => ["aguardando", "proximo", "espera_inteligente", "standby"].includes(ticket.status));
     const currentTicket = inService[0] || called[0] || null;
     const hasActiveService = called.length > 0 || inService.length > 0;
-    const canCallNext = sector.status === "open" && !hasActiveService && waiting.length > 0;
+    const isCallingNext = callNextInFlight.has(sector.id);
+    const canCallNext = sector.status === "open" && !hasActiveService && waiting.length > 0 && !isCallingNext;
+    const callNextLabel = isCallingNext
+      ? "Chamando proxima senha..."
+      : hasActiveService ? "Aguardando finalizacao" : "Chamar proxima senha";
+    const feedback = callNextFeedback.get(sector.id);
     return `
       <article class="ops-card">
         <div class="ops-card-head">
@@ -116,7 +123,8 @@ function renderAttendant() {
           <span>Tempo medio do setor</span>
           <b>${escapeHtml(formatAverageService(sector))}</b>
         </div>
-        <button class="blue-action compact-action" data-call-next="${escapeHtml(sector.id)}" data-online-required ${canCallNext ? "" : "disabled"}>${hasActiveService ? "Aguardando finalizacao" : "Chamar proxima senha"}</button>
+        <button class="blue-action compact-action" data-call-next="${escapeHtml(sector.id)}" data-online-required ${canCallNext ? "" : "disabled"}>${callNextLabel}</button>
+        ${feedback ? `<p class="ops-action-feedback" role="alert">${escapeHtml(feedback)}</p>` : ""}
         ${ticketSection("Chamadas", called)}
         ${ticketSection("Em atendimento", inService)}
         ${ticketSection("Fila", waiting)}
@@ -252,8 +260,50 @@ function priorityBadgeMarkup(extraClass = "") {
 }
 
 async function callNext(sectorId) {
-  await api(`/api/sectors/${sectorId}/call-next`, { method: "POST" });
-  await loadStaffState();
+  if (callNextInFlight.has(sectorId)) return;
+  callNextInFlight.add(sectorId);
+  callNextFeedback.delete(sectorId);
+  renderAttendant();
+  try {
+    const result = await api(`/api/sectors/${encodeURIComponent(sectorId)}/call-next`, { method: "POST" });
+    if (result.ticket) {
+      applyCalledTicket(sectorId, result.ticket);
+      callNextFeedback.delete(sectorId);
+    } else if (result.message) {
+      callNextFeedback.set(sectorId, result.message);
+    }
+    void loadStaffState().catch(() => {});
+  } catch (error) {
+    callNextFeedback.set(sectorId, error.message || "Nao foi possivel chamar a proxima senha.");
+    void loadStaffState().catch(() => {});
+  } finally {
+    callNextInFlight.delete(sectorId);
+    renderAttendant();
+  }
+}
+
+function applyCalledTicket(sectorId, ticket) {
+  if (!ticket?.id) return;
+  const nextState = {
+    ...staffState,
+    sectors: staffState.sectors.map((sector) => {
+      if (sector.id !== sectorId) return sector;
+      const calledTicket = {
+        ...ticket,
+        sectorId: ticket.sectorId || sector.id,
+        sector: ticket.sector || sector.name,
+        counterLabel: ticket.counterLabel || sector.counterLabel,
+        serviceLabel: ticket.serviceLabel || sector.serviceLabel
+      };
+      return {
+        ...sector,
+        current: calledTicket.current || calledTicket.ticket || sector.current,
+        currentCustomerName: calledTicket.currentCustomerName || calledTicket.customerName || sector.currentCustomerName || "",
+        tickets: [calledTicket, ...sector.tickets.filter((item) => item.id !== calledTicket.id)]
+      };
+    })
+  };
+  applyStaffState(nextState);
 }
 
 async function startTicket(ticketId) {

@@ -27,26 +27,16 @@
 
       <section class="totem-operation" id="totemOperation" hidden>
         <div class="totem-heading">
-          <div><p class="totem-eyebrow" id="totemFlowEyebrow">Retire sua senha</p><h1 id="totemFlowTitle">Escolha o setor</h1></div>
-          <p id="totemFlowDescription">Faça uma escolha por vez. Ao definir o atendimento, você já poderá imprimir sua senha.</p>
+          <div><p class="totem-eyebrow" id="totemFlowEyebrow">Retire sua senha</p><h1 id="totemFlowTitle">Escolha o atendimento</h1></div>
+          <p id="totemFlowDescription">Escolha primeiro o tipo de atendimento e depois o setor.</p>
         </div>
 
         <div class="totem-progress" aria-label="Etapas da emissão">
-          <span class="active" data-progress-step="sector">1 <small>Setor</small></span>
-          <span data-progress-step="type">2 <small>Atendimento</small></span>
-          <span data-progress-step="priority">3 <small>Categoria</small></span>
+          <span class="active" data-progress-step="type">1 <small>Atendimento</small></span>
+          <span data-progress-step="priority">2 <small>Categoria</small></span>
+          <span data-progress-step="sector">3 <small>Setores</small></span>
+          <span data-progress-step="issue">4 <small>Emissão</small></span>
         </div>
-
-        <section class="totem-step" id="totemStepSector">
-          <div class="totem-step-heading"><h2>Onde você deseja ser atendido?</h2><p>Escolha um setor para continuar.</p></div>
-          <div class="totem-operation-grid">
-            <div class="totem-sectors" id="totemSectors" aria-live="polite"></div>
-            <aside class="totem-install" id="totemGeneralQrCard">
-              <div class="totem-install-qr" id="totemGeneralQr" aria-label="QR Code geral do SenhaHub"></div>
-              <div><strong>Prefere usar o celular?</strong><span>Aponte a câmera para acessar o SenhaHub.</span></div>
-            </aside>
-          </div>
-        </section>
 
         <section class="totem-step" id="totemStepType" hidden>
           <div class="totem-step-heading"><h2>Como você precisa ser atendido?</h2><p>Escolha apenas uma opção.</p></div>
@@ -54,21 +44,39 @@
             <button class="totem-choice" type="button" data-service-type="normal"><strong>Atendimento normal</strong><span>Entre na fila comum do setor.</span></button>
             <button class="totem-choice totem-choice-priority" type="button" data-service-type="preferencial"><strong>Atendimento preferencial</strong><span>Para quem tem direito ao atendimento prioritário.</span></button>
           </div>
-          <div class="totem-inline-issue" id="totemNormalIssue" hidden>
-            <div class="totem-inline-summary"><span>Confirme sua escolha</span><strong id="normalIssueSector">--</strong><small>Atendimento normal. Deseja imprimir esta senha?</small></div>
-            <div class="totem-inline-actions"><button class="totem-secondary" id="backNormalTicketButton" type="button">Voltar</button><button class="totem-primary" id="issueNormalTicketButton" type="button">Imprimir senha</button></div>
-          </div>
-          <button class="totem-secondary totem-back-button" id="backToSectorButton" type="button">Voltar</button>
         </section>
 
         <section class="totem-step" id="totemStepPriority" hidden>
           <div class="totem-step-heading"><h2>Qual é a categoria preferencial?</h2><p>Selecione a categoria que corresponde à sua necessidade.</p></div>
           <div class="totem-priority-grid" id="totemPriorityOptions"></div>
-          <div class="totem-inline-issue" id="totemPriorityIssue" hidden>
-            <div class="totem-inline-summary"><span>Confirme sua escolha</span><strong id="priorityIssueSector">--</strong><small>Atendimento preferencial: <span id="priorityIssueReason">Selecione uma categoria para continuar.</span> Deseja imprimir esta senha?</small></div>
-            <div class="totem-inline-actions"><button class="totem-secondary" id="backPriorityTicketButton" type="button">Voltar</button><button class="totem-primary" id="issuePriorityTicketButton" type="button" disabled>Imprimir senha</button></div>
-          </div>
           <div class="totem-step-actions"><button class="totem-secondary" id="backToTypeButton" type="button">Voltar</button></div>
+        </section>
+
+        <section class="totem-step" id="totemStepSector" hidden>
+          <div class="totem-step-heading"><h2>Onde você deseja ser atendido?</h2><p>Selecione um ou mais setores. Você receberá uma senha para cada setor escolhido.</p></div>
+          <div class="totem-operation-grid">
+            <div class="totem-sectors" id="totemSectors" aria-live="polite"></div>
+            <aside class="totem-install" id="totemGeneralQrCard">
+              <div class="totem-install-qr" id="totemGeneralQr" aria-label="QR Code geral do SenhaHub"></div>
+              <div><strong>Prefere usar o celular?</strong><span>Aponte a câmera para acessar o SenhaHub.</span></div>
+            </aside>
+          </div>
+          <div class="totem-step-actions totem-sector-actions">
+            <div class="totem-selection-summary"><strong id="totemSectorSelectionSummary">Nenhum setor selecionado</strong><small>Escolha quantos setores quiser para continuar.</small></div>
+            <div class="totem-sector-navigation">
+              <button class="totem-secondary" id="backToTypeFromSectorsButton" type="button">Voltar ao atendimento</button>
+              <button class="totem-primary" id="continueToIssueButton" type="button" disabled>Continuar para emissão</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="totem-step" id="totemStepIssue" hidden>
+          <div class="totem-step-heading"><h2>Emitir senha</h2><p>Confirme os setores selecionados para imprimir suas senhas.</p></div>
+          <div class="totem-issue-summary" id="totemIssueSummary"></div>
+          <div class="totem-step-actions">
+            <button class="totem-secondary" id="backToSectorsButton" type="button">Voltar aos setores</button>
+            <button class="totem-primary" id="issueTicketsButton" type="button">Emitir senha</button>
+          </div>
         </section>
 
         <p class="totem-feedback" id="totemFeedback" role="alert" aria-live="assertive"></p>
@@ -77,6 +85,7 @@
       <section class="totem-result" id="totemResult" hidden aria-live="assertive">
         <p class="totem-eyebrow">Senha emitida</p>
         <span id="resultSector">Setor</span><strong id="resultTicket">A000</strong>
+        <div class="totem-result-tickets" id="resultTickets"></div>
         <span class="totem-result-priority" id="resultPriorityBadge" hidden>Atendimento preferencial</span>
         <div class="totem-print-state" id="printState" data-state="pending"><span aria-hidden="true"></span><p>Enviando para a impressora</p></div>
         <button class="totem-secondary" id="newTicketButton" type="button">Retirar outra senha</button>

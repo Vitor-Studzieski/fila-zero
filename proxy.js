@@ -1,15 +1,5 @@
 import { NextResponse } from "next/server";
 
-const protectedPages = new Set([
-  "/",
-  "/attendant",
-  "/admin",
-  "/admin/operacao",
-  "/admin/setores",
-  "/admin/totens",
-  "/admin/usuarios",
-  "/iccf"
-]);
 const pageRoles = {
   "/": ["customer", "manager", "admin"],
   "/attendant": ["attendant", "manager", "admin"],
@@ -20,21 +10,91 @@ const pageRoles = {
   "/admin/usuarios": ["manager", "admin"],
   "/iccf": ["manager", "admin"]
 };
+const legacyPageRedirects = {
+  "/index.html": "/",
+  "/login.html": "/login",
+  "/attendant.html": "/attendant",
+  "/admin.html": "/admin",
+  "/admin-operacao.html": "/admin/operacao",
+  "/admin-setores.html": "/admin/setores",
+  "/admin-totens.html": "/admin/totens",
+  "/admin-usuarios.html": "/admin/usuarios",
+  "/iccf.html": "/iccf",
+  "/totem.html": "/totem",
+  "/install.html": "/instalar",
+  "/acompanhar.html": "/login"
+};
 
 export async function proxy(request) {
-  const { pathname } = request.nextUrl;
-  if (!protectedPages.has(pathname)) return NextResponse.next();
+  const pathname = normalizePathname(request.nextUrl.pathname);
+  const legacyTarget = legacyPageRedirects[pathname];
+  if (legacyTarget) {
+    const target = request.nextUrl.clone();
+    target.pathname = legacyTarget;
+    return NextResponse.redirect(target);
+  }
+
+  if ((pathname === "/totem" || pathname.startsWith("/totem/")) && !(await hasValidKioskSession(request))) {
+    const user = await loadCurrentUser(request);
+    if (!user) return redirectToLogin(request, pathname);
+    if (!hasManagerRole(user)) return NextResponse.redirect(new URL(roleHome(user), request.url));
+    return NextResponse.next();
+  }
+
+  const roles = rolesForPath(pathname);
+  if (!roles) return NextResponse.next();
 
   // The signed cookie is only a bearer credential. The role is read again
   // through the protected API so a role/status change is not accepted until
   // the next long-lived cookie refresh.
   const user = await loadCurrentUser(request);
-  if (user && pageRoles[pathname]?.includes(normalizeRole(user.role))) return NextResponse.next();
+  if (user && roles.includes(normalizeRole(user.role))) return NextResponse.next();
   if (user) return NextResponse.redirect(new URL(roleHome(user), request.url));
 
+  return redirectToLogin(request, pathname);
+}
+
+function rolesForPath(pathname) {
+  if (pageRoles[pathname]) return pageRoles[pathname];
+  if (pathname === "/attendant" || pathname.startsWith("/attendant/")) return ["attendant", "manager", "admin"];
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) return ["manager", "admin"];
+  if (pathname === "/iccf" || pathname.startsWith("/iccf/")) return ["manager", "admin"];
+  if (pathname === "/") return pageRoles["/"];
+  return null;
+}
+
+function normalizePathname(pathname) {
+  const normalized = String(pathname || "/").replace(/\/+$/, "");
+  return normalized || "/";
+}
+
+function redirectToLogin(request, pathname) {
   const loginUrl = new URL("/login", request.url);
   loginUrl.searchParams.set("next", pathname);
   return NextResponse.redirect(loginUrl);
+}
+
+function hasManagerRole(user) {
+  return ["manager", "admin"].includes(normalizeRole(user?.role));
+}
+
+async function hasValidKioskSession(request) {
+  const token = request.cookies.get("senhahub_kiosk")?.value || "";
+  const parts = token.split(".");
+  if (parts.length !== 3 || parts[0] !== "kiosk") return false;
+  const [, encoded, signature] = parts;
+  if (!safeEqual(signature, await signValue(encoded))) return false;
+  try {
+    const payload = JSON.parse(new TextDecoder().decode(base64UrlToBytes(encoded)));
+    return Boolean(
+      payload?.kioskId &&
+      payload?.csrfToken &&
+      payload?.sessionNonce &&
+      new Date(payload.expiresAt).getTime() > Date.now()
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function loadCurrentUser(request) {
@@ -121,12 +181,22 @@ function roleHome(user) {
 export const config = {
   matcher: [
     "/",
-    "/attendant",
-    "/admin",
-    "/admin/operacao",
-    "/admin/setores",
-    "/admin/totens",
-    "/admin/usuarios",
-    "/iccf"
+    "/attendant/:path*",
+    "/admin/:path*",
+    "/iccf/:path*",
+    "/totem",
+    "/totem/:path*",
+    "/index.html",
+    "/login.html",
+    "/attendant.html",
+    "/admin.html",
+    "/admin-operacao.html",
+    "/admin-setores.html",
+    "/admin-totens.html",
+    "/admin-usuarios.html",
+    "/iccf.html",
+    "/totem.html",
+    "/install.html",
+    "/acompanhar.html"
   ]
 };

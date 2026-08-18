@@ -41,6 +41,22 @@ test.before(async () => {
   adminCookie = await login(testCredentials.manager.email, testCredentials.manager.password);
 });
 
+test("bloqueia paginas sensiveis, HTML legado e status do totem sem acesso", async () => {
+  const protectedPaths = ["/", "/attendant", "/admin", "/admin/totens/", "/iccf", "/totem"];
+  for (const pathname of protectedPaths) {
+    const response = await fetch(`${BASE_URL}${pathname}`, { redirect: "manual" });
+    assert.equal(response.status, 302, pathname);
+    assert.match(response.headers.get("location") || "", /\/login\?next=/, pathname);
+  }
+
+  const legacy = await fetch(`${BASE_URL}/admin-totens.html`, { redirect: "manual" });
+  assert.equal(legacy.status, 302);
+  assert.equal(legacy.headers.get("location"), "/admin/totens");
+
+  const kioskStatus = await fetch(`${BASE_URL}/api/kiosk/status`);
+  assert.equal(kioskStatus.status, 401);
+});
+
 test.after(async () => {
   server?.kill();
   await new Promise((resolve) => server?.once("exit", resolve));

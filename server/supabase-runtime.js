@@ -573,6 +573,7 @@ async function kioskStatusRoute(request, sessionOverride = null) {
     session ? select("print_kiosks", `id=eq.${encodeURIComponent(session.kioskId)}&session_nonce=eq.${encodeURIComponent(session.sessionNonce)}&active=eq.true&limit=1`) : [],
     getSectors()
   ]);
+  if (!session && !hasAnyRole(user, ADMIN_ROLES)) return json({ error: "Acesso do totem nao autorizado." }, 401);
   const kiosk = kioskRows[0];
   const openSectors = await kioskSectorDtos(sectors
     .filter((sector) => sector.status === "open")
@@ -1204,11 +1205,13 @@ async function notifyQueueMilestones(sectorId) {
     "tickets",
     `sector_id=eq.${encodeURIComponent(sectorId)}&status=in.(${CALL_ELIGIBLE_STATUSES.join(",")})&order=priority.desc,queue_order.asc`
   );
+  const notifications = [];
   for (const ticket of rows.filter((row) => ["aguardando", "proximo"].includes(row.status))) {
     const ahead = countAheadInRows(ticket, rows);
-    if (ahead === 2) await dispatchTicketPush(ticket, "queue_near", "ahead-2", { ahead });
-    if (ahead === 0) await dispatchTicketPush(ticket, "queue_next", "position-1", { ahead });
+    if (ahead === 2) notifications.push(dispatchTicketPush(ticket, "queue_near", "ahead-2", { ahead }));
+    if (ahead === 0) notifications.push(dispatchTicketPush(ticket, "queue_next", "position-1", { ahead }));
   }
+  await Promise.all(notifications);
 }
 
 async function notifyStandbyExpiringTickets() {
@@ -1232,11 +1235,14 @@ async function callNextTicket(sectorId, options = {}) {
   });
   if (called.error) return fail("Finalize a senha atual antes de chamar a proxima.");
   if (called?.id) {
-    await registerEvent("senha_chamada", "ticket", called.id, called.customer_id, called.sector_id, { code: called.code });
     const pushType = Number(called.absence_count || 0) > 0 ? "queue_recalled" : "queue_called";
-    await dispatchTicketPush(called, pushType, `absence-${Number(called.absence_count || 0)}`);
-    await notifyQueueMilestones(sectorId);
-    return { ticket: await safeTicketDto(called) };
+    const ticket = safeTicketDto(called);
+    await Promise.all([
+      registerEvent("senha_chamada", "ticket", called.id, called.customer_id, called.sector_id, { code: called.code }),
+      dispatchTicketPush(called, pushType, `absence-${Number(called.absence_count || 0)}`),
+      notifyQueueMilestones(sectorId)
+    ]);
+    return { ticket: await ticket };
   }
   return { ticket: null, message: "Nenhuma senha elegivel para chamada." };
 }

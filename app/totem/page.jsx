@@ -6,12 +6,14 @@ export const metadata = {
   description: "Emissao de senhas fisicas do SenhaHub."
 };
 
+const TOTEM_ASSET_VERSION = "2026.08.18.2";
+
 export default function TotemPage() {
   return (
     <>
       <HtmlTemplate fileName="totem.html" />
       <Script src="/vendor/qrcode-generator.js" strategy="beforeInteractive" />
-      <Script src="/totem.js" strategy="afterInteractive" />
+      <Script src={`/totem.js?v=${TOTEM_ASSET_VERSION}`} strategy="afterInteractive" />
     </>
   );
 }

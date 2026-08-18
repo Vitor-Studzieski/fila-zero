@@ -1,6 +1,6 @@
 # Backlog centralizado — SenhaHub
 
-Atualizado em: 16/08/2026
+Atualizado em: 18/08/2026
 
 Este é o único documento para acompanhar tarefas do projeto. Use `[ ]` para pendente e `[x]` para concluído. Os demais documentos descrevem funcionamento, decisões e procedimentos; eles não devem receber novos checklists de tarefas.
 
@@ -33,7 +33,7 @@ Este é o único documento para acompanhar tarefas do projeto. Use `[ ]` para pe
 - [x] Variáveis da política de senha adicionadas ao `.env.example` e documentação do fluxo adicionada ao `README.md`.
 - [x] Testes unitários da política de senha adicionados.
 - [x] Build de produção e checagem sintática aprovados.
-- [x] Suíte completa executada fora do sandbox: 53/53 testes aprovados.
+- [x] Suíte completa executada fora do sandbox: 61/61 testes aprovados.
 - [x] Testes de autenticação, filas, concorrência local, atendimento, preferencial, impressão, HIBP, JSON inválido e Web Push aprovados.
 - [x] Supabase remoto conferido: tabelas principais existentes, RLS habilitado, Totem ativo e URLs de produção corretas.
 - [x] Backlog centralizado criado e documentos antigos de tarefas removidos.
@@ -56,6 +56,8 @@ Este é o único documento para acompanhar tarefas do projeto. Use `[ ]` para pe
 
 - [x] Ajustar a nova estrutura visual da Dashboard ICCF, incluindo campos, linhas delimitadoras e hierarquia dos indicadores.
 - [x] Ajustar a padronização visual do Totem, incluindo alinhamento, posicionamento, cores, setas e QR Code.
+- [x] Alterar a sequência do atendimento no Totem: atendimento deve ser a etapa 1 e setor deve ser a etapa 2.
+- [ ] Trocar as logos do atendimento preferencial no Totem pelas versões corretas, mantendo a identificação visual clara e consistente.
 - [ ] Validar a acessibilidade do Totem em todas as etapas.
 - [ ] Validar o fluxo completo Central e Específico com usuários reais.
 - [ ] Implantar Kiosk Mode para bloquear navegador, configurações e acesso ao sistema operacional.
@@ -73,6 +75,7 @@ Este é o único documento para acompanhar tarefas do projeto. Use `[ ]` para pe
 ## P1 — Confiabilidade da API e dados
 
 - [ ] Aplicar idempotência a todas as mutações digitais, além do fluxo do Totem.
+- [x] Investigar e corrigir o lag do botão `Chamar próxima senha`, garantindo resposta rápida, feedback de processamento e prevenção de chamadas duplicadas.
 - [ ] Padronizar códigos HTTP, mensagens e formato de erros.
 - [x] Rejeitar JSON inválido com resposta `400`.
 - [ ] Adicionar constraints e invariantes restantes no schema legado.
@@ -98,6 +101,7 @@ Este é o único documento para acompanhar tarefas do projeto. Use `[ ]` para pe
 
 ## P2 — LGPD e segurança
 
+- [x] Proteger rotas sensíveis contra acesso direto por URL, arquivos HTML legados, barra final e tela de vinculação do Totem sem sessão autorizada.
 - [ ] Revisar os alertas do Supabase Advisor sobre tabelas RLS sem policies e proteção nativa de senhas vazadas desativada.
 - [ ] Mapear todos os dados pessoais coletados, armazenados e utilizados.
 - [ ] Definir finalidade, aviso e aceite de privacidade nas telas que coletam dados.

@@ -13,13 +13,18 @@
     status: null,
     mode: "central",
     selectedSector: null,
+    selectedSectors: [],
     serviceType: null,
     priorityReason: null,
-    currentStep: "sector",
-    idempotencyKey: null,
+    currentStep: "type",
     pollingTimer: null,
     queueRefreshTimer: null,
-    resultTimer: null
+    resultTimer: null,
+    printJobs: [],
+    printJobStatuses: new Map(),
+    printFailures: [],
+    issuedTicketCount: 0,
+    issueInFlight: false
   };
   const elements = {
     loading: document.querySelector("#totemLoading"),
@@ -36,44 +41,43 @@
     generalQrCard: document.querySelector("#totemGeneralQrCard"),
     generalQr: document.querySelector("#totemGeneralQr"),
     typeStep: document.querySelector("#totemStepType"),
+    sectorStep: document.querySelector("#totemStepSector"),
     priorityStep: document.querySelector("#totemStepPriority"),
+    issueStep: document.querySelector("#totemStepIssue"),
     priorityOptions: document.querySelector("#totemPriorityOptions"),
-    normalIssue: document.querySelector("#totemNormalIssue"),
-    normalIssueSector: document.querySelector("#normalIssueSector"),
-    priorityIssue: document.querySelector("#totemPriorityIssue"),
-    priorityIssueSector: document.querySelector("#priorityIssueSector"),
-    priorityIssueReason: document.querySelector("#priorityIssueReason"),
-    normalIssueButton: document.querySelector("#issueNormalTicketButton"),
-    priorityIssueButton: document.querySelector("#issuePriorityTicketButton"),
-    backNormalTicketButton: document.querySelector("#backNormalTicketButton"),
-    backPriorityTicketButton: document.querySelector("#backPriorityTicketButton"),
-    backToSector: document.querySelector("#backToSectorButton"),
+    sectorSelectionSummary: document.querySelector("#totemSectorSelectionSummary"),
+    backToTypeFromSectorsButton: document.querySelector("#backToTypeFromSectorsButton"),
+    continueToIssueButton: document.querySelector("#continueToIssueButton"),
+    issueSummary: document.querySelector("#totemIssueSummary"),
+    backToSectorsButton: document.querySelector("#backToSectorsButton"),
+    issueTicketsButton: document.querySelector("#issueTicketsButton"),
     backToType: document.querySelector("#backToTypeButton"),
     newTicketButton: document.querySelector("#newTicketButton"),
     resultSector: document.querySelector("#resultSector"),
     resultTicket: document.querySelector("#resultTicket"),
+    resultTickets: document.querySelector("#resultTickets"),
     resultPriorityBadge: document.querySelector("#resultPriorityBadge"),
     printState: document.querySelector("#printState")
   };
 
   elements.pairButton?.addEventListener("click", pairKiosk);
-  elements.backToSector?.addEventListener("click", () => setStep("sector"));
-  elements.backToType?.addEventListener("click", () => setStep("type"));
-  elements.normalIssueButton?.addEventListener("click", issueTicket);
-  elements.priorityIssueButton?.addEventListener("click", issueTicket);
-  elements.backNormalTicketButton?.addEventListener("click", () => {
-    state.serviceType = null;
+  elements.backToSectorsButton?.addEventListener("click", () => setStep("sector"));
+  elements.backToType?.addEventListener("click", () => {
     state.priorityReason = null;
-    state.idempotencyKey = null;
-    document.querySelectorAll("[data-service-type]").forEach((button) => button.classList.remove("selected"));
+    state.selectedSectors = [];
+    elements.priorityOptions?.querySelectorAll(".selected").forEach((item) => item.classList.remove("selected"));
     setStep("type");
   });
-  elements.backPriorityTicketButton?.addEventListener("click", () => {
-    state.priorityReason = null;
-    state.idempotencyKey = null;
-    elements.priorityOptions.querySelectorAll(".selected").forEach((item) => item.classList.remove("selected"));
-    setStep("priority");
+  elements.continueToIssueButton?.addEventListener("click", () => {
+    if (state.selectedSectors.length) setStep("issue");
   });
+  elements.backToTypeFromSectorsButton?.addEventListener("click", () => {
+    state.selectedSectors = [];
+    state.priorityReason = null;
+    elements.priorityOptions?.querySelectorAll(".selected").forEach((item) => item.classList.remove("selected"));
+    setStep("type");
+  });
+  elements.issueTicketsButton?.addEventListener("click", issueTickets);
   elements.newTicketButton?.addEventListener("click", resetOperation);
   document.querySelectorAll("[data-service-type]").forEach((button) => {
     button.addEventListener("click", () => selectServiceType(button.dataset.serviceType));
@@ -97,6 +101,8 @@
   }
 
   function renderStatus() {
+    clearInterval(state.queueRefreshTimer);
+    state.queueRefreshTimer = null;
     if (!state.status.paired) {
       showOnly(elements.pair);
       elements.pairButton.hidden = !state.status.canPair;
@@ -114,10 +120,9 @@
       : null;
     if (state.mode === "sector" && !state.selectedSector) {
       showOnly(elements.operation);
+      hideTotemSteps();
       elements.flowTitle.textContent = "Totem sem setor configurado";
       elements.flowDescription.textContent = "Solicite ao gestor a configuração do setor deste equipamento.";
-      elements.typeStep.hidden = true;
-      elements.priorityStep.hidden = true;
       elements.feedback.textContent = "Nenhum setor configurado para este totem.";
       return;
     }
@@ -126,11 +131,15 @@
     renderSectors(sectors);
     renderGeneralQr(state.status.kiosk?.appUrl);
     startQueueRefresh();
-    elements.backToSector.hidden = state.mode === "sector";
+    state.selectedSectors = [];
     state.serviceType = null;
     state.priorityReason = null;
-    state.idempotencyKey = null;
-    setStep(state.mode === "sector" ? "type" : "sector");
+    state.printFailures = [];
+    state.printJobs = [];
+    state.printJobStatuses = new Map();
+    state.issueInFlight = false;
+    document.querySelectorAll("[data-service-type], #totemPriorityOptions .selected").forEach((button) => button.classList.remove("selected"));
+    setStep("type");
   }
 
   function renderSectors(sectors) {
@@ -140,6 +149,7 @@
       button.type = "button";
       button.className = "totem-sector";
       button.dataset.sectorId = sector.id;
+      button.setAttribute("aria-pressed", "false");
       const waiting = waitingCount(sector);
       const waitingLabel = waiting === 1 ? "pessoa aguardando" : "pessoas aguardando";
       button.innerHTML = [
@@ -150,9 +160,10 @@
         "</span>",
         "<span class=\"totem-sector-arrow\" aria-hidden=\"true\">&#8594;</span>"
       ].join("");
-      button.addEventListener("click", () => selectSector(sector));
+      button.addEventListener("click", () => toggleSector(sector));
       elements.sectors.append(button);
     });
+    renderSectorSelection();
     if (!sectors.length) elements.feedback.textContent = "Nenhum setor está aberto neste momento.";
   }
 
@@ -192,22 +203,49 @@
     }
   }
 
-  function selectSector(sector) {
-    state.selectedSector = sector;
-    state.serviceType = null;
-    state.priorityReason = null;
-    state.idempotencyKey = null;
-    setStep("type");
+  function toggleSector(sector) {
+    if (state.mode === "sector") return;
+    const selectedIndex = state.selectedSectors.findIndex((item) => item.id === sector.id);
+    if (selectedIndex >= 0) state.selectedSectors.splice(selectedIndex, 1);
+    else state.selectedSectors.push(sector);
+    renderSectorSelection();
+    elements.feedback.textContent = "";
+  }
+
+  function renderSectorSelection() {
+    const selectedIds = new Set(state.selectedSectors.map((sector) => sector.id));
+    document.querySelectorAll(".totem-sector[data-sector-id]").forEach((button) => {
+      const selected = selectedIds.has(button.dataset.sectorId);
+      button.classList.toggle("selected", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
+    if (!elements.sectorSelectionSummary || !elements.continueToIssueButton) return;
+    const count = state.selectedSectors.length;
+    elements.sectorSelectionSummary.textContent = count
+      ? `${count} ${count === 1 ? "setor selecionado" : "setores selecionados"}`
+      : "Nenhum setor selecionado";
+    elements.continueToIssueButton.disabled = count === 0;
   }
 
   function selectServiceType(type) {
     state.serviceType = type === "preferencial" ? "preferencial" : "normal";
     state.priorityReason = null;
-    state.idempotencyKey = null;
+    state.selectedSectors = [];
     document.querySelectorAll("[data-service-type]").forEach((button) => {
       button.classList.toggle("selected", button.dataset.serviceType === state.serviceType);
     });
-    setStep(state.serviceType === "preferencial" ? "priority" : "type");
+    elements.priorityOptions?.querySelectorAll(".selected").forEach((item) => item.classList.remove("selected"));
+    if (state.serviceType === "preferencial") setStep("priority");
+    else continueAfterServiceSelection();
+  }
+
+  function continueAfterServiceSelection() {
+    if (state.mode === "sector") {
+      state.selectedSectors = state.selectedSector ? [state.selectedSector] : [];
+      setStep("issue");
+      return;
+    }
+    setStep("sector");
   }
 
   function renderPriorityOptions() {
@@ -221,7 +259,7 @@
         state.priorityReason = button.dataset.priorityCategory;
         elements.priorityOptions.querySelectorAll(".selected").forEach((item) => item.classList.remove("selected"));
         button.classList.add("selected");
-        renderInlineIssue();
+        continueAfterServiceSelection();
       });
     });
   }
@@ -229,37 +267,44 @@
   function setStep(step) {
     state.currentStep = step;
     const steps = {
-      sector: document.querySelector("#totemStepSector"),
       type: elements.typeStep,
-      priority: elements.priorityStep
+      priority: elements.priorityStep,
+      sector: elements.sectorStep,
+      issue: elements.issueStep
     };
     Object.entries(steps).forEach(([name, element]) => {
-      if (element) element.hidden = name !== step || (name === "sector" && state.mode === "sector");
+      if (!element) return;
+      element.hidden = name !== step || (name === "sector" && state.mode === "sector");
     });
     document.querySelectorAll("[data-progress-step]").forEach((item) => item.classList.toggle("active", item.dataset.progressStep === step));
-    const selectedName = state.selectedSector?.name || "setor";
     const copy = {
-      sector: ["Escolha o setor", "Selecione onde você deseja ser atendido."],
-      type: [state.mode === "sector" ? `Atendimento no ${selectedName}` : "Escolha o atendimento", "Escolha entre atendimento normal ou preferencial."],
-      priority: ["Categoria preferencial", "Selecione a categoria que corresponde à sua necessidade."]
-    }[step];
+      type: ["Escolha o atendimento", "Escolha atendimento normal ou preferencial."],
+      priority: ["Categoria preferencial", "Selecione a categoria que corresponde à sua necessidade."],
+      sector: ["Escolha os setores", "Selecione um ou mais setores para receber suas senhas."],
+      issue: ["Emitir senha", "Confirme os setores selecionados para imprimir suas senhas."]
+    }[step] || ["Retire sua senha", "Escolha como deseja ser atendido."];
     elements.flowTitle.textContent = copy[0];
     elements.flowDescription.textContent = copy[1];
-    renderInlineIssue();
+    renderSectorSelection();
+    renderIssueSummary();
   }
 
-  function renderInlineIssue() {
+  function renderIssueSummary() {
+    if (!elements.issueSummary) return;
     const category = PRIORITY_CATEGORIES.find((item) => item.id === state.priorityReason);
-    const normalReady = state.currentStep === "type" && state.serviceType === "normal";
-    const priorityReady = state.currentStep === "priority" && state.serviceType === "preferencial" && Boolean(state.priorityReason);
-    elements.normalIssue.hidden = !normalReady;
-    elements.priorityIssue.hidden = !priorityReady;
-    elements.backToSector.hidden = state.mode === "sector" || normalReady;
-    elements.backToType.hidden = priorityReady;
-    elements.normalIssueSector.textContent = state.selectedSector?.name || "--";
-    elements.priorityIssueSector.textContent = state.selectedSector?.name || "--";
-    elements.priorityIssueReason.textContent = category?.label || "Selecione uma categoria para continuar.";
-    elements.priorityIssueButton.disabled = !priorityReady;
+    const serviceLabel = state.serviceType === "preferencial" ? "Atendimento preferencial" : "Atendimento normal";
+    const sectorItems = state.selectedSectors.map((sector) => `
+      <div class="totem-issue-summary-item"><span>${escapeHtml(sector.prefix || "")}</span><strong>${escapeHtml(sector.name)}</strong></div>
+    `).join("");
+    elements.issueSummary.innerHTML = [
+      `<div class="totem-confirm-card"><div><span>Tipo de atendimento</span><strong>${escapeHtml(serviceLabel)}</strong></div>`,
+      state.serviceType === "preferencial" ? `<div><span>Categoria</span><strong>${escapeHtml(category?.label || "Não selecionada")}</strong></div>` : "",
+      `<div><span>Setores selecionados</span><strong>${state.selectedSectors.length}</strong></div></div>`,
+      `<div class="totem-issue-sectors">${sectorItems || "<p>Nenhum setor selecionado.</p>"}</div>`
+    ].join("");
+    if (elements.issueTicketsButton) {
+      elements.issueTicketsButton.disabled = state.issueInFlight || !state.selectedSectors.length || !state.serviceType || (state.serviceType === "preferencial" && !state.priorityReason);
+    }
   }
 
   async function pairKiosk() {
@@ -278,70 +323,113 @@
     }
   }
 
-  async function issueTicket() {
-    if (!state.selectedSector || !state.serviceType || (state.serviceType === "preferencial" && !state.priorityReason)) return;
-    const issueButtons = [elements.normalIssueButton, elements.priorityIssueButton].filter(Boolean);
-    issueButtons.forEach((button) => {
-      button.disabled = true;
-      button.textContent = "Imprimindo...";
-    });
-    state.idempotencyKey ||= createIdempotencyKey();
+  async function issueTickets() {
+    const sectors = [...state.selectedSectors];
+    if (!sectors.length || !state.serviceType || (state.serviceType === "preferencial" && !state.priorityReason) || state.issueInFlight) return;
+    state.issueInFlight = true;
+    elements.issueTicketsButton.disabled = true;
+    elements.issueTicketsButton.textContent = "Emitindo...";
+    renderIssueSummary();
     try {
-      const result = await api("/api/kiosk/tickets", {
+      const settled = await Promise.allSettled(sectors.map((sector) => api("/api/kiosk/tickets", {
         method: "POST",
         body: {
-          sectorId: state.selectedSector.id,
-          idempotencyKey: state.idempotencyKey,
+          sectorId: sector.id,
+          idempotencyKey: createIdempotencyKey(),
           priority: state.serviceType === "preferencial",
           priorityReason: state.priorityReason
         },
         csrf: "senhahub_kiosk_csrf",
         csrfHeader: "x-kiosk-csrf"
+      })));
+      const tickets = [];
+      const printJobs = [];
+      const failures = [];
+      settled.forEach((item, index) => {
+        if (item.status === "fulfilled" && item.value?.ticket) {
+          tickets.push(item.value.ticket);
+          if (item.value.printJob?.id) printJobs.push(item.value.printJob);
+        } else {
+          failures.push({
+            sector: sectors[index],
+            message: item.reason?.message || "Não foi possível emitir esta senha."
+          });
+        }
       });
-      showResult(result);
-      if (result.printJob?.id) pollPrintJob(result.printJob.id);
+      if (!tickets.length) {
+        elements.feedback.textContent = failures[0]?.message || "Não foi possível emitir a senha agora.";
+        return;
+      }
+      showResult({ tickets, printJobs, failures });
+      if (printJobs.length) pollPrintJobs(printJobs.map((job) => job.id));
     } catch (error) {
       elements.feedback.textContent = error.message;
     } finally {
-      issueButtons.forEach((button) => {
-        button.disabled = false;
-        button.textContent = "Imprimir senha";
-      });
+      state.issueInFlight = false;
+      elements.issueTicketsButton.textContent = "Emitir senha";
+      if (!elements.result.hidden) return;
+      renderIssueSummary();
     }
   }
 
   function showResult(result) {
     clearTimeout(state.resultTimer);
+    const tickets = result.tickets || (result.ticket ? [result.ticket] : []);
+    state.printJobs = result.printJobs || (result.printJob ? [result.printJob] : []);
+    state.printFailures = result.failures || [];
+    state.printJobStatuses = new Map(state.printJobs.map((job) => [job.id, job.status || "pending"]));
+    state.issuedTicketCount = tickets.length;
     showOnly(elements.result);
-    elements.resultSector.textContent = result.ticket.sector;
-    elements.resultTicket.textContent = result.ticket.ticket;
-    elements.resultPriorityBadge.hidden = !result.ticket.priority;
-    setPrintState(result.printJob?.status || "pending");
+    elements.resultSector.textContent = tickets.length === 1 ? tickets[0].sector : `${tickets.length} setores selecionados`;
+    elements.resultTicket.textContent = tickets.length === 1 ? tickets[0].ticket : `${tickets.length} senhas`;
+    elements.resultPriorityBadge.hidden = !tickets.some((ticket) => ticket.priority);
+    elements.resultTickets.innerHTML = [
+      ...tickets.map((ticket) => `<div class="totem-result-ticket"><strong>${escapeHtml(ticket.ticket)}</strong><span>${escapeHtml(ticket.sector)}</span></div>`),
+      ...state.printFailures.map((failure) => `<div class="totem-result-ticket failed"><strong>Não emitida</strong><span>${escapeHtml(failure.sector?.name)}: ${escapeHtml(failure.message)}</span></div>`)
+    ].join("");
+    setPrintStateFromJobs();
     state.resultTimer = setTimeout(resetOperation, RESULT_DISPLAY_MS);
   }
 
-  async function pollPrintJob(jobId) {
+  async function pollPrintJobs(jobIds) {
     if (elements.result.hidden) return;
     clearTimeout(state.pollingTimer);
-    try {
-      const result = await api(`/api/kiosk/print-jobs/${encodeURIComponent(jobId)}`);
-      if (elements.result.hidden) return;
-      setPrintState(result.job.status, result.job.lastError);
-      if (["pending", "printing"].includes(result.job.status)) state.pollingTimer = setTimeout(() => pollPrintJob(jobId), 1200);
-    } catch {
-      setPrintState("failed", "Não foi possível consultar a impressão.");
+    const results = await Promise.all(jobIds.map(async (jobId) => {
+      try {
+        const result = await api(`/api/kiosk/print-jobs/${encodeURIComponent(jobId)}`);
+        return { jobId, status: result.job.status, error: result.job.lastError };
+      } catch (error) {
+        return { jobId, status: "failed", error: error.message };
+      }
+    }));
+    if (elements.result.hidden) return;
+    results.forEach((result) => state.printJobStatuses.set(result.jobId, result.status));
+    setPrintStateFromJobs(results);
+    if (results.some((result) => ["pending", "printing"].includes(result.status))) {
+      state.pollingTimer = setTimeout(() => pollPrintJobs(jobIds), 1200);
     }
   }
 
-  function setPrintState(status, error) {
+  function setPrintStateFromJobs(latestResults = []) {
+    const statuses = [...state.printJobStatuses.values()];
+    const hasFailure = state.printFailures.length > 0 || statuses.includes("failed");
+    const status = hasFailure
+      ? "failed"
+      : statuses.includes("printing")
+        ? "printing"
+        : statuses.includes("pending") || !statuses.length
+          ? "pending"
+          : "printed";
+    const count = state.issuedTicketCount || 1;
+    const subject = count === 1 ? "sua senha" : `${count} senhas`;
     const labels = {
-      pending: "Aguardando a impressora",
-      printing: "Imprimindo sua senha",
-      printed: "Senha impressa. Retire o papel.",
-      failed: error || "Falha na impressão. Solicite ajuda."
+      pending: `${subject} aguardando a impressora`,
+      printing: `Imprimindo ${subject}`,
+      printed: `${subject[0].toUpperCase()}${subject.slice(1)} impressas. Retire o papel.`,
+      failed: state.printFailures[0]?.message || latestResults.find((result) => result.status === "failed")?.error || "Falha na impressão. Solicite ajuda."
     };
     elements.printState.dataset.state = status;
-    elements.printState.querySelector("p").textContent = labels[status] || labels.pending;
+    elements.printState.querySelector("p").textContent = labels[status];
   }
 
   function resetOperation() {
@@ -349,12 +437,21 @@
     clearTimeout(state.resultTimer);
     state.pollingTimer = null;
     state.resultTimer = null;
-    state.selectedSector = null;
+    state.selectedSector = state.mode === "sector" ? state.selectedSector : null;
+    state.selectedSectors = [];
     state.serviceType = null;
     state.priorityReason = null;
-    state.idempotencyKey = null;
+    state.printJobs = [];
+    state.printJobStatuses = new Map();
+    state.printFailures = [];
+    state.issuedTicketCount = 0;
+    state.issueInFlight = false;
     elements.feedback.textContent = "";
     renderStatus();
+  }
+
+  function hideTotemSteps() {
+    document.querySelectorAll(".totem-step").forEach((step) => { step.hidden = true; });
   }
 
   function showOnly(target) {
