@@ -732,7 +732,23 @@ async function ticketTrackingRoute(request, token) {
   if (!Number.isFinite(createdAt) || Date.now() - createdAt > TRACKING_TOKEN_TTL_MS) {
     return json({ error: "Este QR Code expirou." }, 404);
   }
-  return json({ ticket: publicTicketView(await safeTicketDto(row)) });
+  const trackedRows = await trackedTicketRows(row);
+  const tickets = await Promise.all(trackedRows.map((ticket) => safeTicketDto(ticket)));
+  return json({ ticket: publicTicketView(tickets[0]), tickets: tickets.map(publicTicketView) });
+}
+
+async function trackedTicketRows(row) {
+  const jobs = await select("print_jobs", `ticket_id=eq.${encodeURIComponent(row.id)}&order=created_at.desc&limit=1`);
+  const payload = parsePayload(jobs[0]?.payload);
+  const ticketIds = Array.isArray(payload.ticketIds) && payload.ticketIds.length
+    ? payload.ticketIds.filter((ticketId) => /^[A-Za-z0-9_-]{8,120}$/.test(String(ticketId)))
+    : [row.id];
+  if (ticketIds.length === 1 && ticketIds[0] === row.id) return [row];
+  const rows = await select("tickets", `id=in.(${ticketIds.map(encodeURIComponent).join(",")})`);
+  const byId = new Map(rows.map((ticket) => [ticket.id, ticket]));
+  return ticketIds.map((ticketId) => byId.get(ticketId)).filter(Boolean).length
+    ? ticketIds.map((ticketId) => byId.get(ticketId)).filter(Boolean)
+    : [row];
 }
 
 function publicTicketView(ticket) {

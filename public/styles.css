@@ -4062,6 +4062,54 @@ textarea:focus {
   margin: 0;
 }
 
+.tracking-tickets-list {
+  display: grid;
+  gap: 16px;
+}
+
+.tracking-bundle-ticket {
+  border: 1px solid #dfe7f1;
+  border-radius: 20px;
+  padding: 18px;
+  background: #fbfdff;
+}
+
+.tracking-bundle-ticket-head {
+  align-items: center;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.tracking-bundle-ticket-head span {
+  color: #63758e;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.tracking-bundle-ticket-head h2 {
+  color: #173d70;
+  font-size: 22px;
+  margin: 5px 0 0;
+}
+
+.tracking-bundle-ticket-head > strong {
+  color: #123f78;
+  font-size: clamp(34px, 10vw, 52px);
+  letter-spacing: .03em;
+  line-height: 1;
+}
+
+.tracking-bundle-ticket .tracking-status {
+  margin: 22px 0 16px;
+}
+
+.tracking-bundle-ticket .tracking-time-card {
+  margin-top: 14px;
+}
+
 .tracking-badge {
   display: inline-block;
   background: #fff1bd;

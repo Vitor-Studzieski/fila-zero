@@ -13,26 +13,29 @@
       </header>
       <section class="tracking-loading" id="trackingLoading"><strong>Carregando sua senha...</strong><span>Buscando a posição atual na fila.</span></section>
       <section class="tracking-card" id="trackingContent" hidden>
-        <div class="tracking-ticket-overview">
-          <div class="tracking-ticket-panel tracking-ticket-current">
-            <span>Senha atual</span>
-            <strong id="trackingCurrent">--</strong>
+        <div id="trackingSingleView">
+          <div class="tracking-ticket-overview">
+            <div class="tracking-ticket-panel tracking-ticket-current">
+              <span>Senha atual</span>
+              <strong id="trackingCurrent">--</strong>
+            </div>
+            <div class="tracking-ticket-panel tracking-ticket-yours">
+              <span>Sua senha</span>
+              <strong id="trackingTicket">A000</strong>
+            </div>
           </div>
-          <div class="tracking-ticket-panel tracking-ticket-yours">
-            <span>Sua senha</span>
-            <strong id="trackingTicket">A000</strong>
+          <h1 id="trackingSector">Setor</h1>
+          <span class="tracking-badge" id="trackingPriority" hidden>Atendimento preferencial</span>
+          <div class="tracking-status"><span class="tracking-status-dot" id="trackingStatusDot"></span><strong id="trackingStatus">Aguardando</strong><small id="trackingUpdated">Atualizado agora</small></div>
+          <div class="tracking-metrics"><div><span>Pessoas à frente</span><strong id="trackingAhead">0</strong></div><div><span>Posição estimada</span><strong id="trackingPosition">1ª</strong></div></div>
+          <div class="tracking-time-card">
+            <span>Tempo estimado para atendimento</span>
+            <strong id="trackingTime">00:00</strong>
+            <small>Atualizado automaticamente</small>
           </div>
+          <p class="tracking-message" id="trackingMessage">Você será avisado quando estiver próximo do atendimento.</p>
         </div>
-        <h1 id="trackingSector">Setor</h1>
-        <span class="tracking-badge" id="trackingPriority" hidden>Atendimento preferencial</span>
-        <div class="tracking-status"><span class="tracking-status-dot" id="trackingStatusDot"></span><strong id="trackingStatus">Aguardando</strong><small id="trackingUpdated">Atualizado agora</small></div>
-        <div class="tracking-metrics"><div><span>Pessoas à frente</span><strong id="trackingAhead">0</strong></div><div><span>Posição estimada</span><strong id="trackingPosition">1ª</strong></div></div>
-        <div class="tracking-time-card">
-          <span>Tempo estimado para atendimento</span>
-          <strong id="trackingTime">00:00</strong>
-          <small>Atualizado automaticamente</small>
-        </div>
-        <p class="tracking-message" id="trackingMessage">Você será avisado quando estiver próximo do atendimento.</p>
+        <div class="tracking-tickets-list" id="trackingTicketsList" hidden></div>
       </section>
       <section class="tracking-error" id="trackingError" hidden><strong>Não encontramos essa senha.</strong><span>Verifique se o QR Code foi lido corretamente.</span></section>
     </main>

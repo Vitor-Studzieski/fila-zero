@@ -768,7 +768,8 @@ async function handleApiInternal(req, res, url) {
       sendJson(res, 404, { error: "Este QR Code expirou." });
       return;
     }
-    sendJson(res, 200, { ticket: publicTicketView(ticketDto(row)) });
+    const tickets = trackedTicketRows(row).map((ticket) => publicTicketView(ticketDto(ticket)));
+    sendJson(res, 200, { ticket: tickets[0], tickets });
     return;
   }
 
@@ -4233,6 +4234,21 @@ function currentWaitingCount(sectorId) {
 
 function getTicket(id) {
   return db.prepare("SELECT * FROM tickets WHERE id = ?").get(id);
+}
+
+function trackedTicketRows(row) {
+  const job = db.prepare("SELECT payload FROM print_jobs WHERE ticket_id = ? ORDER BY created_at DESC LIMIT 1").get(row.id);
+  let payload = {};
+  try {
+    payload = job?.payload ? JSON.parse(job.payload) : {};
+  } catch {
+    payload = {};
+  }
+  const ticketIds = Array.isArray(payload.ticketIds) && payload.ticketIds.length
+    ? payload.ticketIds
+    : [row.id];
+  const tickets = ticketIds.map((ticketId) => getTicket(ticketId)).filter(Boolean);
+  return tickets.length ? tickets : [row];
 }
 
 function getBlockingTicket(candidate) {

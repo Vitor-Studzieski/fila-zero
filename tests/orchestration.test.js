@@ -553,6 +553,12 @@ test("totem agrupa duas senhas no mesmo trabalho de impressao", async () => {
   assert.equal(issued.printJob.payload.tickets.length, 2);
   assert.equal(issued.printJob.payload.ticketIds.length, 2);
   assert.match(issued.printJob.payload.trackUrl, /\/acompanhar\/[A-Za-z0-9_-]+$/);
+  const trackingToken = new URL(issued.printJob.payload.trackUrl).pathname.split("/").pop();
+  const trackingResponse = await fetch(`${BASE_URL}/api/tickets/track/${trackingToken}`);
+  const tracked = await trackingResponse.json();
+  assert.equal(trackingResponse.status, 200);
+  assert.equal(tracked.tickets.length, 2);
+  assert.deepEqual(tracked.tickets.map((ticket) => ticket.sector).sort(), ["Açougue", "Frios e Laticínios"].sort());
 
   const duplicateResponse = await fetch(`${BASE_URL}/api/kiosk/tickets`, {
     method: "POST",

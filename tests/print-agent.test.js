@@ -66,6 +66,8 @@ test("totem exibe o QR geral separado do QR individual da senha", () => {
   const script = fs.readFileSync(path.resolve(__dirname, "../public/totem.js"), "utf8");
   const page = fs.readFileSync(path.resolve(__dirname, "../app/totem/page.jsx"), "utf8");
   const attendant = fs.readFileSync(path.resolve(__dirname, "../public/attendant.js"), "utf8");
+  const trackingHtml = fs.readFileSync(path.resolve(__dirname, "../public/acompanhar.html"), "utf8");
+  const trackingScript = fs.readFileSync(path.resolve(__dirname, "../public/acompanhar.js"), "utf8");
   assert.match(html, /id="totemGeneralQr"/);
   assert.doesNotMatch(html, /id="resultTrackQr"/);
   assert.doesNotMatch(html, /Acompanhe sua posição pelo celular/);
@@ -103,6 +105,9 @@ test("totem exibe o QR geral separado do QR individual da senha", () => {
   assert.match(attendant, /const callNextInFlight = new Set\(\)/);
   assert.match(attendant, /const isCallingNext = callNextInFlight\.has\(sector\.id\)/);
   assert.match(attendant, /applyCalledTicket\(sectorId, result\.ticket\)/);
+  assert.match(trackingHtml, /id="trackingTicketsList"/);
+  assert.match(trackingScript, /payload\.tickets/);
+  assert.match(trackingScript, /renderBundleTicket/);
 });
 
 test("carrega configuracao local sem sobrescrever variaveis do processo", () => {
