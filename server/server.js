@@ -18,6 +18,7 @@ const {
   kioskCookies,
   loadKioskConfiguration,
   printJobDto,
+  validatePhysicalTicketBundleInput,
   validatePhysicalTicketInput,
   verifyKioskRequest,
   verifyKioskSession,
@@ -818,7 +819,10 @@ async function handleApiInternal(req, res, url) {
       sendJson(res, kiosk.status, { error: kiosk.error });
       return;
     }
-    const result = createPhysicalTicket(kiosk, await readBody(req));
+    const body = await readBody(req);
+    const result = Array.isArray(body.sectorIds) && body.sectorIds.length > 1
+      ? createPhysicalTicketBundle(kiosk, body)
+      : createPhysicalTicket(kiosk, body);
     broadcast();
     sendApiResult(res, 201, result);
     return;
@@ -2691,6 +2695,129 @@ function createPhysicalTicket(kioskSession, body) {
   notifyQueueMilestones(sector.id);
   return {
     ticket: ticketDto(getTicket(result.ticketId)),
+    printJob: printJobDto(db.prepare("SELECT * FROM print_jobs WHERE id = ?").get(result.jobId)),
+    alreadyExists: false
+  };
+}
+
+function createPhysicalTicketBundle(kioskSession, body) {
+  const input = validatePhysicalTicketBundleInput(body);
+  if (input.error) return input;
+  const kiosk = db.prepare("SELECT * FROM print_kiosks WHERE id = ? AND active = 1").get(kioskSession.kioskId);
+  if (!kiosk) return fail("Totem indisponivel.");
+  if (!safeEqual(kiosk.session_nonce, kioskSession.sessionNonce)) return fail("Sessao do totem revogada. Vincule o totem novamente.");
+  if (kiosk.mode === "sector") return fail("Este totem permite apenas uma senha por vez.");
+  const sectors = input.sectorIds.map((sectorId) => getSector(sectorId));
+  if (sectors.some((sector) => !sector)) return fail("Setor nao encontrado.");
+  if (sectors.some((sector) => sector.status !== "open")) return fail("Um dos setores está fechado para novas senhas.");
+
+  const previous = db.prepare("SELECT * FROM print_jobs WHERE idempotency_key = ?").get(input.idempotencyKey);
+  if (previous) {
+    const previousJob = printJobDto(previous);
+    const previousTickets = (previousJob.payload.ticketIds || [])
+      .map((ticketId) => getTicket(ticketId))
+      .filter(Boolean)
+      .map(ticketDto);
+    return {
+      ticket: previousTickets[0] || ticketDto(getTicket(previous.ticket_id)),
+      tickets: previousTickets,
+      printJob: previousJob,
+      alreadyExists: true
+    };
+  }
+
+  if (!consumeSecurityRateLimit("kiosk:issue", kioskSession.kioskId, 12, 60)) {
+    return fail("Limite de emissao atingido. Aguarde um minuto.");
+  }
+
+  const priority = normalizePriority(body);
+  const result = runInTransaction(() => {
+    const now = isoNow();
+    const jobId = `print-${crypto.randomUUID()}`;
+    const ticketIds = [];
+    const payloadTickets = [];
+
+    sectors.forEach((sector) => {
+      const customerId = `walkin-${crypto.randomUUID()}`;
+      const deviceId = `totem-${crypto.randomUUID()}`;
+      const ticketId = `ticket-${crypto.randomUUID()}`;
+      const trackingToken = createTrackingToken();
+      const nextNumber = nextTicketNumber(sector.id, now);
+      const queueOrder = nextQueueOrder(sector.id);
+      const code = formatTicket(sector.prefix, nextNumber);
+      const eligibleAt = new Date(Date.now() + AUTO_CALL_DELAY_SECONDS * 1000).toISOString();
+
+      db.prepare("INSERT INTO customers (id, created_at) VALUES (?, ?)").run(customerId, now);
+      db.prepare(`
+        INSERT INTO tickets (
+          id, customer_id, device_id, sector_id, customer_name, number, code, status,
+          queue_order, eligible_at, priority, priority_reason, tracking_token, location_verified, qr_verified, source,
+          kiosk_id, created_at, updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'aguardando', ?, ?, ?, ?, ?, 0, 0, 'physical', ?, ?, ?)
+      `).run(
+        ticketId,
+        customerId,
+        deviceId,
+        sector.id,
+        "Cliente do totem",
+        nextNumber,
+        code,
+        queueOrder,
+        eligibleAt,
+        priority.enabled ? 1 : 0,
+        priority.reason,
+        trackingToken,
+        kiosk.id,
+        now,
+        now
+      );
+      ticketIds.push(ticketId);
+      payloadTickets.push({
+        ticketId,
+        ticketCode: code,
+        ticketNumber: nextNumber,
+        sectorId: sector.id,
+        sectorName: sector.name,
+        issuedAt: now,
+        priority: priority.enabled,
+        priorityReason: priority.reason,
+        trackUrl: buildTrackingUrl(trackingToken)
+      });
+      registerEvent("senha_fisica_emitida", "ticket", ticketId, null, sector.id, {
+        code,
+        kioskId: kiosk.id,
+        printJobId: jobId,
+        bundle: true
+      });
+    });
+
+    const first = payloadTickets[0];
+    const payload = {
+      ...first,
+      installUrl: kiosk.install_url,
+      paperWidthMm: Number(kiosk.paper_width_mm),
+      printerName: kiosk.printer_name,
+      printerPort: kiosk.printer_port,
+      trackUrl: first.trackUrl,
+      tickets: payloadTickets,
+      ticketIds
+    };
+    db.prepare(`
+      INSERT INTO print_jobs (
+        id, ticket_id, kiosk_id, idempotency_key, status, payload, attempts,
+        claimed_at, printed_at, failed_at, last_error, created_at, updated_at
+      )
+      VALUES (?, ?, ?, ?, 'pending', ?, 0, NULL, NULL, NULL, NULL, ?, ?)
+    `).run(jobId, ticketIds[0], kiosk.id, input.idempotencyKey, JSON.stringify(payload), now, now);
+    return { jobId, ticketIds, sectorIds: sectors.map((sector) => sector.id) };
+  });
+
+  result.sectorIds.forEach((sectorId) => notifyQueueMilestones(sectorId));
+  const tickets = result.ticketIds.map((ticketId) => ticketDto(getTicket(ticketId)));
+  return {
+    ticket: tickets[0],
+    tickets,
     printJob: printJobDto(db.prepare("SELECT * FROM print_jobs WHERE id = ?").get(result.jobId)),
     alreadyExists: false
   };

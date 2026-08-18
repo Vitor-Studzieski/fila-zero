@@ -116,6 +116,21 @@ function validatePhysicalTicketInput(body = {}) {
   return { sectorId, idempotencyKey };
 }
 
+function validatePhysicalTicketBundleInput(body = {}) {
+  const sectorIds = [...new Set(
+    (Array.isArray(body.sectorIds) ? body.sectorIds : [])
+      .map(cleanId)
+      .filter(Boolean)
+  )];
+  const idempotencyKey = String(body.idempotencyKey || "").trim();
+  if (sectorIds.length < 2) return { error: "Selecione pelo menos dois setores." };
+  if (sectorIds.length > 12) return { error: "Selecione no maximo 12 setores." };
+  if (!/^[A-Za-z0-9_-]{16,160}$/.test(idempotencyKey)) {
+    return { error: "Identificador da emissao invalido." };
+  }
+  return { sectorIds, idempotencyKey };
+}
+
 function printJobDto(row) {
   // PostgREST can represent a NULL composite value returned by an RPC as an
   // empty object. It means there is no job to claim, not a printable job.
@@ -196,6 +211,7 @@ module.exports = {
   kioskCookies,
   loadKioskConfiguration,
   printJobDto,
+  validatePhysicalTicketBundleInput,
   validatePhysicalTicketInput,
   verifyKioskRequest,
   verifyKioskSession,

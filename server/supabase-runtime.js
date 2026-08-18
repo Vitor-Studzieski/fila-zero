@@ -14,6 +14,7 @@ const {
   kioskCookies,
   loadKioskConfiguration,
   printJobDto,
+  validatePhysicalTicketBundleInput,
   validatePhysicalTicketInput,
   verifyKioskRequest,
   verifyKioskSession,
@@ -642,6 +643,9 @@ async function createPhysicalTicketRoute(request) {
   const kiosk = verifyKioskRequest(request.headers, AUTH_SECRET);
   if (kiosk.error) return json({ error: kiosk.error }, kiosk.status);
   const body = await readJson(request);
+  if (Array.isArray(body.sectorIds) && body.sectorIds.length > 1) {
+    return createPhysicalTicketBundleRoute(kiosk, body);
+  }
   const input = validatePhysicalTicketInput(body);
   if (input.error) return json(input, 400);
   const kioskRows = await select("print_kiosks", `id=eq.${encodeURIComponent(kiosk.kioskId)}&active=eq.true&limit=1`);
@@ -674,6 +678,47 @@ async function createPhysicalTicketRoute(request) {
   });
   return json({
     ticket: await safeTicketDto(result.ticket),
+    printJob: printJobDto(result.printJob),
+    alreadyExists: Boolean(result.alreadyExists)
+  }, 201);
+}
+
+async function createPhysicalTicketBundleRoute(kiosk, body) {
+  const input = validatePhysicalTicketBundleInput(body);
+  if (input.error) return json(input, 400);
+  const kioskRows = await select("print_kiosks", `id=eq.${encodeURIComponent(kiosk.kioskId)}&active=eq.true&limit=1`);
+  const configuredKiosk = kioskRows[0];
+  if (!configuredKiosk) return json({ error: "Totem indisponivel." }, 400);
+  if (!safeEqual(configuredKiosk.session_nonce, kiosk.sessionNonce)) return json({ error: "Sessao do totem revogada. Vincule o totem novamente." }, 401);
+  if (configuredKiosk.mode === "sector") return json({ error: "Este totem permite apenas uma senha por vez." }, 400);
+  const kioskRate = await consumeSecurityRateLimit("kiosk:issue", kiosk.kioskId, 12, 60);
+  if (kioskRate !== true) return json({ error: kioskRate === false ? "Limite de emissao atingido. Aguarde um minuto." : "Emissao temporariamente indisponivel." }, kioskRate === false ? 429 : 503);
+  const priority = normalizePriority(body);
+  const result = await rpc("issue_physical_ticket_bundle", {
+    p_kiosk_id: kiosk.kioskId,
+    p_sector_ids: input.sectorIds,
+    p_idempotency_key: input.idempotencyKey,
+    p_install_url: KIOSK_CONFIGURATION.installUrl,
+    p_app_url: KIOSK_CONFIGURATION.appUrl,
+    p_priority: priority.enabled,
+    p_priority_reason: priority.reason,
+    p_auto_call_delay_seconds: AUTO_CALL_DELAY_SECONDS
+  });
+  if (!result || result.error || !result.ticket) {
+    return json({ error: "Nao foi possivel emitir as senhas fisicas agora." }, 400);
+  }
+  const tickets = await Promise.all((Array.isArray(result.tickets) ? result.tickets : [result.ticket]).map((ticket) => safeTicketDto(ticket)));
+  for (const ticket of tickets) {
+    await registerEvent("senha_fisica_emitida", "ticket", ticket.id, null, ticket.sector_id, {
+      code: ticket.code,
+      kioskId: kiosk.kioskId,
+      printJobId: result.printJob?.id,
+      bundle: true
+    });
+  }
+  return json({
+    ticket: tickets[0],
+    tickets,
     printJob: printJobDto(result.printJob),
     alreadyExists: Boolean(result.alreadyExists)
   }, 201);

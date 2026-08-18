@@ -331,36 +331,23 @@
     elements.issueTicketsButton.textContent = "Emitindo...";
     renderIssueSummary();
     try {
-      const settled = await Promise.allSettled(sectors.map((sector) => api("/api/kiosk/tickets", {
+      const body = {
+        idempotencyKey: createIdempotencyKey(),
+        priority: state.serviceType === "preferencial",
+        priorityReason: state.priorityReason
+      };
+      if (sectors.length === 1) body.sectorId = sectors[0].id;
+      else body.sectorIds = sectors.map((sector) => sector.id);
+      const result = await api("/api/kiosk/tickets", {
         method: "POST",
-        body: {
-          sectorId: sector.id,
-          idempotencyKey: createIdempotencyKey(),
-          priority: state.serviceType === "preferencial",
-          priorityReason: state.priorityReason
-        },
+        body,
         csrf: "senhahub_kiosk_csrf",
         csrfHeader: "x-kiosk-csrf"
-      })));
-      const tickets = [];
-      const printJobs = [];
-      const failures = [];
-      settled.forEach((item, index) => {
-        if (item.status === "fulfilled" && item.value?.ticket) {
-          tickets.push(item.value.ticket);
-          if (item.value.printJob?.id) printJobs.push(item.value.printJob);
-        } else {
-          failures.push({
-            sector: sectors[index],
-            message: item.reason?.message || "Não foi possível emitir esta senha."
-          });
-        }
       });
-      if (!tickets.length) {
-        elements.feedback.textContent = failures[0]?.message || "Não foi possível emitir a senha agora.";
-        return;
-      }
-      showResult({ tickets, printJobs, failures });
+      const tickets = result.tickets || (result.ticket ? [result.ticket] : []);
+      const printJobs = result.printJob?.id ? [result.printJob] : [];
+      if (!tickets.length) throw new Error("Não foi possível emitir as senhas agora.");
+      showResult({ tickets, printJobs });
       if (printJobs.length) pollPrintJobs(printJobs.map((job) => job.id));
     } catch (error) {
       elements.feedback.textContent = error.message;

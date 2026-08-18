@@ -41,6 +41,26 @@ test("gera cupom ESC/POS com layout SenhaHub, QR individual e corte", () => {
   assert.ok(receipt.includes(Buffer.from([0x1d, 0x56, 66, 4])));
 });
 
+test("gera duas senhas no mesmo cupom mantendo um unico QR Code", () => {
+  const receipt = buildTicketReceipt({
+    ticketCode: "A001",
+    sectorName: "Acougue",
+    issuedAt: "2026-07-29T20:00:00.000Z",
+    trackUrl: "https://senhahub.vercel.app/acompanhar/token-do-conjunto",
+    tickets: [
+      { ticketCode: "A001", sectorName: "Acougue", issuedAt: "2026-07-29T20:00:00.000Z" },
+      { ticketCode: "F002", sectorName: "Frios e Laticinios", issuedAt: "2026-07-29T20:00:00.000Z" }
+    ]
+  });
+
+  assert.ok(receipt.includes(Buffer.from("ACOUGUE", "ascii")));
+  assert.ok(receipt.includes(Buffer.from("A001", "ascii")));
+  assert.ok(receipt.includes(Buffer.from("FRIOS E LATICINIOS", "ascii")));
+  assert.ok(receipt.includes(Buffer.from("F002", "ascii")));
+  assert.equal(countBuffer(receipt, Buffer.from([0x1d, 0x28, 0x6b, 4, 0, 49, 65, 50, 0])), 1);
+  assert.ok(receipt.includes(Buffer.from([0x1d, 0x56, 66, 4])));
+});
+
 test("totem exibe o QR geral separado do QR individual da senha", () => {
   const html = fs.readFileSync(path.resolve(__dirname, "../public/totem.html"), "utf8");
   const script = fs.readFileSync(path.resolve(__dirname, "../public/totem.js"), "utf8");
@@ -75,7 +95,8 @@ test("totem exibe o QR geral separado do QR individual da senha", () => {
   assert.match(script, /selectedSectors/);
   assert.match(script, /function toggleSector\(sector\)/);
   assert.match(script, /continueAfterServiceSelection/);
-  assert.match(script, /Promise\.allSettled/);
+  assert.match(script, /body\.sectorIds = sectors\.map/);
+  assert.match(script, /const tickets = result\.tickets \|\|/);
   assert.match(script, /function pollPrintJobs\(jobIds\)/);
   assert.match(script, /setStep\("issue"\)/);
   assert.doesNotMatch(script, /state\.serviceType === "preferencial" \? "priority" : "type"/);
@@ -212,4 +233,12 @@ function sampleJob() {
       paperWidthMm: 80
     }
   };
+}
+
+function countBuffer(buffer, needle) {
+  let count = 0;
+  for (let offset = 0; offset <= buffer.length - needle.length; offset += 1) {
+    if (buffer.subarray(offset, offset + needle.length).equals(needle)) count += 1;
+  }
+  return count;
 }

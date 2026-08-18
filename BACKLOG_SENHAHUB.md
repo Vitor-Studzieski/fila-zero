@@ -33,7 +33,7 @@ Este é o único documento para acompanhar tarefas do projeto. Use `[ ]` para pe
 - [x] Variáveis da política de senha adicionadas ao `.env.example` e documentação do fluxo adicionada ao `README.md`.
 - [x] Testes unitários da política de senha adicionados.
 - [x] Build de produção e checagem sintática aprovados.
-- [x] Suíte completa executada fora do sandbox: 61/61 testes aprovados.
+- [x] Suíte completa executada fora do sandbox: 63/63 testes aprovados.
 - [x] Testes de autenticação, filas, concorrência local, atendimento, preferencial, impressão, HIBP, JSON inválido e Web Push aprovados.
 - [x] Supabase remoto conferido: tabelas principais existentes, RLS habilitado, Totem ativo e URLs de produção corretas.
 - [x] Backlog centralizado criado e documentos antigos de tarefas removidos.
@@ -62,7 +62,8 @@ Este é o único documento para acompanhar tarefas do projeto. Use `[ ]` para pe
 - [ ] Validar o fluxo completo Central e Específico com usuários reais.
 - [ ] Implantar Kiosk Mode para bloquear navegador, configurações e acesso ao sistema operacional.
 - [ ] Criar acesso administrativo protegido para manutenção e configuração do Totem.
-- [x] Garantir que toda senha impressa tenha layout final, QR Code individual e tratamento de erro compreensível.
+- [x] Garantir que toda emissão impressa tenha layout final, QR Code individual ou do conjunto e tratamento de erro compreensível.
+- [x] Agrupar duas ou mais senhas do mesmo pedido no mesmo cupom físico, mantendo um único QR Code.
 
 ## P1 — Gestão e regras de negócio
 

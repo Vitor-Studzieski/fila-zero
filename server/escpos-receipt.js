@@ -3,10 +3,21 @@ const GS = 0x1d;
 const LF = 0x0a;
 
 function buildTicketReceipt(payload = {}) {
-  const ticketCode = cleanText(payload.ticketCode, 16) || "---";
-  const sectorName = cleanText(payload.sectorName, 60) || "SETOR";
-  const issuedAt = formatIssuedAt(payload.issuedAt);
+  const tickets = normalizeReceiptTickets(payload);
   const trackingUrl = cleanUrl(payload.trackUrl);
+  const ticketBlocks = tickets.flatMap((ticket, index) => [
+    asciiLine(ticket.sectorName.toUpperCase()),
+    command(ESC, 0x64, 1),
+    command(ESC, 0x45, 1),
+    asciiLine("SENHA"),
+    command(GS, 0x21, 0x33),
+    asciiLine(ticket.ticketCode),
+    command(GS, 0x21, 0),
+    command(ESC, 0x45, 0),
+    command(ESC, 0x64, 1),
+    asciiLine(`Emitida em ${ticket.issuedAt}`),
+    ...(index < tickets.length - 1 ? [command(ESC, 0x64, 1), asciiLine("------------------------------")] : [])
+  ]);
 
   return Buffer.concat([
     command(ESC, 0x40),
@@ -19,22 +30,24 @@ function buildTicketReceipt(payload = {}) {
     asciiLine("SUPERMERCADO POMPEIA"),
     command(GS, 0x21, 0x00),
     asciiLine("SenhaHub"),
-    asciiLine(sectorName.toUpperCase()),
-    command(ESC, 0x64, 1),
-    command(ESC, 0x45, 1),
-    asciiLine("SENHA"),
-    command(GS, 0x21, 0x33),
-    asciiLine(ticketCode),
-    command(GS, 0x21, 0),
-    command(ESC, 0x45, 0),
-    command(ESC, 0x64, 1),
-    asciiLine(`Emitida em ${issuedAt}`),
+    ...ticketBlocks,
     command(ESC, 0x64, 2),
     qrCode(trackingUrl),
     asciiLine("Escaneie o QR Code para acompanhar"),
     command(ESC, 0x64, 3),
     cutPaper()
   ]);
+}
+
+function normalizeReceiptTickets(payload = {}) {
+  const source = Array.isArray(payload.tickets) && payload.tickets.length
+    ? payload.tickets
+    : [payload];
+  return source.slice(0, 12).map((ticket) => ({
+    ticketCode: cleanText(ticket.ticketCode || payload.ticketCode, 16) || "---",
+    sectorName: cleanText(ticket.sectorName || payload.sectorName, 60) || "SETOR",
+    issuedAt: formatIssuedAt(ticket.issuedAt || payload.issuedAt)
+  }));
 }
 
 function cutPaper() {

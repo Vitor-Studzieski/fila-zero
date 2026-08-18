@@ -517,6 +517,93 @@ test("totem emite senha fisica na fila unica e conclui a impressao sem duplicar"
   assert.equal(completed.finishedTicket.status, "atendido");
 });
 
+test("totem agrupa duas senhas no mesmo trabalho de impressao", async () => {
+  resetSectorTickets("acougue");
+  resetSectorTickets("frios");
+  const pairResponse = await fetch(`${BASE_URL}/api/kiosk/pair`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: adminCookie, ...csrfHeader(adminCookie) },
+    body: JSON.stringify({ kioskId: "totem-pompeia-01" })
+  });
+  assert.equal(pairResponse.status, 200);
+  const setCookie = pairResponse.headers.get("set-cookie") || "";
+  const kioskAuth = setCookie.match(/senhahub_kiosk=[^;,]+/)?.[0];
+  const kioskCsrf = setCookie.match(/senhahub_kiosk_csrf=[^;,]+/)?.[0];
+  assert.ok(kioskAuth && kioskCsrf);
+  const kioskCookie = `${kioskAuth}; ${kioskCsrf}`;
+  const kioskCsrfToken = kioskCsrf.slice("senhahub_kiosk_csrf=".length);
+  const idempotencyKey = crypto.randomUUID();
+
+  const issueResponse = await fetch(`${BASE_URL}/api/kiosk/tickets`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: kioskCookie,
+      "x-kiosk-csrf": kioskCsrfToken
+    },
+    body: JSON.stringify({
+      sectorIds: ["acougue", "frios"],
+      idempotencyKey,
+      priority: false
+    })
+  });
+  const issued = await issueResponse.json();
+  assert.equal(issueResponse.status, 201);
+  assert.equal(issued.tickets.length, 2);
+  assert.equal(issued.printJob.payload.tickets.length, 2);
+  assert.equal(issued.printJob.payload.ticketIds.length, 2);
+  assert.match(issued.printJob.payload.trackUrl, /\/acompanhar\/[A-Za-z0-9_-]+$/);
+
+  const duplicateResponse = await fetch(`${BASE_URL}/api/kiosk/tickets`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      cookie: kioskCookie,
+      "x-kiosk-csrf": kioskCsrfToken
+    },
+    body: JSON.stringify({ sectorIds: ["acougue", "frios"], idempotencyKey, priority: false })
+  });
+  const duplicate = await duplicateResponse.json();
+  assert.equal(duplicateResponse.status, 201);
+  assert.equal(duplicate.alreadyExists, true);
+  assert.equal(duplicate.tickets.length, 2);
+  assert.equal(duplicate.printJob.id, issued.printJob.id);
+
+  const claimResponse = await fetch(`${BASE_URL}/api/print/jobs/claim`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-print-agent-token": printAgentToken,
+      "x-print-agent-kiosk-id": "totem-pompeia-01"
+    },
+    body: JSON.stringify({ kioskId: "totem-pompeia-01" })
+  });
+  const claimed = await claimResponse.json();
+  assert.equal(claimResponse.status, 200);
+  assert.equal(claimed.job.id, issued.printJob.id);
+  assert.equal(claimed.job.payload.tickets.length, 2);
+
+  const finishResponse = await fetch(`${BASE_URL}/api/print/jobs/${encodeURIComponent(claimed.job.id)}/finish`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-print-agent-token": printAgentToken,
+      "x-print-agent-kiosk-id": "totem-pompeia-01"
+    },
+    body: JSON.stringify({ kioskId: "totem-pompeia-01", success: true })
+  });
+  assert.equal(finishResponse.status, 200);
+
+  resetSectorTickets("acougue");
+  resetSectorTickets("frios");
+  const unpairResponse = await fetch(`${BASE_URL}/api/kiosk/unpair`, {
+    method: "POST",
+    headers: { "content-type": "application/json", cookie: adminCookie, ...csrfHeader(adminCookie) },
+    body: "{}"
+  });
+  assert.equal(unpairResponse.status, 200);
+});
+
 test("mantem tempo estimado baseado na posicao real da fila", async () => {
   resetSectorTickets("padaria");
   const firstCustomer = await createCustomer("tempo-primeiro");
