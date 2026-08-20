@@ -10,6 +10,8 @@ data/*.sqlite-wal
 !.env.print-agent.example
 
 data/print-agent/
+backups/
+*.sql.enc
 
 npm-debug.log*
 yarn-debug.log*

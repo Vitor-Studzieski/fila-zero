@@ -1,0 +1,26 @@
+[Unit]
+Description=SenhaHub API local
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=senhahub
+Group=senhahub
+WorkingDirectory=/opt/senhahub
+Environment=NODE_ENV=production
+Environment=PORT=3000
+Environment=API_ONLY=0
+EnvironmentFile=/etc/senhahub/senhahub.env
+ExecStart=/usr/bin/node --no-warnings server/server.js
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/senhahub/data /opt/senhahub/backups
+LimitNOFILE=8192
+
+[Install]
+WantedBy=multi-user.target

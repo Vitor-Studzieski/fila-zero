@@ -128,6 +128,25 @@
             <button class="yellow-action" data-online-required>Redefinir senha</button>
             <p class="login-error" id="resetError"></p>
           </form>
+
+          <form class="login-panel" id="mfaForm">
+            <div class="login-mfa-heading">
+              <strong id="mfaTitle">Verificacao em duas etapas</strong>
+              <span id="mfaDescription">Informe o codigo do seu aplicativo autenticador.</span>
+            </div>
+            <div class="login-mfa-enrollment" id="mfaEnrollment" hidden>
+              <img id="mfaQrCode" alt="QR Code para configurar o autenticador" />
+              <p>Escaneie o QR Code no Google Authenticator, Microsoft Authenticator ou outro aplicativo TOTP.</p>
+              <code id="mfaSecret"></code>
+            </div>
+            <label>
+              Codigo do autenticador
+              <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="000000" required />
+            </label>
+            <button class="yellow-action" data-online-required>Verificar codigo</button>
+            <button class="senhahub-auth-link" id="mfaCancel" type="button">Cancelar e entrar novamente</button>
+            <p class="login-error" id="mfaError"></p>
+          </form>
         </div>
       </section>
 

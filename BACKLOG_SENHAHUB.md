@@ -1,6 +1,6 @@
 # Backlog centralizado — SenhaHub
 
-Atualizado em: 18/08/2026
+Atualizado em: 19/08/2026
 
 Este é o único documento para acompanhar tarefas do projeto. Use `[ ]` para pendente e `[x]` para concluído. Os demais documentos descrevem funcionamento, decisões e procedimentos; eles não devem receber novos checklists de tarefas.
 
@@ -39,11 +39,26 @@ Este é o único documento para acompanhar tarefas do projeto. Use `[ ]` para pe
 - [x] Backlog centralizado criado e documentos antigos de tarefas removidos.
 - [x] Demonstração técnica e registro de validação do produto documentados em [docs/INOVASKILL_VALIDACAO.md](docs/INOVASKILL_VALIDACAO.md).
 
+## Migração para PostgreSQL local — software concluído
+
+- [x] Adaptador local PostgreSQL com pool, transações e health check `/api/ready`.
+- [x] Rotas locais de autenticação, sessões, CSRF, fila, carrinho, atendimento, totem, impressão e Web Push.
+- [x] Aliases da aplicação configuráveis para substituir os caminhos operacionais sem alterar as telas.
+- [x] Autorização por perfil/setor, cadastro público bloqueado por padrão em produção e revogação de sessões.
+- [x] Manutenção automática local: sessões expiradas, reset diário de filas, ausência no atendimento e standby.
+- [x] Preflight local: tabelas, RLS, funções, papéis, permissões, conexão e variáveis de produção.
+- [x] Backup PostgreSQL criptografado com roles separados, verificação de integridade e restauração idempotente em base de teste.
+- [x] Script seguro para provisionar ou atualizar gestor local sem armazenar senha no código.
+- [x] Modelos systemd, timer de backup e proxy HTTPS para o servidor interno.
+- [x] Build, checagem sintática, preflight local, teste integrado do Totem e ensaio real de backup/restauração validados.
+
 ## P0 — Produção e operação
 
 - [ ] Configurar e validar SMTP de produção, remetente, SPF, DKIM, DMARC e redirects de recuperação.
 - [x] Implementar proteção contra senhas vazadas fora do Supabase Pro, com validação de força, bloqueio de senhas comuns e consulta HIBP por k-anonymity no servidor.
 - [ ] Corrigir e validar o `DATABASE_URL` para CLI, migrations e backups.
+- [x] Criar scripts locais de backup e restauração criptografados com AES-256-GCM, sem contratar serviço pago e sem versionar dumps ou chaves.
+- [ ] Executar backup real, copiar a cópia criptografada para destino externo e testar a restauração em projeto Supabase separado.
 - [ ] Reconciliar o histórico de migrations do Supabase remoto com os arquivos locais e atualizar o guia de setup quando necessário.
 - [x] Renomear o nome de exibição do projeto Supabase de `Fila_zero` para `SenhaHub`.
 - [x] Configurar definitivamente o agente Windows com `PRINT_AGENT_TOKEN`, `KIOSK_ID` e porta da impressora.
@@ -52,18 +67,32 @@ Este é o único documento para acompanhar tarefas do projeto. Use `[ ]` para pe
 - [ ] Testar reinício do Windows, queda de internet e retomada sem reimpressão indevida.
 - [ ] Validar a operação contínua durante um turno real.
 
+## Onda 09 — P0 — Rede local, nuvem e continuidade
+
+Objetivo: construir e validar uma arquitetura híbrida para o SenhaHub, conectando a operação local do supermercado à nuvem com segurança, tolerância a falhas e sem contratar serviços pagos. A solução deve priorizar recursos já disponíveis, camadas gratuitas e componentes open source; qualquer aquisição física necessária deve ser tratada separadamente e somente com aprovação. Referências: [arquitetura local + nuvem](docs/ARQUITETURA_LOCAL_NUVEM.md) e [infraestrutura técnica local](docs/INFRAESTRUTURA_TECNICA_LOCAL.md).
+
+- [ ] Sprint 62/70 — Planejar a arquitetura híbrida, inventariar equipamentos, serviços, pontos de rede, dependências, custos evitados e responsáveis, definindo o que permanece local e o que fica na nuvem.
+- [ ] Sprint 63/70 — Desenhar a rede local com topologia, plano de endereçamento IP, DHCP, DNS, gateway, firewall, Wi-Fi, switch, reserva de endereços e procedimento de configuração e recuperação.
+- [ ] Sprint 64/70 — Segmentar a rede por função, isolando Totem, impressora/agente, estações administrativas, servidores locais, dispositivos de manutenção e visitantes, usando VLANs ou sub-redes/SSIDs separados quando o equipamento permitir.
+- [ ] Sprint 65/70 — Preparar a operação local do Totem e da impressão, incluindo inicialização automática, sincronização de horário, fila local, saúde do agente, retomada após reinício e funcionamento controlado durante indisponibilidade temporária da internet.
+- [ ] Sprint 66/70 — Integrar a rede local à nuvem exclusivamente por HTTPS de saída, validando Supabase, Vercel, variáveis de ambiente, CORS, DNS, timeouts, retries, health checks e proibição de expor `service_role` ou portas administrativas.
+- [ ] Sprint 67/70 — Criar administração remota segura sem portas públicas desnecessárias, preferindo VPN WireGuard no gateway existente ou outro componente open source já disponível, com MFA, menor privilégio, registro de acessos e revogação documentada.
+- [ ] Sprint 68/70 — Implantar observabilidade local e cloud com logs estruturados, disponibilidade dos serviços, saúde da rede, agente de impressão, armazenamento, relógio, alertas operacionais e procedimento gratuito de resposta a incidentes.
+- [ ] Sprint 69/70 — Consolidar backup e recuperação da configuração local e da nuvem, mantendo cópias criptografadas fora do equipamento principal, sem versionar segredos, e executar restauração em ambiente isolado antes de considerar a rotina confiável.
+- [ ] Sprint 70/70 — Executar a validação ponta a ponta e de contingência: queda de internet, reinício do roteador, queda de energia, indisponibilidade temporária da nuvem, impressora desconectada, recuperação do agente, consistência das senhas e retorno à operação, registrando um runbook.
+
 ## P1 — Produto e experiência
 
 - [x] Ajustar a nova estrutura visual da Dashboard ICCF, incluindo campos, linhas delimitadoras e hierarquia dos indicadores.
 - [x] Ajustar a padronização visual do Totem, incluindo alinhamento, posicionamento, cores, setas e QR Code.
-- [x] Alterar a sequência do atendimento no Totem: atendimento deve ser a etapa 1 e setor deve ser a etapa 2.
+- [x] Remodelar o fluxo do Totem: atendimento normal ou preferencial vem primeiro; categorias preferenciais e setores vêm depois; a seleção de um ou mais setores leva diretamente à emissão, sem retornar ao tipo de senha.
 - [ ] Trocar as logos do atendimento preferencial no Totem pelas versões corretas, mantendo a identificação visual clara e consistente.
 - [ ] Validar a acessibilidade do Totem em todas as etapas.
 - [ ] Validar o fluxo completo Central e Específico com usuários reais.
 - [ ] Implantar Kiosk Mode para bloquear navegador, configurações e acesso ao sistema operacional.
 - [ ] Criar acesso administrativo protegido para manutenção e configuração do Totem.
 - [x] Garantir que toda emissão impressa tenha layout final, QR Code individual ou do conjunto e tratamento de erro compreensível.
-- [x] Agrupar duas ou mais senhas do mesmo pedido no mesmo cupom físico, mantendo um único QR Code.
+- [x] Agrupar duas ou mais senhas do mesmo pedido no mesmo cupom físico, listar todos os setores selecionados na impressão e no acompanhamento, manter um único QR Code e reduzir espaços desnecessários do papel.
 
 ## P1 — Gestão e regras de negócio
 
@@ -71,7 +100,8 @@ Este é o único documento para acompanhar tarefas do projeto. Use `[ ]` para pe
 - [ ] Definir o comportamento ao fechar um setor com fila ativa.
 - [ ] Validar a regra operacional de atendimento preferencial e registrar auditoria da classificação.
 - [ ] Expandir o ICCF com filtros, período selecionável e exportação.
-- [ ] Adicionar MFA aos perfis administrativos.
+- [x] Implementar MFA/TOTP nativo do Supabase para perfis administrativos, com cadastro inicial por QR Code, desafio temporário, limite de tentativas e sessão liberada somente após a verificação.
+- [ ] Validar MFA/TOTP no Supabase e em produção com cada conta administrativa, incluindo recuperação segura do acesso.
 
 ## P1 — Confiabilidade da API e dados
 
@@ -103,6 +133,8 @@ Este é o único documento para acompanhar tarefas do projeto. Use `[ ]` para pe
 ## P2 — LGPD e segurança
 
 - [x] Proteger rotas sensíveis contra acesso direto por URL, arquivos HTML legados, barra final e tela de vinculação do Totem sem sessão autorizada.
+- [x] Aplicar hardening de HTTPS: rejeitar API em HTTP, ativar HSTS, cookies `Secure`/`HttpOnly`/`SameSite=Strict`, validação de origem, CSRF e limites de requisições nas rotas sensíveis.
+- [ ] Configurar domínio próprio no Cloudflare gratuito e validar DNS, certificado, proxy confiável e `CF-Connecting-IP`, sem contratar plano pago.
 - [ ] Revisar os alertas do Supabase Advisor sobre tabelas RLS sem policies e proteção nativa de senhas vazadas desativada.
 - [ ] Mapear todos os dados pessoais coletados, armazenados e utilizados.
 - [ ] Definir finalidade, aviso e aceite de privacidade nas telas que coletam dados.

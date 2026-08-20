@@ -1,0 +1,10 @@
+[Unit]
+Description=Backup diario criptografado do PostgreSQL do SenhaHub
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+Unit=senhahub-backup.service
+
+[Install]
+WantedBy=timers.target

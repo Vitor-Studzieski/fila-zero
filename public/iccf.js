@@ -184,7 +184,7 @@ function apiTextError(response, text) {
 }
 
 function csrfHeader() {
-  const token = getCookie("senhahub_csrf");
+  const token = getCookie("senhahub_local_csrf") || getCookie("senhahub_csrf");
   return token ? { "x-csrf-token": token } : {};
 }
 

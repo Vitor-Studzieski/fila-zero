@@ -9,16 +9,15 @@ function validateProductionEnvironment(environment = process.env) {
     return { ok: true, mode: "non-production", errors, warnings };
   }
 
-  requireValue(environment, "DATA_BACKEND", "supabase", errors);
-  requireValue(environment, "SUPABASE_AUTH_ENABLED", "1", errors);
-  requireHttpsUrl(environment.SUPABASE_URL, "SUPABASE_URL", errors);
-  requireSecret(environment.SUPABASE_ANON_KEY, "SUPABASE_ANON_KEY", errors);
-  requireSecret(environment.SUPABASE_SERVICE_ROLE_KEY, "SUPABASE_SERVICE_ROLE_KEY", errors);
+  const backend = String(environment.DATA_BACKEND || "").trim().toLowerCase();
+  if (backend === "local-postgres") {
+    validateLocalPostgresProduction(environment, errors, warnings);
+  } else {
+    validateSupabaseProduction(environment, errors);
+  }
   requireSecret(environment.AUTH_SECRET, "AUTH_SECRET", errors);
   requireSecret(environment.CRON_SECRET, "CRON_SECRET", errors);
-  requireDatabaseUrl(environment.DATABASE_URL, errors);
   requireHttpsUrl(environment.PUBLIC_APP_URL, "PUBLIC_APP_URL", errors);
-  requireValue(environment, "SUPABASE_AUTO_CONFIRM_CUSTOMERS", "0", errors);
 
   if (isTruthy(environment.ALLOW_DEMO_USERS)) {
     errors.push("ALLOW_DEMO_USERS precisa estar desativado em produção.");
@@ -46,6 +45,32 @@ function validateProductionEnvironment(environment = process.env) {
   }
 
   return { ok: errors.length === 0, mode: "production", errors, warnings };
+}
+
+function validateSupabaseProduction(environment, errors) {
+  requireValue(environment, "DATA_BACKEND", "supabase", errors);
+  requireValue(environment, "SUPABASE_AUTH_ENABLED", "1", errors);
+  requireHttpsUrl(environment.SUPABASE_URL, "SUPABASE_URL", errors);
+  requireSecret(environment.SUPABASE_ANON_KEY, "SUPABASE_ANON_KEY", errors);
+  requireSecret(environment.SUPABASE_SERVICE_ROLE_KEY, "SUPABASE_SERVICE_ROLE_KEY", errors);
+  requireDatabaseUrl(environment.DATABASE_URL, errors, "DATABASE_URL");
+  requireValue(environment, "SUPABASE_AUTO_CONFIRM_CUSTOMERS", "0", errors);
+}
+
+function validateLocalPostgresProduction(environment, errors, warnings) {
+  requireValue(environment, "DATA_BACKEND", "local-postgres", errors);
+  requireValue(environment, "LOCAL_POSTGRES_ROUTES_ENABLED", "1", errors);
+  requireValue(environment, "LOCAL_POSTGRES_APP_ENABLED", "1", errors);
+  requireValue(environment, "SUPABASE_AUTH_ENABLED", "0", errors);
+  requireDatabaseUrl(environment.LOCAL_DATABASE_URL, errors, "LOCAL_DATABASE_URL");
+
+  if (isTruthy(environment.LOCAL_POSTGRES_ALLOW_LEGACY_FALLBACK)) {
+    errors.push("LOCAL_POSTGRES_ALLOW_LEGACY_FALLBACK precisa estar desativado em produção.");
+  }
+
+  if (isTruthy(environment.LOCAL_PUBLIC_REGISTRATION_ENABLED)) {
+    warnings.push("Cadastro público local está habilitado; use-o somente com verificação de e-mail implementada.");
+  }
 }
 
 function requireValue(environment, name, expected, errors) {
@@ -76,10 +101,10 @@ function requireHttpsUrl(value, name, errors) {
   }
 }
 
-function requireDatabaseUrl(value, errors) {
+function requireDatabaseUrl(value, errors, name = "DATABASE_URL") {
   const normalized = String(value || "").trim();
   if (!/^postgres(?:ql)?:\/\//i.test(normalized) || isPlaceholder(normalized)) {
-    errors.push("DATABASE_URL precisa estar configurada com uma URL PostgreSQL válida.");
+    errors.push(`${name} precisa estar configurada com uma URL PostgreSQL válida.`);
   }
 }
 
@@ -140,6 +165,7 @@ function safeEnvironmentFingerprint(environment = process.env) {
   const keys = [
     "SUPABASE_URL",
     "DATABASE_URL",
+    "LOCAL_DATABASE_URL",
     "PUBLIC_APP_URL",
     "KIOSK_ID",
     "PUSH_NOTIFICATIONS_ENABLED"

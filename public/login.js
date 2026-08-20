@@ -11,6 +11,10 @@ document.querySelector("#loginForm").addEventListener("submit", async (event) =>
       method: "POST",
       body: Object.fromEntries(new FormData(form).entries())
     });
+    if (result.mfaRequired) {
+      showMfaPanel(result);
+      return;
+    }
     const next = new URLSearchParams(location.search).get("next");
     location.href = allowedNextForRole(result.user.role, next);
   } catch (exception) {
@@ -19,6 +23,39 @@ document.querySelector("#loginForm").addEventListener("submit", async (event) =>
   } finally {
     setSubmitting(submit, false);
   }
+});
+
+document.querySelector("#mfaForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const error = document.querySelector("#mfaError");
+  const submit = form.querySelector(".yellow-action");
+  error.textContent = "";
+  setSubmitting(submit, true);
+
+  try {
+    const result = await api("/api/auth/mfa/verify", {
+      method: "POST",
+      body: Object.fromEntries(new FormData(form).entries())
+    });
+    const next = new URLSearchParams(location.search).get("next");
+    location.href = allowedNextForRole(result.user.role, next);
+  } catch (exception) {
+    error.textContent = exception.message;
+    showLoginToast(exception.message);
+  } finally {
+    setSubmitting(submit, false);
+  }
+});
+
+document.querySelector("#mfaCancel").addEventListener("click", async () => {
+  try {
+    await api("/api/auth/mfa/cancel", { method: "POST", body: {} });
+  } catch {
+    // The pending cookie expires quickly and the login screen remains usable.
+  }
+  document.querySelector("#mfaForm").reset();
+  activatePanel("login");
 });
 
 document.querySelector("#passwordForm").addEventListener("submit", async (event) => {
@@ -165,6 +202,7 @@ document.querySelectorAll("[data-toggle-password]").forEach((button) => {
 function activatePanel(panel) {
   document.querySelectorAll("[data-login-panel]").forEach((button) => {
     button.classList.toggle("active", button.dataset.loginPanel === panel);
+    button.disabled = panel === "mfa";
   });
   document.querySelectorAll(".login-panel").forEach((form) => {
     form.classList.toggle("active", form.id === `${panel}Form`);
@@ -172,6 +210,28 @@ function activatePanel(panel) {
   document.querySelectorAll(".login-error").forEach((error) => {
     error.textContent = "";
   });
+}
+
+function showMfaPanel(result) {
+  const enrollment = result.mfaMode === "enrollment";
+  document.querySelector("#mfaTitle").textContent = enrollment
+    ? "Configure o autenticador"
+    : "Verificacao em duas etapas";
+  document.querySelector("#mfaDescription").textContent = enrollment
+    ? "A conta administrativa precisa de um autenticador TOTP antes do primeiro acesso."
+    : "Informe o codigo de 6 digitos exibido no seu aplicativo autenticador.";
+  const enrollmentBox = document.querySelector("#mfaEnrollment");
+  const qrCode = document.querySelector("#mfaQrCode");
+  const secret = document.querySelector("#mfaSecret");
+  enrollmentBox.hidden = !enrollment;
+  qrCode.removeAttribute("src");
+  secret.textContent = "";
+  if (enrollment) {
+    if (typeof result.qrCode === "string" && result.qrCode.startsWith("data:image/svg+xml")) qrCode.src = result.qrCode;
+    secret.textContent = result.secret ? `Chave manual: ${result.secret}` : "";
+  }
+  document.querySelector("#mfaError").textContent = "";
+  activatePanel("mfa");
 }
 
 function recoveryAccessToken() {
@@ -249,7 +309,7 @@ function apiTextError(response, text) {
 }
 
 function csrfHeader() {
-  const token = getCookie("senhahub_csrf");
+  const token = getCookie("senhahub_local_csrf") || getCookie("senhahub_csrf");
   return token ? { "x-csrf-token": token } : {};
 }
 

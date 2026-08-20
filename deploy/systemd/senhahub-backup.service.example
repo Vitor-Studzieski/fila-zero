@@ -1,0 +1,16 @@
+[Unit]
+Description=Backup criptografado do PostgreSQL do SenhaHub
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+User=senhahub
+Group=senhahub
+WorkingDirectory=/opt/senhahub
+EnvironmentFile=/etc/senhahub/senhahub.env
+ExecStart=/usr/bin/node scripts/backup-postgres.js
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/senhahub/backups /mnt/backup-senhahub

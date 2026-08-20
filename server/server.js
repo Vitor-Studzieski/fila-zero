@@ -2,6 +2,10 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
+const { pathToFileURL } = require("node:url");
+const { getLocalSession } = require("./local-auth");
+const { checkConnection: checkLocalPostgresConnection } = require("./local-postgres");
+const { runLocalMaintenance } = require("./local-repository");
 const { DatabaseSync } = require("node:sqlite");
 const {
   DEFAULT_PREFERENCES,
@@ -43,6 +47,85 @@ const { healthResponse } = require("./production-readiness");
 const ROOT = path.resolve(__dirname, "..");
 loadEnvFile(path.join(ROOT, ".env.local"));
 loadEnvFile(path.join(ROOT, ".env"));
+
+const LOCAL_POSTGRES_ROUTE_FILES = new Map([
+  ["POST /api/local-postgres/auth/login", "app/api/local-postgres/auth/login/route.js"],
+  ["POST /api/local-postgres/auth/change-password", "app/api/local-postgres/auth/change-password/route.js"],
+  ["POST /api/local-postgres/auth/forgot-password", "app/api/local-postgres/auth/forgot-password/route.js"],
+  ["POST /api/local-postgres/auth/reset-password", "app/api/local-postgres/auth/reset-password/route.js"],
+  ["GET /api/local-postgres/auth/me", "app/api/local-postgres/auth/me/route.js"],
+  ["POST /api/local-postgres/auth/logout", "app/api/local-postgres/auth/logout/route.js"],
+  ["GET /api/local-postgres/queue", "app/api/local-postgres/queue/route.js"],
+  ["GET /api/local-postgres/state", "app/api/local-postgres/state/route.js"],
+  ["GET /api/local-postgres/events", "app/api/local-postgres/events/route.js"],
+  ["GET /api/local-postgres/history", "app/api/local-postgres/history/route.js"],
+  ["GET /api/local-postgres/metrics", "app/api/local-postgres/metrics/route.js"],
+  ["GET /api/local-postgres/offer-insights", "app/api/local-postgres/offer-insights/route.js"],
+  ["POST /api/local-postgres/ratings", "app/api/local-postgres/ratings/route.js"],
+  ["GET /api/local-postgres/users", "app/api/local-postgres/users/route.js"],
+  ["POST /api/local-postgres/users", "app/api/local-postgres/users/route.js"],
+  ["POST /api/local-postgres/auth/register", "app/api/local-postgres/auth/register/route.js"],
+  ["POST /api/local-postgres/sessions", "app/api/local-postgres/sessions/route.js"],
+  ["GET /api/local-postgres/staff/state", "app/api/local-postgres/staff/state/route.js"],
+  ["POST /api/local-postgres/staff/call-next", "app/api/local-postgres/staff/call-next/route.js"],
+  ["GET /api/local-postgres/cart", "app/api/local-postgres/cart/route.js"],
+  ["POST /api/local-postgres/cart/items", "app/api/local-postgres/cart/route.js"],
+  ["GET /api/local-postgres/shopping-agent", "app/api/local-postgres/shopping-agent/route.js"],
+  ["POST /api/local-postgres/shopping-signals", "app/api/local-postgres/shopping-signals/route.js"],
+  ["POST /api/local-postgres/tickets", "app/api/local-postgres/tickets/route.js"],
+  ["GET /api/local-postgres/tickets/track", "app/api/local-postgres/tickets/track/route.js"],
+  ["POST /api/local-postgres/tickets/cancel", "app/api/local-postgres/tickets/cancel/route.js"],
+  ["POST /api/local-postgres/tickets/confirm", "app/api/local-postgres/tickets/confirm/route.js"],
+  ["POST /api/local-postgres/tickets/finish", "app/api/local-postgres/tickets/finish/route.js"],
+  ["POST /api/local-postgres/tickets/skip", "app/api/local-postgres/tickets/skip/route.js"],
+  ["GET /api/local-postgres/kiosk/status", "app/api/local-postgres/kiosk/status/route.js"],
+  ["POST /api/local-postgres/kiosk/pair", "app/api/local-postgres/kiosk/pair/route.js"],
+  ["POST /api/local-postgres/kiosk/unpair", "app/api/local-postgres/kiosk/unpair/route.js"],
+  ["POST /api/local-postgres/kiosk/tickets", "app/api/local-postgres/kiosk/tickets/route.js"],
+  ["GET /api/local-postgres/kiosk/print-job", "app/api/local-postgres/kiosk/print-job/route.js"],
+  ["POST /api/local-postgres/print/jobs/claim", "app/api/local-postgres/print/jobs/claim/route.js"],
+  ["POST /api/local-postgres/print/jobs/finish", "app/api/local-postgres/print/jobs/finish/route.js"],
+  ["GET /api/local-postgres/push/status", "app/api/local-postgres/push/status/route.js"],
+  ["POST /api/local-postgres/push/subscribe", "app/api/local-postgres/push/subscribe/route.js"],
+  ["DELETE /api/local-postgres/push/unsubscribe", "app/api/local-postgres/push/unsubscribe/route.js"],
+  ["PATCH /api/local-postgres/push/preferences", "app/api/local-postgres/push/preferences/route.js"],
+  ["POST /api/local-postgres/push/test", "app/api/local-postgres/push/test/route.js"]
+]);
+const LOCAL_POSTGRES_APP_ALIAS_FILES = new Map([
+  ["POST /api/auth/login", "app/api/local-postgres/auth/login/route.js"],
+  ["POST /api/auth/change-password", "app/api/local-postgres/auth/change-password/route.js"],
+  ["POST /api/auth/forgot-password", "app/api/local-postgres/auth/forgot-password/route.js"],
+  ["POST /api/auth/reset-password", "app/api/local-postgres/auth/reset-password/route.js"],
+  ["POST /api/auth/register", "app/api/local-postgres/auth/register/route.js"],
+  ["GET /api/auth/me", "app/api/local-postgres/auth/me/route.js"],
+  ["POST /api/auth/logout", "app/api/local-postgres/auth/logout/route.js"],
+  ["POST /api/sessions", "app/api/local-postgres/sessions/route.js"],
+  ["GET /api/state", "app/api/local-postgres/state/route.js"],
+  ["GET /api/events", "app/api/local-postgres/events/route.js"],
+  ["GET /api/history", "app/api/local-postgres/history/route.js"],
+  ["GET /api/metrics", "app/api/local-postgres/metrics/route.js"],
+  ["GET /api/offer-insights", "app/api/local-postgres/offer-insights/route.js"],
+  ["POST /api/ratings", "app/api/local-postgres/ratings/route.js"],
+  ["GET /api/users", "app/api/local-postgres/users/route.js"],
+  ["POST /api/users", "app/api/local-postgres/users/route.js"],
+  ["GET /api/staff/state", "app/api/local-postgres/staff/state/route.js"],
+  ["POST /api/tickets", "app/api/local-postgres/tickets/route.js"],
+  ["GET /api/cart", "app/api/local-postgres/cart/route.js"],
+  ["POST /api/cart/items", "app/api/local-postgres/cart/route.js"],
+  ["GET /api/shopping-agent", "app/api/local-postgres/shopping-agent/route.js"],
+  ["POST /api/shopping-signals", "app/api/local-postgres/shopping-signals/route.js"],
+  ["GET /api/kiosk/status", "app/api/local-postgres/kiosk/status/route.js"],
+  ["POST /api/kiosk/pair", "app/api/local-postgres/kiosk/pair/route.js"],
+  ["POST /api/kiosk/unpair", "app/api/local-postgres/kiosk/unpair/route.js"],
+  ["POST /api/kiosk/tickets", "app/api/local-postgres/kiosk/tickets/route.js"],
+  ["POST /api/print/jobs/claim", "app/api/local-postgres/print/jobs/claim/route.js"],
+  ["GET /api/push/status", "app/api/local-postgres/push/status/route.js"],
+  ["POST /api/push/subscribe", "app/api/local-postgres/push/subscribe/route.js"],
+  ["DELETE /api/push/unsubscribe", "app/api/local-postgres/push/unsubscribe/route.js"],
+  ["PATCH /api/push/preferences", "app/api/local-postgres/push/preferences/route.js"],
+  ["POST /api/push/test", "app/api/local-postgres/push/test/route.js"]
+]);
+const localPostgresRouteModules = new Map();
 
 const PORT = Number(process.env.PORT || 3000);
 const dev = process.env.NODE_ENV !== "production";
@@ -107,6 +190,7 @@ const SUPABASE_URL = String(process.env.SUPABASE_URL || "").replace(/\/+$/, "");
 const SUPABASE_ANON_KEY = String(process.env.SUPABASE_ANON_KEY || "");
 const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY || "");
 let scheduledJobsLastRun = 0;
+let localMaintenanceRunning = false;
 
 bootstrap();
 
@@ -177,14 +261,35 @@ function listen(server) {
 
 function startBackgroundJobs() {
   setInterval(() => {
+    if (isLocalPostgresEnabled()) {
+      if (localMaintenanceRunning) return;
+      localMaintenanceRunning = true;
+      runLocalMaintenance()
+        .catch((error) => {
+          logStructured("error", "local_postgres.maintenance_failed", {
+            error: errorDetails(error)
+          });
+        })
+        .finally(() => {
+          localMaintenanceRunning = false;
+        });
+      return;
+    }
     runScheduledJobs();
   }, 1000);
 
   setInterval(() => {
+    if (isLocalPostgresEnabled()) return;
     expireStaleActiveTickets();
     expireAbsentCalls();
     expireExpiredStandbyTickets();
   }, 15000);
+}
+
+function isLocalPostgresEnabled() {
+  return process.env.DATA_BACKEND === "local-postgres"
+    && process.env.LOCAL_POSTGRES_ROUTES_ENABLED === "1"
+    && process.env.LOCAL_POSTGRES_APP_ENABLED === "1";
 }
 
 function runScheduledJobs() {
@@ -684,9 +789,40 @@ async function handleApi(req, res, url) {
 }
 
 async function handleApiInternal(req, res, url) {
+  if (!dev && !isSecureNodeRequest(req, url)) {
+    sendJson(res, 426, { error: "Esta API aceita somente conexoes HTTPS." });
+    return;
+  }
+  if (process.env.LOCAL_POSTGRES_ROUTES_ENABLED === "1" && url.pathname.startsWith("/api/local-postgres/")) {
+    await handleLocalPostgresRoute(req, res, url);
+    return;
+  }
+  if (process.env.LOCAL_POSTGRES_APP_ENABLED === "1") {
+    const handled = await handleLocalPostgresAppAlias(req, res, url);
+    if (handled) return;
+  }
   if (req.method === "GET" && url.pathname === "/api/health") {
     const health = healthResponse(process.env);
     sendJson(res, health.ok ? 200 : 503, health);
+    return;
+  }
+  if (req.method === "GET" && url.pathname === "/api/ready") {
+    const health = healthResponse(process.env);
+    if (!health.ok) {
+      sendJson(res, 503, health);
+      return;
+    }
+    if (isLocalPostgresEnabled()) {
+      try {
+        const database = await checkLocalPostgresConnection();
+        sendJson(res, 200, { status: "ready", ok: true, backend: "local-postgres", database: database.database });
+      } catch (error) {
+        logStructured("error", "local_postgres.readiness_failed", { error: errorDetails(error) });
+        sendJson(res, 503, { status: "unavailable", ok: false });
+      }
+      return;
+    }
+    sendJson(res, 200, { status: "ready", ok: true });
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/internal/jobs") {
@@ -694,7 +830,10 @@ async function handleApiInternal(req, res, url) {
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/config") {
-    sendJson(res, 200, { presenceCheckEnabled: PRESENCE_CHECK_ENABLED });
+    sendJson(res, 200, {
+      presenceCheckEnabled: PRESENCE_CHECK_ENABLED,
+      localPostgresAppEnabled: process.env.LOCAL_POSTGRES_APP_ENABLED === "1"
+    });
     return;
   }
   if (req.method === "GET" && url.pathname === "/api/observability") {
@@ -702,6 +841,15 @@ async function handleApiInternal(req, res, url) {
     sendJson(res, 200, getObservabilityMetrics());
     return;
   }
+
+  if (isLocalPostgresEnabled() && process.env.LOCAL_POSTGRES_ALLOW_LEGACY_FALLBACK !== "1") {
+    sendJson(res, 503, {
+      error: "Esta rota ainda nao foi migrada para o PostgreSQL local.",
+      code: "LOCAL_POSTGRES_ROUTE_REQUIRED"
+    });
+    return;
+  }
+
   maybeRunScheduledJobs();
 
   if (req.method === "POST" && url.pathname === "/api/auth/login") {
@@ -1210,6 +1358,138 @@ async function handleApiInternal(req, res, url) {
   sendJson(res, 404, { error: "Rota não encontrada." });
 }
 
+async function handleLocalPostgresAppAlias(req, res, url) {
+  let routeFile = LOCAL_POSTGRES_APP_ALIAS_FILES.get(`${req.method} ${url.pathname}`);
+  let bodyOverride = null;
+
+  const cancelMatch = url.pathname.match(/^\/api\/tickets\/([^/]+)\/cancel$/);
+  if (req.method === "POST" && cancelMatch) {
+    routeFile = "app/api/local-postgres/tickets/cancel/route.js";
+    const body = await readJsonBodyForLocalRoute(req);
+    bodyOverride = Buffer.from(JSON.stringify({ ...body, ticketId: decodeURIComponent(cancelMatch[1]) }));
+  }
+
+  const trackingMatch = url.pathname.match(/^\/api\/tickets\/track\/([A-Za-z0-9_-]{20,100})$/);
+  if (req.method === "GET" && trackingMatch) {
+    routeFile = "app/api/local-postgres/tickets/track/route.js";
+  }
+
+  const callNextMatch = url.pathname.match(/^\/api\/sectors\/([^/]+)\/call-next$/);
+  if (req.method === "POST" && callNextMatch) {
+    routeFile = "app/api/local-postgres/staff/call-next/route.js";
+    bodyOverride = Buffer.from(JSON.stringify({ sectorId: decodeURIComponent(callNextMatch[1]) }));
+  }
+
+  const ticketLifecycleMatch = url.pathname.match(/^\/api\/tickets\/([^/]+)\/(confirm|finish|skip)$/);
+  if (req.method === "POST" && ticketLifecycleMatch) {
+    const routeName = ticketLifecycleMatch[2];
+    routeFile = `app/api/local-postgres/tickets/${routeName}/route.js`;
+    const body = await readJsonBodyForLocalRoute(req);
+    bodyOverride = Buffer.from(JSON.stringify({
+      ...body,
+      ticketId: decodeURIComponent(ticketLifecycleMatch[1])
+    }));
+  }
+
+  const cartItemMatch = url.pathname.match(/^\/api\/cart\/items\/([^/]+)$/);
+  if ((req.method === "PATCH" || req.method === "DELETE") && cartItemMatch) {
+    routeFile = "app/api/local-postgres/cart/items/[itemId]/route.js";
+    const body = req.method === "PATCH" ? await readJsonBodyForLocalRoute(req) : {};
+    bodyOverride = Buffer.from(JSON.stringify({ ...body, itemId: decodeURIComponent(cartItemMatch[1]) }));
+  }
+
+  const sectorUpdateMatch = url.pathname.match(/^\/api\/sectors\/([^/]+)$/);
+  if (req.method === "PUT" && sectorUpdateMatch) {
+    routeFile = "app/api/local-postgres/sectors/[sectorId]/route.js";
+    const body = await readJsonBodyForLocalRoute(req);
+    bodyOverride = Buffer.from(JSON.stringify({ ...body, sectorId: decodeURIComponent(sectorUpdateMatch[1]) }));
+  }
+
+  const kioskPrintJobMatch = url.pathname.match(/^\/api\/kiosk\/print-jobs\/([^/]+)$/);
+  if (req.method === "GET" && kioskPrintJobMatch) {
+    routeFile = "app/api/local-postgres/kiosk/print-job/route.js";
+  }
+
+  const printFinishMatch = url.pathname.match(/^\/api\/print\/jobs\/([^/]+)\/finish$/);
+  if (req.method === "POST" && printFinishMatch) {
+    routeFile = "app/api/local-postgres/print/jobs/finish/route.js";
+  }
+
+  if (!routeFile) return false;
+  await handleLocalPostgresRoute(req, res, url, routeFile, bodyOverride);
+  return true;
+}
+
+async function handleLocalPostgresRoute(req, res, url, routeFileOverride = null, bodyOverride = null) {
+  const routeFile = routeFileOverride || LOCAL_POSTGRES_ROUTE_FILES.get(`${req.method} ${url.pathname}`);
+  if (!routeFile) {
+    sendJson(res, 404, { error: "Rota PostgreSQL local não encontrada." });
+    return;
+  }
+
+  const routePath = path.join(ROOT, routeFile);
+  let routeModule = localPostgresRouteModules.get(routePath);
+  if (!routeModule) {
+    routeModule = await import(pathToFileURL(routePath).href);
+    localPostgresRouteModules.set(routePath, routeModule);
+  }
+
+  const method = routeModule[req.method];
+  if (typeof method !== "function") {
+    sendJson(res, 405, { error: "Método não permitido." });
+    return;
+  }
+
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(req.headers || {})) {
+    if (value === undefined) continue;
+    headers.set(name, Array.isArray(value) ? value.join(", ") : String(value));
+  }
+
+  const rawBody = bodyOverride || (["GET", "HEAD"].includes(req.method)
+    ? Buffer.alloc(0)
+    : await readRawRequestBody(req));
+  const requestInit = {
+    method: req.method,
+    headers
+  };
+  if (rawBody.length > 0) {
+    requestInit.body = rawBody;
+    requestInit.duplex = "half";
+  }
+
+  const request = new Request(`http://${req.headers.host || "localhost"}${url.pathname}${url.search}`, requestInit);
+  const response = await method(request);
+  const setCookies = response.headers.getSetCookie?.() || [];
+  for (const [name, value] of response.headers.entries()) {
+    if (name === "set-cookie") continue;
+    res.setHeader(name, value);
+  }
+  if (setCookies.length) res.setHeader("set-cookie", setCookies);
+  res.statusCode = response.status;
+  res.end(Buffer.from(await response.arrayBuffer()));
+}
+
+async function readJsonBodyForLocalRoute(req) {
+  const rawBody = await readRawRequestBody(req);
+  if (!rawBody.length) return {};
+  try {
+    const parsed = JSON.parse(rawBody.toString("utf8"));
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function readRawRequestBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
 async function handleInternalJobs(req, res) {
   const context = req.observability || ensureRequestObservation(req, res);
   const executionId = crypto.randomUUID();
@@ -1428,7 +1708,7 @@ async function handlePage(req, res, url) {
     || (requested.startsWith("/attendant/") ? STAFF_ROLES : null)
     || (requested.startsWith("/iccf/") ? ADMIN_ROLES : null);
   if (requiredRoles) {
-    const user = getAuthUser(req);
+    const user = await getPageAuthUser(req);
     if (!user) {
       res.writeHead(302, { location: `/login?next=${encodeURIComponent(requested)}` });
       res.end();
@@ -1441,7 +1721,7 @@ async function handlePage(req, res, url) {
     }
   }
   if ((requested === "/totem" || requested.startsWith("/totem/")) && !verifyKioskSession(getCookie(req, "senhahub_kiosk"), AUTH_SECRET)) {
-    const user = getAuthUser(req);
+    const user = await getPageAuthUser(req);
     if (!user) {
       res.writeHead(302, { location: `/login?next=${encodeURIComponent(requested)}` });
       res.end();
@@ -1905,6 +2185,19 @@ function logoutUser(req, res) {
 function getAuthUser(req) {
   const session = getSessionForRequest(req);
   return session ? { ...userDto(session), csrf_token: session.csrf_token, session_id: session.session_id } : null;
+}
+
+async function getPageAuthUser(req) {
+  if (process.env.LOCAL_POSTGRES_APP_ENABLED === "1") {
+    const localToken = getCookie(req, "senhahub_local_auth");
+    if (localToken) {
+      const session = await getLocalSession(localToken);
+      return session
+        ? { ...session.user, csrf_token: session.csrfToken, session_id: session.sessionId }
+        : null;
+    }
+  }
+  return getAuthUser(req);
 }
 
 function getSessionForRequest(req) {
@@ -4473,9 +4766,14 @@ function getCookie(req, name) {
 
 function clientIp(req) {
   const trusted = process.env.TRUST_PROXY_HEADERS === "1"
-    ? (req.headers["x-vercel-forwarded-for"] || req.headers["x-real-ip"])
+    ? (req.headers["cf-connecting-ip"] || req.headers["x-vercel-forwarded-for"] || req.headers["x-real-ip"])
     : "";
   return String(trusted || req.socket?.remoteAddress || "unknown").split(",")[0].trim() || "unknown";
+}
+
+function isSecureNodeRequest(req, url) {
+  const forwardedProtocol = String(req.headers["x-forwarded-proto"] || "").split(",")[0].trim().toLowerCase();
+  return url?.protocol === "https:" || forwardedProtocol === "https";
 }
 
 function placeholders(values) {

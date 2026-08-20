@@ -42,7 +42,7 @@
                 <label>E-mail<input type="email" name="email" required /></label>
                 <label>Senha<input type="password" name="password" minlength="12" pattern="(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{12,}" title="Use ao menos 12 caracteres com letras maiusculas, minusculas e numeros." required /></label>
                 <label>Perfil<select name="role"><option value="customer">Cliente</option><option value="attendant">Funcionário</option><option value="manager">Gestor</option></select></label>
-                <fieldset class="manager-checks"><legend>Setores do atendente</legend><label><input type="checkbox" name="sectorIds" value="acougue" /> Açougue</label><label><input type="checkbox" name="sectorIds" value="frios" /> Frios</label><label><input type="checkbox" name="sectorIds" value="padaria" /> Padaria</label></fieldset>
+                <fieldset class="manager-checks"><legend>Setores do atendente</legend><label><input type="checkbox" name="sectorIds" value="acougue" /><span>Açougue</span></label><label><input type="checkbox" name="sectorIds" value="frios" /><span>Frios</span></label><label><input type="checkbox" name="sectorIds" value="padaria" /><span>Padaria</span></label></fieldset>
                 <button class="manager-button" type="submit">Criar usuário</button>
               </form>
             </div>

@@ -5906,6 +5906,54 @@ textarea:focus {
   font-weight: 850;
 }
 
+.login-mfa-heading {
+  display: grid;
+  gap: 5px;
+  color: #0d2b5e;
+}
+
+.login-mfa-heading strong {
+  font-size: 18px;
+  font-weight: 950;
+}
+
+.login-mfa-heading span,
+.login-mfa-enrollment p {
+  margin: 0;
+  color: #60708a;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.login-mfa-enrollment {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #d9dee8;
+  border-radius: 12px;
+  background: #f8fafc;
+  text-align: center;
+}
+
+.login-mfa-enrollment img {
+  width: min(220px, 70vw);
+  height: auto;
+  min-height: 0;
+  padding: 8px;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.login-mfa-enrollment code {
+  width: 100%;
+  overflow-wrap: anywhere;
+  color: #0d2b5e;
+  font-size: 12px;
+  font-weight: 800;
+}
+
 .senhahub-auth-footnote {
   margin: 0;
   padding: 0 4px;
@@ -7457,6 +7505,29 @@ textarea:focus {
 .manager-checks {
   min-width: 0;
   border-color: var(--manager-border);
+}
+
+.manager-checks label {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(12px, 2.5vw, 28px);
+  width: 100%;
+}
+
+.manager-checks label span {
+  justify-self: end;
+  text-align: right;
+}
+
+.manager-checks input[type="checkbox"] {
+  width: 16px;
+  min-width: 16px;
+  max-width: 16px;
+  height: 16px;
+  min-height: 16px;
+  margin: 0;
+  justify-self: start;
 }
 
 .manager-checks legend {
