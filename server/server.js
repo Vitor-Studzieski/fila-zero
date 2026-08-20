@@ -1480,7 +1480,12 @@ async function handleLocalPostgresRoute(req, res, url, routeFileOverride = null,
     requestInit.duplex = "half";
   }
 
-  const request = new Request(`http://${req.headers.host || "localhost"}${url.pathname}${url.search}`, requestInit);
+  const forwardedProtocol = String(req.headers["x-forwarded-proto"] || "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+  const requestProtocol = forwardedProtocol === "https" ? "https" : "http";
+  const request = new Request(`${requestProtocol}://${req.headers.host || "localhost"}${url.pathname}${url.search}`, requestInit);
   const response = await method(request);
   const setCookies = response.headers.getSetCookie?.() || [];
   for (const [name, value] of response.headers.entries()) {
