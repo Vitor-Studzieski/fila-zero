@@ -100,7 +100,7 @@ Objetivo: construir e validar uma arquitetura híbrida para o SenhaHub, conectan
 - [ ] Definir o comportamento ao fechar um setor com fila ativa.
 - [ ] Validar a regra operacional de atendimento preferencial e registrar auditoria da classificação.
 - [ ] Expandir o ICCF com filtros, período selecionável e exportação.
-- [x] Implementar MFA/TOTP nativo do Supabase para perfis administrativos, com cadastro inicial por QR Code, desafio temporário, limite de tentativas e sessão liberada somente após a verificação.
+- [ ] Reativar MFA/TOTP nativo do Supabase para perfis administrativos, com cadastro inicial por QR Code, desafio temporário, limite de tentativas e sessão liberada somente após a verificação. A implementação atual está temporariamente desativada para simplificar o acesso.
 - [ ] Validar MFA/TOTP no Supabase e em produção com cada conta administrativa, incluindo recuperação segura do acesso.
 
 ## P1 — Confiabilidade da API e dados

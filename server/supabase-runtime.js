@@ -250,13 +250,8 @@ async function login(request) {
     return json({ error: "Usuario sem perfil ativo no sistema." }, 401);
   }
 
-  if (hasAnyRole(profile, ADMIN_ROLES)) {
-    const mfa = await startAdminMfaChallenge(auth, profile);
-    if (mfa.error) return json({ error: mfa.error }, mfa.status || 503);
-    await clearLoginFailures(attemptKey);
-    return json(mfa.payload, 200, { "set-cookie": mfaCookies(mfa.pendingToken) });
-  }
-
+  // MFA/TOTP administrativo está temporariamente desativado. A implementação
+  // permanece disponível para reativação pela tarefa registrada no backlog.
   await clearLoginFailures(attemptKey);
   const csrfToken = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + SESSION_TTL_SECONDS * 1000).toISOString();
@@ -2759,7 +2754,6 @@ async function getAuthUser(request) {
   ]);
   if (!profile || profile.status !== "active" || !appSession) return null;
   const mfaVerified = Boolean(session.mfaVerified) && Boolean(appSession.mfa_verified);
-  if (hasAnyRole(profile, ADMIN_ROLES) && !mfaVerified) return null;
   return { ...profile, csrf_token: session.csrfToken, session_id: session.sessionId, mfa_verified: mfaVerified };
 }
 

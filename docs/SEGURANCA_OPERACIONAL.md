@@ -7,12 +7,11 @@ Atualizado em 19/08/2026. Este documento separa os controles já aplicados no c�
 - API de produção aceita somente HTTPS; respostas incluem HSTS, CSP, `X-Content-Type-Options`, `X-Frame-Options` e `Referrer-Policy`.
 - Cookie de sessão é `Secure`, `HttpOnly` e `SameSite=Strict`. O cookie CSRF não é `HttpOnly` por desenho, pois o navegador precisa lê-lo para enviá-lo no cabeçalho `x-csrf-token`.
 - Rotas mutáveis exigem CSRF e as rotas de push validam a origem.
-- Login, cadastro, emissão no totem, acompanhamento público e verificação TOTP possuem limites de tentativas.
-- Administradores e gestores usam TOTP nativo do Supabase. No primeiro login administrativo sem fator, o SenhaHub mostra o QR Code de cadastro; nos próximos, exige o código do autenticador. O acesso administrativo só cria sessão depois da verificação.
-- O token temporário recebido do Supabase durante o MFA é armazenado somente como ciphertext AES-256-GCM na tabela interna `auth_mfa_challenges`, com expiração de cinco minutos e no máximo cinco tentativas.
+- Login, cadastro, emissão no totem e acompanhamento público possuem limites de tentativas.
+- A verificação em duas etapas está temporariamente desativada no login administrativo. A estrutura TOTP e os desafios temporários continuam preservados para a reativação prevista no backlog.
 - `service_role`, `senhahub_service`, URLs de banco, `AUTH_SECRET`, `CRON_SECRET`, VAPID privado e a chave de backup permanecem somente no servidor.
 
-O MFA nativo é gratuito e precisa estar com a verificação habilitada em Authentication > Multi-Factor Authentication no projeto Supabase. A documentação oficial informa que o TOTP é gratuito e habilitado nos projetos por padrão, mas também permite controlar a verificação pelo Dashboard.
+Quando a tarefa do backlog for concluída, o MFA nativo deverá ser habilitado e validado em Authentication > Multi-Factor Authentication no projeto Supabase.
 
 ## Phishing: SPF, DKIM e DMARC
 
@@ -123,7 +122,6 @@ Não exponha diretamente o endereço do banco ou chaves do Supabase no DNS. O li
 - [ ] Domínio próprio configurado na Vercel e no Cloudflare.
 - [ ] SPF, DKIM e DMARC publicados e validados.
 - [ ] SMTP real testado para recuperação de senha.
-- [ ] MFA/TOTP habilitado no painel do Supabase e testado com cada conta administrativa.
 - [ ] `DATABASE_URL` validada sem aparecer em logs.
 - [ ] `LOCAL_DATABASE_URL` validada sem aparecer em logs quando o servidor interno for usado.
 - [ ] Backup criptografado copiado para destino externo.
