@@ -10,7 +10,7 @@ Group=senhahub
 WorkingDirectory=/opt/senhahub
 Environment=NODE_ENV=production
 Environment=PORT=3000
-Environment=API_ONLY=0
+Environment=API_ONLY=1
 EnvironmentFile=/etc/senhahub/senhahub.env
 ExecStart=/usr/bin/node --no-warnings server/server.js
 Restart=always

@@ -254,8 +254,13 @@ async function consumeLocalPushRateLimit(userId, action, limit, windowSeconds, r
 function verifyLocalPushOrigin(request) {
   const origin = String(request.headers.get("origin") || "");
   if (!origin && process.env.NODE_ENV !== "production") return true;
+  const configuredOrigins = [
+    process.env.PUBLIC_APP_URL,
+    ...String(process.env.API_ALLOWED_ORIGINS || "").split(",")
+  ].map((value) => String(value || "").trim().replace(/\/+$/, "")).filter(Boolean);
   try {
-    return Boolean(origin && new URL(origin).origin === new URL(request.url).origin);
+    const requestOrigin = new URL(request.url).origin;
+    return Boolean(origin && (origin === requestOrigin || configuredOrigins.includes(origin)));
   } catch {
     return false;
   }

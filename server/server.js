@@ -196,9 +196,27 @@ const SUPABASE_SERVICE_ROLE_KEY = String(process.env.SUPABASE_SERVICE_ROLE_KEY |
 let scheduledJobsLastRun = 0;
 let localMaintenanceRunning = false;
 
+if (isStandaloneServer) {
+  assertProductionBackend();
+}
+
 bootstrap();
 
-if (isStandaloneServer) startStandaloneServer();
+if (isStandaloneServer) {
+  startStandaloneServer();
+}
+
+function assertProductionBackend() {
+  if (dev) return;
+  const localPostgresReady = process.env.DATA_BACKEND === "local-postgres"
+    && process.env.LOCAL_POSTGRES_ROUTES_ENABLED === "1"
+    && process.env.LOCAL_POSTGRES_APP_ENABLED === "1"
+    && process.env.SUPABASE_AUTH_ENABLED === "0"
+    && process.env.LOCAL_POSTGRES_ALLOW_LEGACY_FALLBACK !== "1";
+  if (!localPostgresReady) {
+    throw new Error("A API de produção precisa usar exclusivamente o PostgreSQL local com fallback legado e Supabase desativados.");
+  }
+}
 
 function resolveDefaultDataDir() {
   if (!dev && process.env.VERCEL) {

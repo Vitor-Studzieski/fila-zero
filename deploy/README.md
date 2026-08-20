@@ -5,10 +5,12 @@ Estes arquivos são modelos para um servidor Linux interno. Eles não contêm ce
 1. Copie o projeto para um diretório de serviço, por exemplo `/opt/senhahub`.
 2. Instale Node.js 22 e as dependências com `npm ci`.
 3. Crie `/etc/senhahub/senhahub.env` com permissões `600`, usando `.env.example` como base.
-4. Configure `DATA_BACKEND=local-postgres`, `LOCAL_DATABASE_URL`, `AUTH_SECRET`, `CRON_SECRET`, `PRINT_AGENT_TOKEN` e os demais valores reais.
+4. Configure `API_ONLY=1`, `DATA_BACKEND=local-postgres`, `LOCAL_DATABASE_URL`, `AUTH_SECRET`, `CRON_SECRET`, `PRINT_AGENT_TOKEN` e os demais valores reais.
 5. Instale o serviço `senhahub.service.example` como unidade systemd.
 6. Coloque um proxy HTTPS confiável na frente da porta interna da aplicação.
 7. Instale o timer de backup somente depois de configurar `BACKUP_ENCRYPTION_KEY` e `BACKUP_OFFSITE_DIR` em um volume externo.
 8. Execute `npm run preflight:local-postgres` antes de liberar a rede da loja.
+
+O front pode continuar na Vercel. Nesse caso, configure `API_SERVER_URL` nas variáveis de ambiente da Vercel apontando para a URL HTTPS do proxy deste servidor. O proxy encaminha `/api/*` para a API Node; o PostgreSQL permanece acessível somente pelo servidor.
 
 O PostgreSQL deve aceitar conexões somente do servidor da aplicação. Totens, TVs, tablets e clientes acessam a API HTTPS; nunca a porta 5432.

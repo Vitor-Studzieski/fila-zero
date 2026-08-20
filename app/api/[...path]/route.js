@@ -4,11 +4,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function route(request) {
-  if (process.env.DATA_BACKEND === "supabase") {
-    const runtime = await import("../../../server/supabase-runtime.js");
-    return runtime.default?.handleRequest
-      ? runtime.default.handleRequest(request)
-      : runtime.handleRequest(request);
+  if (process.env.DATA_BACKEND !== "local-postgres"
+    || process.env.LOCAL_POSTGRES_ROUTES_ENABLED !== "1"
+    || process.env.LOCAL_POSTGRES_APP_ENABLED !== "1") {
+    return Response.json({
+      error: "A API PostgreSQL precisa ser configurada no servidor da aplicação."
+    }, { status: 503 });
   }
 
   const backend = await import("../../../server/server.js");

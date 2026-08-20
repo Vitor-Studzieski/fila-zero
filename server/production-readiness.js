@@ -138,6 +138,7 @@ function isPlaceholder(value) {
   return [
     "troque-por-um-segredo-longo-com-32-ou-mais-caracteres",
     "troque-por-um-segredo-longo-e-exclusivo-do-cron",
+    "troque-por-um-segredo-longo-e-exclusivo",
     "cole-o-mesmo-segredo-configurado-na-vercel",
     "seu-dominio.com",
     "example.invalid"

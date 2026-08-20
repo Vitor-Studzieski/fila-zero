@@ -7,7 +7,7 @@ Aplicativo de fila virtual para supermercado, com login por perfil, solicitacao 
 - Node.js 22.x
 - npm
 
-O projeto requer Node 22. O SQLite continua disponivel para testes e compatibilidade, mas a operacao migrada usa PostgreSQL local por meio de `DATA_BACKEND=local-postgres`.
+O projeto requer Node 22. O SQLite continua disponível somente para testes e compatibilidade; a operação oficial usa exclusivamente PostgreSQL por meio de uma API Node no servidor da loja.
 
 ## Como rodar localmente
 
@@ -23,7 +23,7 @@ npm install
 npm run dev
 ```
 
-Para iniciar usando o PostgreSQL local migrado, confirme no `.env.local`:
+Para iniciar a API usando o PostgreSQL, confirme no `.env.local`:
 
 ```text
 DATA_BACKEND=local-postgres
@@ -32,19 +32,23 @@ LOCAL_POSTGRES_APP_ENABLED=1
 SUPABASE_AUTH_ENABLED=0
 ```
 
+No servidor da loja, o serviço systemd usa `API_ONLY=1` para expor somente a API. Para rodar também o front local durante desenvolvimento, mantenha `API_ONLY=0` ou remova essa variável.
+
 Antes de iniciar, valide a estrutura e as permissoes:
 
 ```bash
 npm run preflight:local-postgres
 ```
 
-3. Abra no navegador:
+3. Para testar a API, use:
 
 ```text
-http://localhost:3000
+http://localhost:3000/api/ready
 ```
 
-O backend, as paginas Next.js e os arquivos de `public/` rodam pelo mesmo servidor.
+O front pode continuar publicado na Vercel. Nesse caso, configure `API_SERVER_URL` na Vercel com a URL HTTPS do proxy da API. As telas continuam chamando `/api/*` pelo domínio do front, e a Vercel encaminha essas chamadas para o servidor PostgreSQL.
+
+Em desenvolvimento com `API_ONLY=0`, o backend e o front rodam pelo mesmo servidor. Em produção, o servidor interno expõe somente a API e o front fica na Vercel.
 
 ## Rotas principais
 
@@ -99,48 +103,23 @@ LOCAL_DATABASE_URL=postgresql://...
 LOCAL_POSTGRES_ROUTES_ENABLED=1
 LOCAL_POSTGRES_APP_ENABLED=1
 SUPABASE_AUTH_ENABLED=0
+API_ONLY=1
+API_ALLOWED_ORIGINS=https://senhahub.vercel.app
 LOCAL_PUBLIC_REGISTRATION_ENABLED=0
 AUTH_SECRET
 CRON_SECRET
+API_SERVER_URL=https://api.seu-dominio.com (somente na Vercel)
 PUBLIC_APP_URL=https://...
 KIOSK_ID
 KIOSK_PRINTER_PORT
 PRINT_AGENT_TOKEN
 ```
 
-Para producao em Supabase, defina pelo menos:
+O sistema oficial não usa Supabase em runtime. O cadastro público permanece bloqueado em produção; para provisionar um gestor sem expor senha no código, use `npm run local:admin` com as variáveis `LOCAL_ADMIN_EMAIL`, `LOCAL_ADMIN_PASSWORD`, `LOCAL_ADMIN_NAME`, `LOCAL_ADMIN_ROLE` e `LOCAL_ADMIN_CONFIRM=1`. `AUTH_SECRET` precisa ser um segredo fixo com ao menos 32 caracteres.
 
-```text
-SUPABASE_URL
-SUPABASE_ANON_KEY
-SUPABASE_SERVICE_ROLE_KEY
-SUPABASE_AUTH_ENABLED
-DATA_BACKEND
-SUPABASE_AUTO_CONFIRM_CUSTOMERS
-AUTH_SECRET
-CRON_SECRET
-DATABASE_URL
-PUBLIC_APP_URL
-KIOSK_ID
-KIOSK_PRINTER_PORT
-PRINT_AGENT_TOKEN
-OBSERVABILITY_ALERT_WEBHOOK_URL (opcional)
-BOOTSTRAP_ADMIN_EMAIL
-BOOTSTRAP_ADMIN_PASSWORD
-DEMO_USERS_JSON
-PUSH_NOTIFICATIONS_ENABLED
-NEXT_PUBLIC_VAPID_PUBLIC_KEY
-VAPID_PRIVATE_KEY
-VAPID_SUBJECT
-KIOSK_MODE
-KIOSK_SECTOR_ID
-```
+`CRON_SECRET` protege a rota interna `/api/internal/jobs` quando acionada por monitoramento autorizado. A API Node também executa os jobs em segundo plano no servidor persistente; a Vercel não é responsável pelo processamento do banco.
 
-Use `DATA_BACKEND=local-postgres` no servidor interno para rodar login, filas, carrinho, setores, metricas e usuarios no PostgreSQL local. O cadastro publico permanece bloqueado em producao; para provisionar um gestor sem expor senha no codigo, use `npm run local:admin` com as variaveis `LOCAL_ADMIN_EMAIL`, `LOCAL_ADMIN_PASSWORD`, `LOCAL_ADMIN_NAME`, `LOCAL_ADMIN_ROLE` e `LOCAL_ADMIN_CONFIRM=1`. Use `DATA_BACKEND=supabase` somente quando a operacao estiver apontando para o projeto remoto. `AUTH_SECRET` precisa ser um segredo fixo com ao menos 32 caracteres. `SUPABASE_AUTO_CONFIRM_CUSTOMERS=1` libera cadastro publico sem confirmacao de e-mail para testes; em producao real, volte para `0`.
-
-`CRON_SECRET` protege a rota interna `/api/internal/jobs`, usada pela Vercel Cron para executar expiracao de senhas, chamadas automaticas e notificacoes mesmo sem trafego de usuarios. Gere um segredo exclusivo e cadastre o mesmo valor no ambiente local e na Vercel.
-
-Antes de promover uma versão para produção local, execute `npm run preflight:local-postgres`; para a variante Supabase, use `npm run preflight:production`. Os comandos validam segredos, conexão, tabelas, RLS, funções, permissões, cron, totem, agente de impressão e VAPID quando o Web Push estiver habilitado. Eles nunca imprimem os valores secretos. Use `/api/health` para liveness e `/api/ready` para confirmar que a API conseguiu consultar o PostgreSQL.
+Antes de promover uma versão para produção, execute `npm run preflight:local-postgres`. O comando valida segredos, conexão, tabelas, RLS, funções, permissões, jobs, totem, agente de impressão e VAPID quando o Web Push estiver habilitado. Ele nunca imprime os valores secretos. Use `/api/health` para liveness e `/api/ready` para confirmar que a API conseguiu consultar o PostgreSQL.
 
 `OBSERVABILITY_ALERT_WEBHOOK_URL` e opcional. Quando configurada somente no servidor, recebe alertas JSON de falhas do Cron e de trabalhos de impressão. Mesmo sem webhook, cada execução fica registrada e pode ser consultada por um perfil administrativo em `/api/observability`, enquanto os logs estruturados incluem `requestId`, duração e resultado.
 
@@ -229,7 +208,7 @@ Executa os testes de orquestracao da fila, PWA e Web Push.
 
 ## Observacoes para deploy
 
-O projeto possui adaptacao para Vercel em `app/api/[...path]/route.js`. A Vercel continua adequada para a variante Supabase. Para o PostgreSQL local, execute o servidor Node na maquina/servidor interno, atrás de HTTPS reverso, com `/api/health` e `/api/ready` monitorados.
+O projeto mantém o front na Vercel por meio do `API_SERVER_URL` e do proxy reverso de `/api/*`. A API Node deve rodar na máquina/servidor interno, atrás de HTTPS reverso, com `/api/health` e `/api/ready` monitorados. O PostgreSQL não é exposto aos dispositivos nem à internet.
 
 O acompanhamento das tarefas fica em [BACKLOG_SENHAHUB.md](BACKLOG_SENHAHUB.md). Esse é o único documento de status do projeto.
 

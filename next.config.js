@@ -1,5 +1,18 @@
 /** @type {import('next').NextConfig} */
 const isDevelopment = process.env.NODE_ENV !== "production";
+const apiServerUrl = String(process.env.API_SERVER_URL || "").trim().replace(/\/+$/, "");
+
+if (apiServerUrl) {
+  let parsedApiServerUrl;
+  try {
+    parsedApiServerUrl = new URL(apiServerUrl);
+  } catch {
+    throw new Error("API_SERVER_URL precisa ser uma URL HTTPS válida.");
+  }
+  if (parsedApiServerUrl.protocol !== "https:" && !isDevelopment) {
+    throw new Error("API_SERVER_URL precisa usar HTTPS em produção.");
+  }
+}
 const contentSecurityPolicy = [
   "default-src 'self'",
   `script-src 'self' 'unsafe-inline'${isDevelopment ? " 'unsafe-eval'" : ""}`,
@@ -17,6 +30,17 @@ const contentSecurityPolicy = [
 
 const nextConfig = {
   reactStrictMode: true,
+  async rewrites() {
+    if (!apiServerUrl) return { beforeFiles: [] };
+    return {
+      beforeFiles: [
+        {
+          source: "/api/:path*",
+          destination: `${apiServerUrl}/api/:path*`
+        }
+      ]
+    };
+  },
   async headers() {
     return [
       {
