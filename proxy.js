@@ -8,7 +8,8 @@ const pageRoles = {
   "/admin/setores": ["manager", "admin"],
   "/admin/totens": ["manager", "admin"],
   "/admin/usuarios": ["manager", "admin"],
-  "/iccf": ["manager", "admin"]
+  "/iccf": ["manager", "admin"],
+  "/tablet": ["tablet"]
 };
 const legacyPageRedirects = {
   "/index.html": "/",
@@ -175,6 +176,7 @@ function normalizeRole(role) {
 }
 
 function roleHome(user) {
+  if (normalizeRole(user.role) === "tablet") return "/tablet";
   return normalizeRole(user.role) === "attendant" ? "/attendant" : "/";
 }
 
@@ -184,6 +186,7 @@ export const config = {
     "/attendant/:path*",
     "/admin/:path*",
     "/iccf/:path*",
+    "/tablet/:path*",
     "/totem",
     "/totem/:path*",
     "/index.html",

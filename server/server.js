@@ -82,6 +82,8 @@ const LOCAL_POSTGRES_ROUTE_FILES = new Map([
   ["POST /api/local-postgres/kiosk/pair", "app/api/local-postgres/kiosk/pair/route.js"],
   ["POST /api/local-postgres/kiosk/unpair", "app/api/local-postgres/kiosk/unpair/route.js"],
   ["POST /api/local-postgres/kiosk/tickets", "app/api/local-postgres/kiosk/tickets/route.js"],
+  ["GET /api/local-postgres/tablet/status", "app/api/local-postgres/tablet/status/route.js"],
+  ["POST /api/local-postgres/tablet/tickets", "app/api/local-postgres/tablet/tickets/route.js"],
   ["GET /api/local-postgres/kiosk/print-job", "app/api/local-postgres/kiosk/print-job/route.js"],
   ["POST /api/local-postgres/print/jobs/claim", "app/api/local-postgres/print/jobs/claim/route.js"],
   ["POST /api/local-postgres/print/jobs/finish", "app/api/local-postgres/print/jobs/finish/route.js"],
@@ -118,6 +120,8 @@ const LOCAL_POSTGRES_APP_ALIAS_FILES = new Map([
   ["POST /api/kiosk/pair", "app/api/local-postgres/kiosk/pair/route.js"],
   ["POST /api/kiosk/unpair", "app/api/local-postgres/kiosk/unpair/route.js"],
   ["POST /api/kiosk/tickets", "app/api/local-postgres/kiosk/tickets/route.js"],
+  ["GET /api/tablet/status", "app/api/local-postgres/tablet/status/route.js"],
+  ["POST /api/tablet/tickets", "app/api/local-postgres/tablet/tickets/route.js"],
   ["POST /api/print/jobs/claim", "app/api/local-postgres/print/jobs/claim/route.js"],
   ["GET /api/push/status", "app/api/local-postgres/push/status/route.js"],
   ["POST /api/push/subscribe", "app/api/local-postgres/push/subscribe/route.js"],
@@ -157,7 +161,7 @@ const STANDBY_SECONDS = 10 * 60;
 const TICKET_MIN_NUMBER = 0;
 const TICKET_MAX_NUMBER = 999;
 const BUSINESS_TIME_ZONE = "America/Sao_Paulo";
-const AUTH_ROLES = ["customer", "attendant", "manager", "admin"];
+const AUTH_ROLES = ["customer", "attendant", "manager", "admin", "tablet"];
 const CUSTOMER_ROLES = ["customer", "manager", "admin"];
 const STAFF_ROLES = ["attendant", "manager", "admin"];
 const ADMIN_ROLES = ["manager", "admin"];
@@ -2772,6 +2776,7 @@ function hasAnyRole(user, roles) {
 }
 
 function roleHome(user) {
+  if (hasAnyRole(user, ["tablet"])) return "/tablet";
   if (hasAnyRole(user, ["attendant"])) return "/attendant";
   return "/";
 }

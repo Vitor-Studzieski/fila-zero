@@ -10,7 +10,7 @@ const ACTIVE_STATUSES = [
   "standby"
 ];
 
-const USER_ROLES = new Set(["customer", "attendant", "manager", "admin"]);
+const USER_ROLES = new Set(["customer", "attendant", "manager", "admin", "tablet"]);
 const SECTOR_STATUSES = new Set(["open", "paused", "closed"]);
 
 async function getLocalCustomerHistory(customerId) {
@@ -303,11 +303,13 @@ async function listLocalUsers() {
   const result = await query(
     `
       SELECT p.id, p.name, p.email, p.role::text AS role, p.status::text AS status, p.created_at,
+             u.raw_app_meta_data,
              COALESCE(array_agg(psp.sector_id ORDER BY psp.sector_id) FILTER (WHERE psp.sector_id IS NOT NULL), '{}') AS sector_ids
       FROM public.profiles p
+      JOIN auth.users u ON u.id = p.id
       LEFT JOIN public.profile_sector_permissions psp ON psp.profile_id = p.id
       WHERE p.status = 'active'::public.user_status
-      GROUP BY p.id
+      GROUP BY p.id, u.raw_app_meta_data
       ORDER BY p.created_at ASC
     `
   );
@@ -319,10 +321,14 @@ async function createLocalManagedUser(body = {}) {
   const name = String(body.name || "").replace(/\s+/g, " ").trim().slice(0, 120);
   const password = String(body.password || "");
   const role = USER_ROLES.has(body.role) ? body.role : "attendant";
+  const profileRole = role === "tablet" ? "customer" : role;
+  const appMetadata = role === "tablet" ? { access_mode: "tablet" } : {};
   if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !name || !isStrongPassword(password)) {
     return { error: "Informe nome, e-mail e senha com ao menos 12 caracteres, letras maiúsculas, minúsculas e números." };
   }
-  const sectorIds = Array.isArray(body.sectorIds) ? [...new Set(body.sectorIds.map((value) => String(value).trim()).filter(Boolean))] : [];
+  const sectorIds = role === "tablet"
+    ? []
+    : (Array.isArray(body.sectorIds) ? [...new Set(body.sectorIds.map((value) => String(value).trim()).filter(Boolean))] : []);
   try {
     return await withTransaction(async (client) => {
       const existing = await client.query("SELECT 1 FROM auth.users WHERE lower(email) = lower($1) LIMIT 1", [email]);
@@ -330,10 +336,10 @@ async function createLocalManagedUser(body = {}) {
       const userResult = await client.query(
         `
           INSERT INTO auth.users (id, email, encrypted_password, raw_user_meta_data, raw_app_meta_data, email_confirmed_at)
-          VALUES (gen_random_uuid(), $1, crypt($2, gen_salt('bf')), jsonb_build_object('name', $3::text, 'role', $4::text), '{}'::jsonb, now())
+          VALUES (gen_random_uuid(), $1, crypt($2, gen_salt('bf')), jsonb_build_object('name', $3::text, 'role', $4::text), $5::jsonb, now())
           RETURNING id, email, created_at
         `,
-        [email, password, name, role]
+        [email, password, name, role, JSON.stringify(appMetadata)]
       );
       const user = userResult.rows[0];
       const profileResult = await client.query(
@@ -348,7 +354,7 @@ async function createLocalManagedUser(body = {}) {
             updated_at = now()
           RETURNING id, name, email, role::text AS role, status::text AS status, created_at
         `,
-        [user.id, name, email, role]
+          [user.id, name, email, profileRole]
       );
       for (const sectorId of sectorIds) {
         await client.query(
@@ -360,7 +366,7 @@ async function createLocalManagedUser(body = {}) {
           [user.id, sectorId]
         );
       }
-      return { user: userDto({ ...profileResult.rows[0], sector_ids: sectorIds }) };
+      return { user: userDto({ ...profileResult.rows[0], raw_app_meta_data: appMetadata, sector_ids: sectorIds }) };
     });
   } catch (error) {
     const uniquenessMessage = `${error?.constraint || ""} ${error?.detail || ""}`;
@@ -385,12 +391,15 @@ function sectorDto(row) {
 }
 
 function userDto(row) {
+  const appMetadata = row.raw_app_meta_data && typeof row.raw_app_meta_data === "object"
+    ? row.raw_app_meta_data
+    : {};
   return {
     id: row.id,
     customerId: row.id,
     name: row.name,
     email: row.email,
-    role: row.role,
+    role: appMetadata.access_mode === "tablet" ? "tablet" : row.role,
     status: row.status,
     sectorIds: Array.isArray(row.sector_ids) ? row.sector_ids.filter(Boolean) : [],
     createdAt: row.created_at

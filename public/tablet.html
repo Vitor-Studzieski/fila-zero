@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Solicitar senha - SenhaHub</title>
+  </head>
+  <body>
+    <main class="tablet-stage">
+      <header class="tablet-header">
+        <div class="tablet-brand">
+          <img src="/icons/senhahub-192.png" alt="" />
+          <div><span>Supermercado Pompeia</span><strong>SenhaHub</strong></div>
+        </div>
+        <div class="tablet-header-actions">
+          <div class="tablet-connection" id="tabletConnection" data-state="loading"><span aria-hidden="true"></span><strong>Conectando</strong></div>
+          <button class="tablet-logout" id="tabletLogoutButton" type="button">Sair</button>
+        </div>
+      </header>
+
+      <section class="tablet-loading" id="tabletLoading" aria-live="polite">
+        <strong>Preparando a solicitação</strong><span>Consultando os setores disponíveis.</span>
+      </section>
+
+      <section class="tablet-error" id="tabletError" hidden aria-live="assertive">
+        <strong id="tabletErrorTitle">Não foi possível carregar o tablet.</strong>
+        <p id="tabletErrorMessage"></p>
+        <a class="tablet-secondary" href="/login?next=%2Ftablet">Entrar novamente</a>
+      </section>
+
+      <section class="tablet-operation" id="tabletOperation" hidden>
+        <div class="tablet-heading">
+          <div><p class="tablet-eyebrow">Emissão digital</p><h1>Solicite sua senha</h1></div>
+          <p>Escolha o tipo de atendimento e o setor. A senha aparecerá na tela e não será impressa.</p>
+        </div>
+
+        <div class="tablet-progress" aria-label="Etapas da solicitação">
+          <span class="active" data-tablet-progress="type">1 <small>Atendimento</small></span>
+          <span data-tablet-progress="priority">2 <small>Categoria</small></span>
+          <span data-tablet-progress="sector">3 <small>Setor</small></span>
+          <span data-tablet-progress="confirm">4 <small>Confirmar</small></span>
+        </div>
+
+        <section class="tablet-step" id="tabletStepType">
+          <div class="tablet-step-heading"><h2>Como você precisa ser atendido?</h2><p>Escolha uma opção para continuar.</p></div>
+          <div class="tablet-choice-grid">
+            <button class="tablet-choice" type="button" data-tablet-type="normal"><strong>Atendimento normal</strong><span>Entre na fila comum do setor.</span></button>
+            <button class="tablet-choice tablet-choice-priority" type="button" data-tablet-type="preferencial"><strong>Atendimento preferencial</strong><span>Para quem tem direito ao atendimento prioritário.</span></button>
+          </div>
+        </section>
+
+        <section class="tablet-step" id="tabletStepPriority" hidden>
+          <div class="tablet-step-heading"><h2>Qual é a categoria preferencial?</h2><p>Selecione a categoria correspondente.</p></div>
+          <div class="tablet-priority-grid" id="tabletPriorityOptions"></div>
+          <button class="tablet-secondary" id="tabletBackToType" type="button">Voltar</button>
+        </section>
+
+        <section class="tablet-step" id="tabletStepSector" hidden>
+          <div class="tablet-step-heading"><h2>Escolha o setor</h2><p>Selecione onde deseja ser atendido.</p></div>
+          <div class="tablet-sectors" id="tabletSectors" aria-live="polite"></div>
+          <div class="tablet-step-actions"><button class="tablet-secondary" id="tabletBackToTypeFromSector" type="button">Voltar</button><button class="tablet-primary" id="tabletContinueToConfirm" type="button" disabled>Continuar</button></div>
+        </section>
+
+        <section class="tablet-step" id="tabletStepConfirm" hidden>
+          <div class="tablet-step-heading"><h2>Confirme a solicitação</h2><p>Confira os dados antes de entrar na fila.</p></div>
+          <div class="tablet-confirm" id="tabletConfirmSummary"></div>
+          <div class="tablet-step-actions"><button class="tablet-secondary" id="tabletBackToSector" type="button">Voltar</button><button class="tablet-primary" id="tabletIssueButton" type="button">Solicitar senha</button></div>
+        </section>
+
+        <p class="tablet-feedback" id="tabletFeedback" role="alert" aria-live="assertive"></p>
+      </section>
+
+      <section class="tablet-result" id="tabletResult" hidden aria-live="assertive">
+        <p class="tablet-eyebrow">Solicitação concluída</p>
+        <h1>Sua senha digital</h1>
+        <p class="tablet-result-copy">Acompanhe a chamada na tela do sistema ou pelo link de acompanhamento.</p>
+        <div class="tablet-result-tickets" id="tabletResultTickets"></div>
+        <button class="tablet-primary" id="tabletNewRequest" type="button">Nova solicitação</button>
+      </section>
+    </main>
+  </body>
+</html>

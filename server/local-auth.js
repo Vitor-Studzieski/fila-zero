@@ -35,6 +35,7 @@ async function loginLocalUser({ email, password, attemptKey = email } = {}) {
         SELECT
           u.id,
           u.email,
+          u.raw_app_meta_data,
           p.name,
           p.role,
           p.status,
@@ -300,6 +301,7 @@ async function getLocalSession(sessionToken) {
         s.expires_at,
         u.id,
         u.email,
+        u.raw_app_meta_data,
         p.name,
         p.role,
         p.status,
@@ -423,12 +425,15 @@ async function loadUserSectorIds(client, userId) {
 }
 
 function userDto(row, sectorIds = []) {
+  const appMetadata = row.raw_app_meta_data && typeof row.raw_app_meta_data === "object"
+    ? row.raw_app_meta_data
+    : {};
   return {
     id: row.id,
     customerId: row.id,
     name: row.name,
     email: row.email,
-    role: row.role,
+    role: appMetadata.access_mode === "tablet" ? "tablet" : row.role,
     status: row.status,
     sectorIds,
     createdAt: row.created_at
