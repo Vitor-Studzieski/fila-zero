@@ -1,5 +1,5 @@
 (function initializeButcherDisplay() {
-  const POLL_INTERVAL_MS = 5000;
+  const POLL_INTERVAL_MS = 2000;
   const WAITING_STATUSES = new Set(["aguardando", "proximo", "espera_inteligente", "standby"]);
   const PROMOTIONS = [
     { name: "Picanha bovina", detail: "Peça selecionada · kg", major: "59", minor: "90", unit: "kg", tone: "red", art: "picanha", image: "/assets/tv-picanha.webp" },

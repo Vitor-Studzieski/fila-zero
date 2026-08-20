@@ -2796,7 +2796,7 @@ async function getAuthUser(request) {
   const session = verifySessionToken(token);
   if (!session?.user?.id) return null;
   const [profile, appSession] = await Promise.all([
-    getProfile(session.user.id, session.email, { bypassCache: true, accessMode: session.user.role === "tv" ? "tv" : null }),
+    getProfile(session.user.id, session.email, { accessMode: session.user.role === "tv" ? "tv" : null }),
     getActiveAuthSession(session)
   ]);
   if (!profile || profile.status !== "active" || !appSession) return null;

@@ -2,10 +2,6 @@ let adminState = { sectors: [] };
 let adminUsers = [];
 let adminMetrics = { sectors: [], satisfaction: { count: 0, average: 0 } };
 let currentUser = null;
-let adminPollingTimer = null;
-let adminMetricsTimer = null;
-const ADMIN_STATE_POLL_INTERVAL_MS = 15000;
-const ADMIN_METRICS_POLL_INTERVAL_MS = 60000;
 
 initAdmin();
 
@@ -30,18 +26,32 @@ async function initAdmin() {
     metricsDateInput.addEventListener("change", () => loadMetrics().catch(() => {}));
   }
   try {
-    await Promise.all([loadAdminState(), loadMetrics(), loadUsers()]);
+    const requests = [];
+    if (needsAdminState()) requests.push(loadAdminState());
+    if (needsAdminMetrics()) requests.push(loadMetrics());
+    if (document.querySelector("#adminUsers")) requests.push(loadUsers());
+    await Promise.all(requests);
   } catch (error) {
     const alerts = document.querySelector("#dashboardAlerts");
     if (alerts) {
       alerts.innerHTML = `<div class="manager-alert manager-alert-attention"><span class="manager-alert-mark">!</span><div><strong>Não foi possível carregar todos os dados</strong><p>Tente atualizar o painel novamente. ${escapeHtml(error.message || "Erro de comunicação")}</p></div></div>`;
     }
   }
-  connectAdminRealtime();
 }
 
 async function refreshDashboard() {
-  await Promise.all([loadAdminState(), loadMetrics()]);
+  const requests = [];
+  if (needsAdminState()) requests.push(loadAdminState());
+  if (needsAdminMetrics()) requests.push(loadMetrics());
+  await Promise.all(requests);
+}
+
+function needsAdminState() {
+  return Boolean(document.querySelector("#dashboardKpis, #queueTable, #adminSectors"));
+}
+
+function needsAdminMetrics() {
+  return Boolean(document.querySelector("#dashboardKpis"));
 }
 
 async function loadAdminState() {
@@ -66,33 +76,6 @@ async function loadMetrics() {
   adminMetrics = await api(`/api/metrics?date=${encodeURIComponent(selectedDate)}`);
   renderAdmin();
   renderDashboard();
-}
-
-function connectAdminRealtime() {
-  startAdminPolling();
-  startMetricsPolling();
-  document.addEventListener("visibilitychange", () => {
-    if (!document.hidden) {
-      loadAdminState().catch(() => {});
-      loadMetrics().catch(() => {});
-    }
-  });
-}
-
-function startAdminPolling() {
-  if (adminPollingTimer) return;
-  adminPollingTimer = setInterval(() => {
-    if (document.hidden) return;
-    loadAdminState().catch(() => {});
-  }, ADMIN_STATE_POLL_INTERVAL_MS);
-}
-
-function startMetricsPolling() {
-  if (adminMetricsTimer) return;
-  adminMetricsTimer = setInterval(() => {
-    if (document.hidden) return;
-    loadMetrics().catch(() => {});
-  }, ADMIN_METRICS_POLL_INTERVAL_MS);
 }
 
 function renderAdmin() {
@@ -456,7 +439,9 @@ async function saveSector(event) {
     method: "PUT",
     body: data
   });
-  await Promise.all([loadAdminState(), loadMetrics()]);
+  const requests = [loadAdminState()];
+  if (needsAdminMetrics()) requests.push(loadMetrics());
+  await Promise.all(requests);
 }
 
 async function createUser(event) {

@@ -14,6 +14,7 @@ const state = {
   selectedSector: null,
   step: "type",
   inFlight: false,
+  statusRequestInFlight: false,
   refreshTimer: null
 };
 
@@ -77,11 +78,13 @@ function renderStatus() {
   renderSectors(state.status?.sectors || []);
   resetOperation();
   clearInterval(state.refreshTimer);
-  state.refreshTimer = setInterval(refreshStatus, 15000);
+  state.refreshTimer = setInterval(refreshStatus, 2000);
 }
 
 async function refreshStatus() {
   if (elements.operation.hidden || state.step !== "sector") return;
+  if (state.statusRequestInFlight) return;
+  state.statusRequestInFlight = true;
   try {
     const response = await fetch("/api/tablet/status", { credentials: "same-origin", cache: "no-store" });
     if (!response.ok) return;
@@ -89,6 +92,8 @@ async function refreshStatus() {
     renderSectors(state.status.sectors || []);
   } catch {
     // A lista atual continua disponível até a próxima atualização.
+  } finally {
+    state.statusRequestInFlight = false;
   }
 }
 
