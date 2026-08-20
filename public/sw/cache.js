@@ -1,5 +1,15 @@
 (function exposeSenhaHubCache(scope) {
   const config = scope.SENHAHUB_SW_CONFIG;
+  const functionalScripts = new Set([
+    "/login.js",
+    "/app.js",
+    "/admin.js",
+    "/attendant.js",
+    "/tablet.js",
+    "/totem.js",
+    "/pwa.js",
+    "/pwa-utils.js"
+  ]);
 
   function isNetworkOnly(request, url) {
     if (request.method !== "GET") return true;
@@ -11,6 +21,7 @@
       || url.pathname.startsWith("/login/")
       || url.pathname === "/sw.js"
       || url.pathname.startsWith("/sw/")
+      || functionalScripts.has(url.pathname)
     );
   }
 

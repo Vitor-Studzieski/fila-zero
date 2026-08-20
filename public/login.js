@@ -165,7 +165,6 @@ document.querySelectorAll("[data-toggle-password]").forEach((button) => {
 function activatePanel(panel) {
   document.querySelectorAll("[data-login-panel]").forEach((button) => {
     button.classList.toggle("active", button.dataset.loginPanel === panel);
-    button.disabled = panel === "mfa";
   });
   document.querySelectorAll(".login-panel").forEach((form) => {
     form.classList.toggle("active", form.id === `${panel}Form`);
@@ -219,7 +218,9 @@ async function api(path, options = {}) {
         "content-type": "application/json",
         ...csrfHeader()
       },
-      body: options.body ? JSON.stringify(options.body) : undefined
+      body: options.body ? JSON.stringify(options.body) : undefined,
+      credentials: "same-origin",
+      cache: "no-store"
     });
     const payload = await parseApiPayload(response);
     window.senhaHubPwa?.reportNetworkSuccess();
