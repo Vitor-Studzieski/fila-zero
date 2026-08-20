@@ -50,8 +50,8 @@ export default function RootLayout({ children }) {
       </head>
       <body>
         {children}
-        <Script src="/pwa-utils.js" strategy="afterInteractive" />
-        <Script src="/pwa.js" strategy="afterInteractive" />
+        <Script src="/pwa-utils.js?v=20260820.2" strategy="afterInteractive" />
+        <Script src="/pwa.js?v=20260820.2" strategy="afterInteractive" />
       </body>
     </html>
   );

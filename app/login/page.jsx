@@ -5,7 +5,7 @@ export default function LoginPage() {
   return (
     <>
       <HtmlTemplate fileName="login.html" />
-      <Script src="/login.js" strategy="afterInteractive" />
+      <Script src="/login.js?v=20260820.2" strategy="afterInteractive" />
     </>
   );
 }

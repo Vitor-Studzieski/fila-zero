@@ -1,3 +1,4 @@
+function bindLoginUi() {
 document.querySelector("#loginForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.currentTarget;
@@ -9,7 +10,7 @@ document.querySelector("#loginForm").addEventListener("submit", async (event) =>
   try {
     const result = await api("/api/auth/login", {
       method: "POST",
-      body: Object.fromEntries(new FormData(form).entries())
+      body: formValues(form)
     });
     const next = new URLSearchParams(location.search).get("next");
     location.href = allowedNextForRole(result.user.role, next);
@@ -32,7 +33,7 @@ document.querySelector("#passwordForm").addEventListener("submit", async (event)
   try {
     const result = await api("/api/auth/change-password", {
       method: "POST",
-      body: Object.fromEntries(new FormData(form).entries())
+      body: formValues(form)
     });
     form.reset();
     showLoginToast(result.message || "Senha alterada com sucesso.");
@@ -56,7 +57,7 @@ document.querySelector("#recoverForm").addEventListener("submit", async (event) 
   try {
     const result = await api("/api/auth/forgot-password", {
       method: "POST",
-      body: Object.fromEntries(new FormData(form).entries())
+      body: formValues(form)
     });
     form.reset();
     showLoginToast(result.message || "Confira seu e-mail para continuar.");
@@ -72,7 +73,7 @@ document.querySelector("#resetForm").addEventListener("submit", async (event) =>
   event.preventDefault();
   const form = event.currentTarget;
   const error = document.querySelector("#resetError");
-  const data = Object.fromEntries(new FormData(form).entries());
+  const data = formValues(form);
   const submit = form.querySelector(".yellow-action");
   error.textContent = "";
 
@@ -110,7 +111,7 @@ document.querySelector("#registerForm").addEventListener("submit", async (event)
   const form = event.currentTarget;
   const error = document.querySelector("#registerError");
   const submit = form.querySelector(".yellow-action");
-  const data = Object.fromEntries(new FormData(form).entries());
+  const data = formValues(form);
   error.textContent = "";
 
   if (data.password !== data.confirmPassword) {
@@ -161,6 +162,22 @@ document.querySelectorAll("[data-toggle-password]").forEach((button) => {
     button.setAttribute("aria-label", visible ? "Mostrar senha" : "Ocultar senha");
   });
 });
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", bindLoginUi, { once: true });
+} else {
+  bindLoginUi();
+}
+
+function formValues(form) {
+  const values = {};
+  for (let index = 0; index < form.elements.length; index += 1) {
+    const field = form.elements[index];
+    if (field.name && !field.disabled) values[field.name] = field.value;
+  }
+  return values;
+}
 
 function activatePanel(panel) {
   document.querySelectorAll("[data-login-panel]").forEach((button) => {
