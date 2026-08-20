@@ -8,7 +8,7 @@ export async function POST(request) {
   if (process.env.DATA_BACKEND !== "local-postgres" || process.env.LOCAL_POSTGRES_ROUTES_ENABLED !== "1") {
     return Response.json({ error: "Rota PostgreSQL local desativada." }, { status: 404 });
   }
-  if (process.env.NODE_ENV === "production" && process.env.LOCAL_PUBLIC_REGISTRATION_ENABLED !== "1") {
+  if (process.env.NODE_ENV === "production") {
     return Response.json({ error: "Cadastro público desativado neste ambiente." }, { status: 403 });
   }
 

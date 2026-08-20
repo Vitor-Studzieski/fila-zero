@@ -1,68 +1,15 @@
-import { Readable } from "node:stream";
-
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 async function route(request) {
-  if (process.env.DATA_BACKEND !== "local-postgres"
-    || process.env.LOCAL_POSTGRES_ROUTES_ENABLED !== "1"
-    || process.env.LOCAL_POSTGRES_APP_ENABLED !== "1") {
+  if (process.env.DATA_BACKEND !== "supabase") {
     return Response.json({
-      error: "A API PostgreSQL precisa ser configurada no servidor da aplicação."
+      error: "A API oficial usa exclusivamente o Supabase. Configure DATA_BACKEND=supabase."
     }, { status: 503 });
   }
 
-  const backend = await import("../../../server/server.js");
-  const body = ["GET", "HEAD"].includes(request.method) ? "" : await request.text();
-  const url = new URL(request.url);
-  const nodeReq = Readable.from(body ? [body] : []);
-  nodeReq.method = request.method;
-  nodeReq.url = `${url.pathname}${url.search}`;
-  nodeReq.headers = Object.fromEntries(request.headers.entries());
-
-  const response = await handleWithNodeResponse(backend, nodeReq, url);
-  return response;
-}
-
-function handleWithNodeResponse(backend, nodeReq, url) {
-  return new Promise((resolve) => {
-    const chunks = [];
-    const responseHeaders = new Map();
-    const headers = new Headers();
-    const nodeRes = {
-      statusCode: 200,
-      setHeader(name, value) {
-        const key = name.toLowerCase();
-        responseHeaders.set(key, value);
-        if (key === "set-cookie" && Array.isArray(value)) {
-          headers.delete("set-cookie");
-          value.forEach((cookie) => headers.append("set-cookie", cookie));
-          return;
-        }
-        headers.set(name, Array.isArray(value) ? value.join(", ") : value);
-      },
-      getHeader(name) {
-        return responseHeaders.get(name.toLowerCase()) || headers.get(name);
-      },
-      writeHead(status, nextHeaders = {}) {
-        this.statusCode = status;
-        Object.entries(nextHeaders).forEach(([name, value]) => headers.set(name, value));
-      },
-      write(chunk) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk)));
-      },
-      end(chunk = "") {
-        if (chunk) this.write(chunk);
-        resolve(new Response(Buffer.concat(chunks), { status: this.statusCode, headers }));
-      }
-    };
-
-    Promise.resolve((backend.default || backend).handleApi(nodeReq, nodeRes, url)).catch((error) => {
-      console.error(error);
-      headers.set("content-type", "application/json; charset=utf-8");
-      resolve(new Response(JSON.stringify({ error: "Erro interno do servidor." }), { status: 500, headers }));
-    });
-  });
+  const backend = await import("../../../server/supabase-runtime.js");
+  return backend.handleRequest(request);
 }
 
 export const GET = route;

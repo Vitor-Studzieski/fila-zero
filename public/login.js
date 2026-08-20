@@ -268,7 +268,7 @@ function apiTextError(response, text) {
 }
 
 function csrfHeader() {
-  const token = getCookie("senhahub_local_csrf") || getCookie("senhahub_csrf");
+  const token = getCookie("senhahub_csrf");
   return token ? { "x-csrf-token": token } : {};
 }
 
@@ -286,7 +286,8 @@ function allowedNextForRole(role, next) {
     attendant: "/attendant",
     manager: "/",
     admin: "/",
-    tablet: "/tablet"
+    tablet: "/tablet",
+    tv: "/tv/acougue"
   }[role] || "/";
   const normalizedRole = role === "admin" ? "manager" : role;
   if (!next) return home;
@@ -294,5 +295,6 @@ function allowedNextForRole(role, next) {
   if (role === "attendant" && next === "/attendant") return next;
   if (role === "customer" && next === "/") return next;
   if (role === "tablet" && next === "/tablet") return next;
+  if (role === "tv" && next === "/tv/acougue") return next;
   return home;
 }

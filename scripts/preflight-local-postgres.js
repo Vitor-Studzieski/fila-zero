@@ -8,7 +8,6 @@ loadEnvFile(path.resolve(process.cwd(), ".env"));
 
 const REQUIRED_TABLES = [
   "public.app_sessions",
-  "public.auth_mfa_challenges",
   "public.calls",
   "public.cart_items",
   "public.cron_executions",
@@ -31,6 +30,7 @@ const REQUIRED_TABLES = [
   "public.ticket_counters",
   "public.tickets",
   "public.web_push_subscriptions",
+  "public.senhahub_schema_migrations",
   "auth.login_attempts",
   "auth.password_resets",
   "auth.sessions",
@@ -86,10 +86,10 @@ async function main() {
         FROM pg_roles
         WHERE rolname = ANY($1::text[])
       `,
-      [["senhahub_service", "senhahub_app"]]
+      [["senhahub_service"]]
     );
     const roleByName = new Map(roles.rows.map((row) => [row.rolname, row]));
-    for (const roleName of ["senhahub_service", "senhahub_app"]) {
+    for (const roleName of ["senhahub_service"]) {
       const role = roleByName.get(roleName);
       if (!role) errors.push(`Papel ausente: ${roleName}`);
       else if (role.rolsuper) errors.push(`Papel da aplicação não pode ser superusuário: ${roleName}`);
@@ -133,6 +133,7 @@ async function main() {
       publicTablesWithRls: publicTables.filter((row) => row.rls_enabled).length,
       requiredTables: REQUIRED_TABLES.length,
       requiredFunctions: REQUIRED_FUNCTIONS.length,
+      schemaMigrations: await query("SELECT count(*)::integer AS count FROM public.senhahub_schema_migrations").then((result) => result.rows[0].count),
       warnings,
       errors
     }, null, 2));

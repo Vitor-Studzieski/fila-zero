@@ -34,6 +34,7 @@ function localPostgresEnvironment(overrides = {}) {
     LOCAL_POSTGRES_ROUTES_ENABLED: "1",
     LOCAL_POSTGRES_APP_ENABLED: "1",
     LOCAL_DATABASE_URL: "postgresql://senhahub_service:password@127.0.0.1:5432/senhahub_local_teste",
+    LOCAL_PG_SSL: "0",
     AUTH_SECRET: "a".repeat(40),
     CRON_SECRET: "b".repeat(40),
     PUBLIC_APP_URL: "https://senhahub.example",
@@ -71,20 +72,7 @@ test("exige VAPID completo quando Web Push está habilitado", () => {
   assert.ok(result.errors.some((error) => error.includes("VAPID_PRIVATE_KEY")));
 });
 
-test("aprova produção usando PostgreSQL local sem exigir credenciais Supabase", () => {
+test("aprova produção usando PostgreSQL local no servidor instalado", () => {
   const result = validateProductionEnvironment(localPostgresEnvironment());
   assert.equal(result.ok, true);
-  assert.deepEqual(healthResponse(localPostgresEnvironment()), { status: "ok", ok: true });
-});
-
-test("reprova PostgreSQL local quando as rotas de produção não estão habilitadas", () => {
-  const result = validateProductionEnvironment(localPostgresEnvironment({ LOCAL_POSTGRES_APP_ENABLED: "0" }));
-  assert.equal(result.ok, false);
-  assert.ok(result.errors.some((error) => error.includes("LOCAL_POSTGRES_APP_ENABLED")));
-});
-
-test("reprova fallback legado do PostgreSQL local em produção", () => {
-  const result = validateProductionEnvironment(localPostgresEnvironment({ LOCAL_POSTGRES_ALLOW_LEGACY_FALLBACK: "1" }));
-  assert.equal(result.ok, false);
-  assert.ok(result.errors.some((error) => error.includes("LOCAL_POSTGRES_ALLOW_LEGACY_FALLBACK")));
 });

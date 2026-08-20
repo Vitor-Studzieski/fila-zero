@@ -641,13 +641,11 @@
   }
 
   function csrfHeader() {
-    const token = ["senhahub_local_csrf", "senhahub_csrf"]
-      .map((name) => document.cookie
-        .split(";")
-        .map((item) => item.trim())
-        .find((item) => item.startsWith(`${name}=`))
-        ?.slice(`${name}=`.length))
-      .find(Boolean);
+    const token = document.cookie
+      .split(";")
+      .map((item) => item.trim())
+      .find((item) => item.startsWith("senhahub_csrf="))
+      ?.slice("senhahub_csrf=".length);
     return token ? { "x-csrf-token": token } : {};
   }
 

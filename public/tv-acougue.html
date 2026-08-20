@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TV do Açougue - SenhaHub</title>
+  </head>
+  <body>
+    <main class="tv-screen" id="tvScreen">
+      <header class="tv-header">
+        <div class="tv-brand">
+          <img class="tv-market-logo" src="/assets/mercado-pompeia-logo.jpg" alt="Logo do Supermercado Pompeia" />
+          <div><strong>SENHA<span>HUB</span></strong><small>Sua vez, sem filas.</small></div>
+        </div>
+        <div class="tv-header-meta">
+          <div class="tv-clock"><span aria-hidden="true">◷</span><time id="tvClock">--:--</time></div>
+          <div class="tv-date" id="tvDate">--</div>
+          <div class="tv-connection" id="tvConnection" data-state="loading"><span></span><b>Conectando</b></div>
+        </div>
+      </header>
+
+      <section class="tv-content">
+        <section class="tv-queue-area" aria-labelledby="tvQueueTitle">
+          <div class="tv-queue-heading">
+            <div><p>Atendimento</p><h1 id="tvQueueTitle">Açougue</h1><span>Senhas em tempo real</span></div>
+            <div class="tv-queue-status">
+              <div class="tv-queue-called">
+                <span class="tv-speaker" aria-hidden="true">◖))</span>
+                <div><strong>SENHAS CHAMADAS</strong><small>Aguarde sua chamada</small></div>
+              </div>
+              <div class="tv-live-badge"><span></span><b>AO VIVO</b></div>
+            </div>
+          </div>
+
+          <div class="tv-queue-columns">
+            <article class="tv-queue-card tv-latest-card">
+              <div class="tv-card-title"><span class="tv-card-icon tv-card-icon-call">⌁</span><div><h2>Últimas chamadas</h2><p>Fique atento ao painel</p></div></div>
+              <div class="tv-call-list" id="tvRecentCalls" aria-live="polite"><div class="tv-empty-row">Carregando chamadas...</div></div>
+            </article>
+
+            <article class="tv-queue-card tv-waiting-card">
+              <div class="tv-card-title"><span class="tv-card-icon tv-card-icon-wait">#</span><div><h2>Aguardando</h2><p>Próximas senhas do açougue</p></div></div>
+              <div class="tv-waiting-total"><strong id="tvWaitingCount">--</strong><span>pessoas na fila</span></div>
+              <div class="tv-waiting-list" id="tvWaitingTickets"><div class="tv-empty-row">Consultando fila...</div></div>
+            </article>
+          </div>
+
+          <div class="tv-current-call" id="tvCurrentCall" data-state="idle">
+            <div class="tv-current-label"><span class="tv-current-pulse"></span><div><small>Senha atual</small><strong id="tvCurrentStatus">Aguardando próxima chamada</strong></div></div>
+            <strong class="tv-current-ticket" id="tvCurrentTicket">--</strong>
+            <div class="tv-current-customer" id="tvCurrentCustomer">Confira o painel para acompanhar sua vez</div>
+          </div>
+        </section>
+
+        <aside class="tv-promo-area" aria-labelledby="tvPromoTitle">
+          <div class="tv-promo-topline"><span>Ofertas do dia</span><b>EXCLUSIVO AÇOUGUE</b></div>
+          <div class="tv-promo-heading"><span class="tv-promo-logo"><img src="/assets/mercado-pompeia-logo.jpg" alt="Logo do Supermercado Pompeia" /></span><div><h2 id="tvPromoTitle">Promoções<br /><em>imperdíveis!</em></h2><p>Cortes selecionados para deixar sua refeição ainda melhor.</p></div></div>
+          <div class="tv-promo-grid" id="tvPromotions"></div>
+          <div class="tv-promo-note"><span>✓</span><strong>Consulte a disponibilidade<br />no balcão do açougue.</strong></div>
+        </aside>
+      </section>
+
+      <footer class="tv-footer"><span class="tv-footer-bell" aria-hidden="true">●</span><strong>Sua senha será chamada em breve. Fique atento!</strong><i></i><span>Obrigado por escolher o nosso mercado!</span><b aria-hidden="true">♥</b></footer>
+      <p class="tv-feedback" id="tvFeedback" role="status" aria-live="polite"></p>
+    </main>
+  </body>
+</html>

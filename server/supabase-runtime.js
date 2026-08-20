@@ -71,6 +71,7 @@ const STAFF_SKIPPABLE_STATUSES = ["aguardando", "proximo", "chamado", "standby",
 const CUSTOMER_ROLES = ["customer", "manager", "admin"];
 const STAFF_ROLES = ["attendant", "manager", "admin"];
 const ADMIN_ROLES = ["manager", "admin"];
+const DISPLAY_ROLES = ["tv"];
 const SKIP_REASONS = new Set(["cliente_ausente", "cancelamento", "erro_operacional"]);
 const PRIORITY_CATEGORIES = new Set([
   "deficiencia_ou_mobilidade_reduzida",
@@ -136,6 +137,13 @@ async function handleRequestInternal(request, context = null) {
       const health = healthResponse(process.env);
       return json(health, health.ok ? 200 : 503);
     }
+    if (request.method === "GET" && url.pathname === "/api/ready") {
+      const health = healthResponse(process.env);
+      if (!health.ok || !isSupabaseReady()) {
+        return json({ status: "unavailable", ok: false, backend: "supabase" }, 503);
+      }
+      return json({ status: "ready", ok: true, backend: "supabase" }, 200);
+    }
     if (!isSupabaseReady()) {
       return json({ error: "Supabase nao configurado." }, 500);
     }
@@ -145,7 +153,7 @@ async function handleRequestInternal(request, context = null) {
       return json({ presenceCheckEnabled: PRESENCE_CHECK_ENABLED });
     }
     await maybeRunScheduledJobs({
-      wait: url.pathname === "/api/state" || url.pathname === "/api/staff/state" || url.pathname === "/api/events"
+      wait: url.pathname === "/api/state" || url.pathname === "/api/staff/state" || url.pathname === "/api/display/state" || url.pathname === "/api/events"
     });
 
     if (request.method === "POST" && url.pathname === "/api/auth/login") return login(request);
@@ -174,6 +182,7 @@ async function handleRequestInternal(request, context = null) {
     if (request.method === "GET" && url.pathname === "/api/state") return state(request);
     if (request.method === "GET" && url.pathname === "/api/history") return history(request);
     if (request.method === "GET" && url.pathname === "/api/staff/state") return staffState(request);
+    if (request.method === "GET" && url.pathname === "/api/display/state") return displayState(request);
     if (request.method === "GET" && url.pathname === "/api/metrics") return metrics(request);
     if (request.method === "GET" && url.pathname === "/api/offer-insights") return offerInsights(request, url);
     if (request.method === "POST" && url.pathname === "/api/tickets") return createTicketRoute(request);
@@ -244,7 +253,9 @@ async function login(request) {
     return json({ error: "E-mail ou senha invalidos." }, 401);
   }
 
-  const profile = await getProfile(auth.user.id, auth.user.email);
+  const profile = await getProfile(auth.user.id, auth.user.email, {
+    accessMode: auth.user.user_metadata?.access_mode || auth.user.user_metadata?.role || auth.user.app_metadata?.access_mode
+  });
   if (!profile || profile.status !== "active") {
     await registerLoginFailure(attemptKey);
     return json({ error: "Usuario sem perfil ativo no sistema." }, 401);
@@ -1197,6 +1208,12 @@ async function staffState(request) {
   return json(await getStaffState(user));
 }
 
+async function displayState(request) {
+  const user = await requireUser(request, DISPLAY_ROLES);
+  if (user.response) return user.response;
+  return json({ source: "supabase", ...(await getStaffState(user)) });
+}
+
 async function metrics(request) {
   const user = await requireUser(request, ADMIN_ROLES);
   if (user.response) return user.response;
@@ -1347,7 +1364,7 @@ async function createUserRoute(request) {
 }
 
 async function createTicket(body) {
-  await expireStaleActiveTickets();
+  void expireStaleActiveTickets().catch((error) => console.error("ticket_expiry_background_failed", error));
   const sector = await getSector(body.sectorId);
   if (!sector) return fail("Setor nao encontrado.");
   if (sector.status !== "open") return fail("Setor fechado para novas senhas.");
@@ -1375,7 +1392,7 @@ async function createTicket(body) {
     p_max_active_tickets: MAX_ACTIVE_TICKETS_PER_CUSTOMER
   });
   if (!row || row.error) return fail("Nao foi possivel emitir a senha agora.");
-  await registerEvent("senha_emitida", "ticket", row.id, row.customer_id, row.sector_id, {
+  const eventPayload = {
     code: row.code,
     priority,
     presence: {
@@ -1383,9 +1400,14 @@ async function createTicket(body) {
       locationVerified: presence.locationVerified,
       distanceMeters: presence.distanceMeters
     }
-  });
-  await notifyQueueMilestones(row.sector_id);
-  return { ticket: await safeTicketDto(row), alreadyExists: false };
+  };
+  const ticket = safeTicketDto(row);
+  await Promise.all([
+    registerEvent("senha_emitida", "ticket", row.id, row.customer_id, row.sector_id, eventPayload),
+    ticket
+  ]);
+  void notifyQueueMilestones(row.sector_id).catch((error) => console.error("ticket_milestone_notification_failed", error));
+  return { ticket: await ticket, alreadyExists: false };
 }
 
 async function dispatchTicketPush(ticket, type, version, extraContext = {}) {
@@ -2305,47 +2327,67 @@ async function createRating(body) {
 }
 
 async function listUsers() {
-  const profiles = await select("profiles", "select=id,name,email,role,status,created_at&order=created_at.asc");
+  const [profiles, authUsers] = await Promise.all([
+    select("profiles", "select=id,name,email,role,status,created_at&order=created_at.asc"),
+    supabaseFetch("/auth/v1/admin/users?per_page=1000")
+  ]);
   const permissions = await select("profile_sector_permissions", "select=profile_id,sector_id");
+  const accessModes = new Map((authUsers?.users || []).map((user) => [
+    user.id,
+    user.user_metadata?.access_mode || (user.user_metadata?.role === "tv" ? "tv" : null)
+  ]));
   const byProfile = new Map();
   permissions.forEach((item) => {
     const current = byProfile.get(item.profile_id) || [];
     current.push(item.sector_id);
     byProfile.set(item.profile_id, current);
   });
-  return profiles.map((profile) => userDto({ ...profile, sectorIds: byProfile.get(profile.id) || [] }));
+  return profiles.map((profile) => userDto({
+    ...profile,
+    access_mode: accessModes.get(profile.id) || null,
+    sectorIds: byProfile.get(profile.id) || []
+  }));
 }
 
 async function createUser(body) {
   const email = String(body.email || "").trim().toLowerCase();
   const password = String(body.password || "");
   const name = String(body.name || "").trim();
-  const role = ["customer", "attendant", "manager", "admin"].includes(body.role) ? body.role : "attendant";
+  const role = ["customer", "attendant", "manager", "admin", "tv"].includes(body.role) ? body.role : "attendant";
+  const profileRole = role === "tv" ? "customer" : role;
   if (!email || !name || !validateStrongPassword(password)) return fail("Informe nome, e-mail e senha com ao menos 12 caracteres, letras maiusculas, minusculas e numeros.");
   const passwordPolicy = await validatePasswordPolicy(password);
   if (passwordPolicy.error) return fail(passwordPolicy.error);
   const auth = await supabaseFetch("/auth/v1/admin/users", {
     method: "POST",
-    body: { email, password, email_confirm: true, user_metadata: { name, role } }
+    body: { email, password, email_confirm: true, user_metadata: { name, role, ...(role === "tv" ? { access_mode: "tv" } : {}) } }
   });
   if (auth.error || !auth.id) return fail(auth.error || "Nao foi possivel criar usuario.");
-  const profile = await upsert("profiles", { id: auth.id, email, name, role, status: "active" }, "id");
-  await setUserSectorPermissions(auth.id, Array.isArray(body.sectorIds) ? body.sectorIds : []);
-  return { user: userDto({ ...profile, sectorIds: Array.isArray(body.sectorIds) ? body.sectorIds : [] }) };
+  const profile = await upsert("profiles", { id: auth.id, email, name, role: profileRole, status: "active" }, "id");
+  const sectorIds = role === "tv" ? [] : (Array.isArray(body.sectorIds) ? body.sectorIds : []);
+  await setUserSectorPermissions(auth.id, sectorIds);
+  return { user: userDto({ ...profile, access_mode: role === "tv" ? "tv" : null, sectorIds }) };
 }
 
 async function ticketDto(row) {
   if (!row) return null;
   const sector = await getSector(row.sector_id);
-  const customerName = await customerNameForTicket(row);
-  const currentTicket = await getActiveSectorTicket(sector.id);
-  const currentCustomerName = currentTicket ? await customerNameForTicket(currentTicket) : "";
-  const ahead = await countAhead(row);
+  if (!sector) return null;
+  const [customerName, currentTicket, ahead, averageStats] = await Promise.all([
+    customerNameForTicket(row),
+    getActiveSectorTicket(row.sector_id),
+    countAhead(row),
+    averageServiceStats(sector)
+  ]);
   const isWaiting = CALL_ELIGIBLE_STATUSES.includes(row.status);
   const position = isWaiting ? ahead + 1 : 1;
-  const averageStats = await averageServiceStats(sector);
-  const averageSeconds = averageStats.seconds;
-  const activeDelay = isWaiting ? await activeServiceDelaySeconds(sector.id, averageSeconds) : 0;
+  const stats = averageStats || { seconds: sector.average_service_seconds, samples: 0 };
+  const averageSeconds = stats.seconds;
+  const [currentCustomerName, activeDelay, current] = await Promise.all([
+    currentTicket ? customerNameForTicket(currentTicket) : "",
+    isWaiting ? activeServiceDelaySeconds(sector.id, averageSeconds, currentTicket) : 0,
+    currentTicket ? currentTicket.code : currentCode(sector, currentTicket)
+  ]);
   const eligibleDelay = isWaiting ? secondsUntil(row.eligible_at || row.created_at) : 0;
   const secondsToCall = isWaiting ? Math.max(eligibleDelay, activeDelay + ahead * averageSeconds) : 0;
   const estimatedCallAt = isWaiting ? new Date(Date.now() + secondsToCall * 1000).toISOString() : null;
@@ -2358,7 +2400,7 @@ async function ticketDto(row) {
     sectorId: row.sector_id,
     sector: sector.name,
     ticket: row.code,
-    current: currentTicket?.code || await currentCode(sector),
+    current,
     currentCustomerName,
     counterLabel: sector.counter_label,
     serviceLabel: sector.service_label,
@@ -2369,8 +2411,8 @@ async function ticketDto(row) {
     ahead,
     secondsToCall,
     averageServiceSeconds: averageSeconds,
-    averageServiceSamples: averageStats.samples,
-    estimateBasedOnRecentServices: averageStats.samples > 0,
+    averageServiceSamples: stats.samples,
+    estimateBasedOnRecentServices: stats.samples > 0,
     countdownTotalSeconds: isWaiting ? Math.max(secondsToCall, secondsBetween(row.created_at, estimatedCallAt)) : 0,
     estimatedCallAt,
     progress: progressFor(row.status, position),
@@ -2484,11 +2526,15 @@ function userDto(row) {
     customerId: row.id,
     name: row.name,
     email: row.email,
-    role: normalizeRole(row.role),
+    role: row.access_mode === "tv" ? "tv" : normalizeRole(row.role),
     status: row.status,
     sectorIds: row.sectorIds || [],
     createdAt: row.created_at || row.createdAt || null
   };
+}
+
+function applyAccessMode(profile, accessMode) {
+  return accessMode === "tv" ? { ...profile, role: "tv", sectorIds: [] } : profile;
 }
 
 async function upsertSession(body, userAgent) {
@@ -2662,8 +2708,8 @@ async function countAhead(ticket) {
   return rows.filter((row) => Number(row.priority || 0) > Number(ticket.priority || 0) || (Number(row.priority || 0) === Number(ticket.priority || 0) && Number(row.queue_order) < Number(ticket.queue_order))).length;
 }
 
-async function activeServiceDelaySeconds(sectorId, averageSeconds) {
-  const active = await getActiveSectorTicket(sectorId);
+async function activeServiceDelaySeconds(sectorId, averageSeconds, activeTicket = null) {
+  const active = activeTicket || await getActiveSectorTicket(sectorId);
   if (!active) return 0;
   const startedAt = active.service_started_at || active.called_at || active.updated_at;
   const elapsed = secondsBetween(startedAt, isoNow());
@@ -2678,8 +2724,8 @@ async function averageServiceStats(sector) {
   return { seconds: measured || sector.average_service_seconds, samples: durations.length };
 }
 
-async function currentCode(sector) {
-  const active = await getActiveSectorTicket(sector.id);
+async function currentCode(sector, activeTicket = null) {
+  const active = activeTicket || await getActiveSectorTicket(sector.id);
   if (active) return active.code;
   const counter = (await select("ticket_counters", `sector_id=eq.${encodeURIComponent(sector.id)}&limit=1`))[0];
   const currentNumber = counter?.business_date === businessDateFor() ? Number(counter.last_number) : TICKET_MIN_NUMBER;
@@ -2714,6 +2760,7 @@ async function canAccessSector(user, sectorId) {
 
 function canAccessSectorSync(user, sectorId) {
   if (hasAnyRole(user, ADMIN_ROLES)) return true;
+  if (normalizeRole(user?.role) === "tv") return sectorId === "acougue";
   return Array.isArray(user?.sectorIds) && user.sectorIds.includes(sectorId);
 }
 
@@ -2731,7 +2778,7 @@ async function removePermission(profileId, sectorId) {
 async function getProfile(userId, fallbackEmail = "", options = {}) {
   const cached = profileCache.get(userId);
   if (!options.bypassCache && cached && cached.expiresAt > Date.now()) {
-    return { ...cached.profile, email: cached.profile.email || fallbackEmail };
+    return applyAccessMode({ ...cached.profile, email: cached.profile.email || fallbackEmail }, options.accessMode);
   }
   const [profileRows, permissions] = await Promise.all([
     select("profiles", `id=eq.${encodeURIComponent(userId)}&limit=1`),
@@ -2741,7 +2788,7 @@ async function getProfile(userId, fallbackEmail = "", options = {}) {
   if (!profile) return null;
   const dto = userDto({ ...profile, email: profile.email || fallbackEmail, sectorIds: permissions.map((item) => item.sector_id) });
   profileCache.set(userId, { profile: dto, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS });
-  return dto;
+  return applyAccessMode(dto, options.accessMode);
 }
 
 async function getAuthUser(request) {
@@ -2749,7 +2796,7 @@ async function getAuthUser(request) {
   const session = verifySessionToken(token);
   if (!session?.user?.id) return null;
   const [profile, appSession] = await Promise.all([
-    getProfile(session.user.id, session.email, { bypassCache: true }),
+    getProfile(session.user.id, session.email, { bypassCache: true, accessMode: session.user.role === "tv" ? "tv" : null }),
     getActiveAuthSession(session)
   ]);
   if (!profile || profile.status !== "active" || !appSession) return null;

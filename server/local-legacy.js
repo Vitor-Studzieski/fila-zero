@@ -1,5 +1,6 @@
 const { query, withTransaction } = require("./local-postgres");
 const { publicCartItemDto, publicTicketDto } = require("./local-repository");
+const { evaluatePasswordPolicy, passwordPolicyError } = require("./password-policy");
 
 const ACTIVE_STATUSES = [
   "aguardando",
@@ -10,7 +11,7 @@ const ACTIVE_STATUSES = [
   "standby"
 ];
 
-const USER_ROLES = new Set(["customer", "attendant", "manager", "admin", "tablet"]);
+const USER_ROLES = new Set(["customer", "attendant", "manager", "admin", "tablet", "tv"]);
 const SECTOR_STATUSES = new Set(["open", "paused", "closed"]);
 
 async function getLocalCustomerHistory(customerId) {
@@ -321,14 +322,33 @@ async function createLocalManagedUser(body = {}) {
   const name = String(body.name || "").replace(/\s+/g, " ").trim().slice(0, 120);
   const password = String(body.password || "");
   const role = USER_ROLES.has(body.role) ? body.role : "attendant";
-  const profileRole = role === "tablet" ? "customer" : role;
-  const appMetadata = role === "tablet" ? { access_mode: "tablet" } : {};
-  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !name || !isStrongPassword(password)) {
+  const profileRole = ["tablet", "tv"].includes(role) ? "customer" : role;
+  const appMetadata = ["tablet", "tv"].includes(role) ? { access_mode: role } : {};
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !name) {
     return { error: "Informe nome, e-mail e senha com ao menos 12 caracteres, letras maiúsculas, minúsculas e números." };
   }
-  const sectorIds = role === "tablet"
+  const passwordPolicy = await evaluatePasswordPolicy(password);
+  if (!passwordPolicy.ok) return { error: passwordPolicyError(passwordPolicy).error };
+  const sectorIds = ["tablet", "tv"].includes(role)
     ? []
     : (Array.isArray(body.sectorIds) ? [...new Set(body.sectorIds.map((value) => String(value).trim()).filter(Boolean))] : []);
+  if (role === "attendant" && !sectorIds.length) {
+    return { error: "Selecione ao menos um setor para o atendente." };
+  }
+  if (["tablet", "tv"].includes(role) && sectorIds.length) {
+    return { error: "Os perfis tablet e TV não usam permissões de setor." };
+  }
+  if (sectorIds.length) {
+    const sectorResult = await query(
+      "SELECT id FROM public.sectors WHERE id = ANY($1::text[])",
+      [sectorIds]
+    );
+    const validSectorIds = new Set(sectorResult.rows.map((row) => row.id));
+    const invalidSectorIds = sectorIds.filter((sectorId) => !validSectorIds.has(sectorId));
+    if (invalidSectorIds.length) {
+      return { error: `Setor(es) inválido(s): ${invalidSectorIds.join(", ")}.` };
+    }
+  }
   try {
     return await withTransaction(async (client) => {
       const existing = await client.query("SELECT 1 FROM auth.users WHERE lower(email) = lower($1) LIMIT 1", [email]);
@@ -399,7 +419,7 @@ function userDto(row) {
     customerId: row.id,
     name: row.name,
     email: row.email,
-    role: appMetadata.access_mode === "tablet" ? "tablet" : row.role,
+    role: ["tablet", "tv"].includes(appMetadata.access_mode) ? appMetadata.access_mode : row.role,
     status: row.status,
     sectorIds: Array.isArray(row.sector_ids) ? row.sector_ids.filter(Boolean) : [],
     createdAt: row.created_at
@@ -450,10 +470,6 @@ function positiveInt(value, fallback) {
 function cleanText(value, fallback, limit) {
   const text = String(value ?? fallback ?? "").replace(/\s+/g, " ").trim().slice(0, limit);
   return text || String(fallback || "").slice(0, limit);
-}
-
-function isStrongPassword(value) {
-  return value.length >= 12 && /[a-z]/.test(value) && /[A-Z]/.test(value) && /\d/.test(value);
 }
 
 module.exports = {

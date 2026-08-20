@@ -45,7 +45,7 @@
             <button type="button" data-login-panel="recover">Recuperar senha</button>
           </div>
 
-          <form class="login-panel active" id="loginForm">
+          <form class="login-panel active" id="loginForm" method="post" action="/api/auth/login" onsubmit="return false">
             <label>
               E-mail
               <input name="email" type="email" autocomplete="username" placeholder="seuemail@superpompeia.com" required />

@@ -83,6 +83,7 @@ Objetivo: construir e validar uma arquitetura híbrida para o SenhaHub, conectan
 
 ## P1 — Produto e experiência
 
+- [x] Criar template de TV exclusivo do açougue, com senhas reais em tempo real, promoções simuladas e credencial com acesso restrito à página `/tv/acougue`.
 - [x] Ajustar a nova estrutura visual da Dashboard ICCF, incluindo campos, linhas delimitadoras e hierarquia dos indicadores.
 - [x] Ajustar a padronização visual do Totem, incluindo alinhamento, posicionamento, cores, setas e QR Code.
 - [x] Remodelar o fluxo do Totem: atendimento normal ou preferencial vem primeiro; categorias preferenciais e setores vêm depois; a seleção de um ou mais setores leva diretamente à emissão, sem retornar ao tipo de senha.

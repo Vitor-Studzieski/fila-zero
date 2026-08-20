@@ -1,7 +1,7 @@
 const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
-const { isCommonPassword, isStrongPassword } = require("../server/password-policy");
+const { evaluatePasswordPolicy, isCommonPassword, isStrongPassword, passwordPolicyError } = require("../server/password-policy");
 const { close, withTransaction } = require("../server/local-postgres");
 
 loadEnvFile(path.resolve(process.cwd(), ".env.local"));
@@ -15,7 +15,7 @@ const sectorIds = [...new Set(String(process.env.LOCAL_CREDENTIAL_SECTOR_IDS || 
   .map((value) => value.trim())
   .filter(Boolean))];
 const password = String(process.env.LOCAL_CREDENTIAL_PASSWORD || "") || generatePassword();
-const profileRole = role === "tablet" ? "customer" : role;
+const profileRole = ["tablet", "tv"].includes(role) ? "customer" : role;
 
 if (process.env.LOCAL_CREDENTIAL_CONFIRM !== "1") {
   fail("defina LOCAL_CREDENTIAL_CONFIRM=1 para confirmar a criação ou atualização da credencial.");
@@ -23,8 +23,8 @@ if (process.env.LOCAL_CREDENTIAL_CONFIRM !== "1") {
 if (!/^postgres(?:ql)?:\/\//i.test(String(process.env.LOCAL_DATABASE_URL || ""))) {
   fail("LOCAL_DATABASE_URL precisa apontar para o PostgreSQL local.");
 }
-if (!new Set(["tablet", "attendant"]).has(role)) {
-  fail("LOCAL_CREDENTIAL_ROLE precisa ser tablet ou attendant.");
+if (!new Set(["tablet", "tv", "attendant"]).has(role)) {
+  fail("LOCAL_CREDENTIAL_ROLE precisa ser tablet, tv ou attendant.");
 }
 if (!email) fail("LOCAL_CREDENTIAL_EMAIL precisa ser um e-mail válido.");
 if (name.length < 2) fail("LOCAL_CREDENTIAL_NAME precisa ter pelo menos dois caracteres.");
@@ -34,14 +34,20 @@ if (!isStrongPassword(password) || isCommonPassword(password)) {
 if (role === "attendant" && !sectorIds.length) {
   fail("LOCAL_CREDENTIAL_SECTOR_IDS precisa informar ao menos um setor para o atendente.");
 }
-if (role === "tablet" && sectorIds.length) {
-  fail("O perfil tablet não usa permissões de setor; deixe LOCAL_CREDENTIAL_SECTOR_IDS vazio.");
+if (["tablet", "tv"].includes(role) && sectorIds.length) {
+  fail("Os perfis tablet e tv não usam permissões de setor; deixe LOCAL_CREDENTIAL_SECTOR_IDS vazio.");
 }
 
-run().catch((error) => {
+start().catch((error) => {
   console.error(`Credencial PostgreSQL local não criada: ${error.message}`);
   process.exitCode = 1;
 }).finally(() => close().catch(() => {}));
+
+async function start() {
+  const passwordPolicy = await evaluatePasswordPolicy(password);
+  if (!passwordPolicy.ok) fail(passwordPolicyError(passwordPolicy).error);
+  await run();
+}
 
 async function run() {
   const result = await withTransaction(async (client) => {
@@ -58,7 +64,7 @@ async function run() {
          SET email = $2,
              encrypted_password = crypt($1, gen_salt('bf')),
              raw_user_meta_data = coalesce(raw_user_meta_data, '{}'::jsonb) || jsonb_build_object('name', $3::text, 'role', $4::text),
-             raw_app_meta_data = CASE WHEN $4::text = 'tablet' THEN coalesce(raw_app_meta_data, '{}'::jsonb) || jsonb_build_object('access_mode', 'tablet') ELSE coalesce(raw_app_meta_data, '{}'::jsonb) - 'access_mode' END,
+             raw_app_meta_data = CASE WHEN $4::text IN ('tablet', 'tv') THEN coalesce(raw_app_meta_data, '{}'::jsonb) || jsonb_build_object('access_mode', $4::text) ELSE coalesce(raw_app_meta_data, '{}'::jsonb) - 'access_mode' END,
              email_confirmed_at = coalesce(email_confirmed_at, now()),
              updated_at = now()
          WHERE id = $5`,
@@ -73,7 +79,7 @@ async function run() {
          VALUES (
            gen_random_uuid(), $1, crypt($2, gen_salt('bf')),
            jsonb_build_object('name', $3::text, 'role', $4::text),
-           CASE WHEN $4::text = 'tablet' THEN jsonb_build_object('access_mode', 'tablet') ELSE '{}'::jsonb END,
+           CASE WHEN $4::text IN ('tablet', 'tv') THEN jsonb_build_object('access_mode', $4::text) ELSE '{}'::jsonb END,
            now(), now(), now()
          )
          RETURNING id`,

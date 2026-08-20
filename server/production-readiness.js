@@ -12,8 +12,10 @@ function validateProductionEnvironment(environment = process.env) {
   const backend = String(environment.DATA_BACKEND || "").trim().toLowerCase();
   if (backend === "local-postgres") {
     validateLocalPostgresProduction(environment, errors, warnings);
-  } else {
+  } else if (backend === "supabase") {
     validateSupabaseProduction(environment, errors);
+  } else {
+    errors.push("DATA_BACKEND precisa ser supabase ou local-postgres.");
   }
   requireSecret(environment.AUTH_SECRET, "AUTH_SECRET", errors);
   requireSecret(environment.CRON_SECRET, "CRON_SECRET", errors);

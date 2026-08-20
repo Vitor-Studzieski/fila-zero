@@ -5,7 +5,7 @@ export default function CustomerPage() {
   return (
     <>
       <HtmlTemplate fileName="index.html" />
-      <Script src="/app.js" strategy="afterInteractive" />
+      <Script src="/app.js?v=20260820.4" strategy="afterInteractive" />
     </>
   );
 }

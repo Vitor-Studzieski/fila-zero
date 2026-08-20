@@ -7,7 +7,7 @@ Aplicativo de fila virtual para supermercado, com login por perfil, solicitacao 
 - Node.js 22.x
 - npm
 
-O projeto requer Node 22. O SQLite continua disponível somente para testes e compatibilidade; a operação oficial usa exclusivamente PostgreSQL por meio de uma API Node no servidor da loja.
+O projeto requer Node 22. O deploy atual na Vercel usa exclusivamente o Supabase para autenticação, dados da fila, carrinho, notificações, impressão e RPCs transacionais. O caminho PostgreSQL local permanece preservado para a futura instalação do servidor da loja.
 
 ## Como rodar localmente
 
@@ -23,21 +23,14 @@ npm install
 npm run dev
 ```
 
-Para iniciar a API usando o PostgreSQL, confirme no `.env.local`:
+Para iniciar usando o Supabase, confirme no `.env.local`:
 
 ```text
-DATA_BACKEND=local-postgres
-LOCAL_POSTGRES_ROUTES_ENABLED=1
-LOCAL_POSTGRES_APP_ENABLED=1
-SUPABASE_AUTH_ENABLED=0
-```
-
-No servidor da loja, o serviço systemd usa `API_ONLY=1` para expor somente a API. Para rodar também o front local durante desenvolvimento, mantenha `API_ONLY=0` ou remova essa variável.
-
-Antes de iniciar, valide a estrutura e as permissoes:
-
-```bash
-npm run preflight:local-postgres
+DATA_BACKEND=supabase
+SUPABASE_AUTH_ENABLED=1
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_ANON_KEY=<publishable-ou-anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<secret-key-apenas-no-servidor>
 ```
 
 3. Para testar a API, use:
@@ -46,9 +39,7 @@ npm run preflight:local-postgres
 http://localhost:3000/api/ready
 ```
 
-O front pode continuar publicado na Vercel. Nesse caso, configure `API_SERVER_URL` na Vercel com a URL HTTPS do proxy da API. As telas continuam chamando `/api/*` pelo domínio do front, e a Vercel encaminha essas chamadas para o servidor PostgreSQL.
-
-Em desenvolvimento com `API_ONLY=0`, o backend e o front rodam pelo mesmo servidor. Em produção, o servidor interno expõe somente a API e o front fica na Vercel.
+Em desenvolvimento e produção, as telas chamam o runtime Supabase pelo mesmo domínio da aplicação. Não é necessário configurar `API_SERVER_URL` nem um servidor PostgreSQL separado.
 
 ## Rotas principais
 
@@ -95,31 +86,28 @@ Esses valores sao apenas modelo. Use senhas diferentes e mantenha os valores rea
 
 Copie `.env.example` como referencia e configure os valores sensiveis fora do Git.
 
-Para producao com PostgreSQL local, defina pelo menos:
+Para produção com Supabase, defina pelo menos:
 
 ```text
-DATA_BACKEND=local-postgres
-LOCAL_DATABASE_URL=postgresql://...
-LOCAL_POSTGRES_ROUTES_ENABLED=1
-LOCAL_POSTGRES_APP_ENABLED=1
-SUPABASE_AUTH_ENABLED=0
-API_ONLY=1
-API_ALLOWED_ORIGINS=https://senhahub.vercel.app
-LOCAL_PUBLIC_REGISTRATION_ENABLED=0
+DATA_BACKEND=supabase
+SUPABASE_AUTH_ENABLED=1
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_ANON_KEY=<publishable-ou-anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<secret-key-apenas-no-servidor>
+DATABASE_URL=postgresql://...
 AUTH_SECRET
 CRON_SECRET
-API_SERVER_URL=https://api.seu-dominio.com (somente na Vercel)
 PUBLIC_APP_URL=https://...
 KIOSK_ID
 KIOSK_PRINTER_PORT
 PRINT_AGENT_TOKEN
 ```
 
-O sistema oficial não usa Supabase em runtime. O cadastro público permanece bloqueado em produção; para provisionar um gestor sem expor senha no código, use `npm run local:admin` com as variáveis `LOCAL_ADMIN_EMAIL`, `LOCAL_ADMIN_PASSWORD`, `LOCAL_ADMIN_NAME`, `LOCAL_ADMIN_ROLE` e `LOCAL_ADMIN_CONFIRM=1`. `AUTH_SECRET` precisa ser um segredo fixo com ao menos 32 caracteres.
+O cadastro público permanece bloqueado em produção até a verificação de e-mail estar configurada. Contas administrativas devem ser criadas em Supabase > Authentication > Users e receber um perfil correspondente em `public.profiles`. `AUTH_SECRET` precisa ser um segredo fixo com ao menos 32 caracteres.
 
-`CRON_SECRET` protege a rota interna `/api/internal/jobs` quando acionada por monitoramento autorizado. A API Node também executa os jobs em segundo plano no servidor persistente; a Vercel não é responsável pelo processamento do banco.
+`CRON_SECRET` protege a rota interna `/api/internal/jobs` quando acionada por monitoramento autorizado. Em produção, o processamento é executado pelo runtime da aplicação e pelas funções/RPCs do Supabase; não há dependência de um servidor persistente com banco local.
 
-Antes de promover uma versão para produção, execute `npm run preflight:local-postgres`. O comando valida segredos, conexão, tabelas, RLS, funções, permissões, jobs, totem, agente de impressão e VAPID quando o Web Push estiver habilitado. Ele nunca imprime os valores secretos. Use `/api/health` para liveness e `/api/ready` para confirmar que a API conseguiu consultar o PostgreSQL.
+Antes de promover uma versão para produção, execute `npm run preflight:production`. O comando valida segredos, configuração do Supabase, tabelas, RLS, funções, jobs, totem, agente de impressão e VAPID quando o Web Push estiver habilitado. Ele nunca imprime os valores secretos. Use `/api/health` para liveness e `/api/ready` para confirmar que o runtime está usando o Supabase.
 
 `OBSERVABILITY_ALERT_WEBHOOK_URL` e opcional. Quando configurada somente no servidor, recebe alertas JSON de falhas do Cron e de trabalhos de impressão. Mesmo sem webhook, cada execução fica registrada e pode ser consultada por um perfil administrativo em `/api/observability`, enquanto os logs estruturados incluem `requestId`, duração e resultado.
 
@@ -137,48 +125,19 @@ O fluxo de emissao fisica, pareamento do totem e simulacao da impressao esta em 
 
 O monitoramento de Cron, request IDs, logs estruturados e métricas de impressão está em [docs/observabilidade.md](docs/observabilidade.md).
 
-## Banco de dados local
+## Dados e operação no Supabase
 
-### PostgreSQL migrado
-
-O banco operacional migrado deve ser configurado em `LOCAL_DATABASE_URL`. O serviço da aplicação usa o papel `senhahub_service`; o papel `senhahub_app` fica disponível para conexoes administrativas controladas. O PostgreSQL nao deve ser exposto diretamente aos dispositivos: eles acessam somente a API HTTPS local.
+O runtime oficial usa o Supabase para Auth, perfis, setores, tickets, carrinho, notificações, impressão e funções transacionais. O navegador acessa somente a API HTTPS do próprio domínio; as chaves administrativas ficam exclusivamente no servidor.
 
 Validações e operação:
 
 ```bash
-npm run preflight:local-postgres
-npm run backup:postgres
+npm run preflight:production
+npm run build
+npm test
 ```
 
-O backup PostgreSQL exige `BACKUP_ENCRYPTION_KEY` e `BACKUP_OFFSITE_DIR` fora do projeto. Para exportar roles, configure também `BACKUP_ROLES_DATABASE_URL` com um usuário administrativo separado; esse usuário não é usado pela API. Para verificar um backup sem alterar banco algum:
-
-```bash
-BACKUP_DIR=/caminho/para/backup npm run restore:postgres -- --verify-only
-```
-
-Uma restauração real deve apontar para um banco de teste separado e exigir `RESTORE_TARGET_CONFIRMED=1`.
-
-### SQLite de compatibilidade
-
-O SQLite local fica em:
-
-```text
-data/senhahub.sqlite
-```
-
-Esse arquivo nao e versionado pelo Git. Se quiser reiniciar os dados locais, pare o servidor e apague os arquivos SQLite dentro de `data/`.
-
-Tambem e possivel escolher outra pasta de dados:
-
-```bash
-DATA_DIR=/caminho/para/dados npm run dev
-```
-
-No PowerShell:
-
-```powershell
-$env:DATA_DIR="C:\caminho\para\dados"; npm run dev
-```
+O backup dos dados deve ser feito pelas ferramentas e políticas do projeto Supabase no deploy atual. O caminho PostgreSQL local permanece suportado para a instalação self-hosted: configure `DATA_BACKEND=local-postgres`, `LOCAL_POSTGRES_ROUTES_ENABLED=1`, `LOCAL_POSTGRES_APP_ENABLED=1`, `SUPABASE_AUTH_ENABLED=0` e `LOCAL_DATABASE_URL`, e execute o servidor instalado com `npm start`. Essa configuração não altera o runtime Supabase da Vercel.
 
 ## Scripts
 
@@ -208,7 +167,7 @@ Executa os testes de orquestracao da fila, PWA e Web Push.
 
 ## Observacoes para deploy
 
-O projeto mantém o front na Vercel por meio do `API_SERVER_URL` e do proxy reverso de `/api/*`. A API Node deve rodar na máquina/servidor interno, atrás de HTTPS reverso, com `/api/health` e `/api/ready` monitorados. O PostgreSQL não é exposto aos dispositivos nem à internet.
+O projeto roda como uma aplicação Next.js na Vercel, com `/api/*` atendido diretamente pelo runtime Supabase. Não é necessário `API_SERVER_URL`, proxy reverso, servidor Node separado ou PostgreSQL local. Monitore `/api/health` para liveness e `/api/ready` para confirmar a conexão com o Supabase.
 
 O acompanhamento das tarefas fica em [BACKLOG_SENHAHUB.md](BACKLOG_SENHAHUB.md). Esse é o único documento de status do projeto.
 
@@ -216,9 +175,9 @@ O registro da demonstração técnica e do formulário de feedback fica em [docs
 
 As acoes autenticadas usam cookie `HttpOnly` e token CSRF. Se o login funcionar, mas acoes como carrinho ou senha falharem com erro de token de seguranca, recarregue a pagina para sincronizar o cookie `senhahub_csrf`.
 
-## Preparacao Supabase
+## Configuração Supabase
 
-Para manter o dominio/deploy na Vercel e migrar banco/contas para Supabase, use o guia:
+Para configurar o projeto Supabase, use o guia:
 
 ```text
 docs/supabase-setup.md
@@ -236,4 +195,4 @@ Depois da estrutura inicial, execute tambem:
 supabase/migrations/20260724182303_pwa_push_notifications.sql
 ```
 
-Depois de criar as tabelas no Supabase e configurar `DATA_BACKEND=supabase` na Vercel, o backend passa a usar Supabase/Postgres para os dados operacionais.
+Depois de aplicar as migrações e configurar `DATA_BACKEND=supabase` na Vercel, todo o backend operacional usa o Supabase.

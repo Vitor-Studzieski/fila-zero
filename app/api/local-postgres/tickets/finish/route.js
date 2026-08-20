@@ -15,7 +15,7 @@ export async function POST(request) {
 
   const { session } = await authenticateLocalRequest(request);
   if (!session) return Response.json({ error: "Sessão não encontrada." }, { status: 401 });
-  if (!["attendant", "manager", "admin"].includes(session.user.role)) {
+  if (!["customer", "attendant", "manager", "admin"].includes(session.user.role)) {
     return Response.json({ error: "Acesso negado." }, { status: 403 });
   }
   if (!hasValidCsrf(request, session)) {

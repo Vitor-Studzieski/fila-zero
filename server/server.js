@@ -42,7 +42,7 @@ const {
   logStructured,
   summarizePrintAttempts
 } = require("./observability");
-const { healthResponse } = require("./production-readiness");
+const { healthResponse, validateProductionEnvironment } = require("./production-readiness");
 
 const ROOT = path.resolve(__dirname, "..");
 loadEnvFile(path.join(ROOT, ".env.local"));
@@ -67,6 +67,7 @@ const LOCAL_POSTGRES_ROUTE_FILES = new Map([
   ["POST /api/local-postgres/auth/register", "app/api/local-postgres/auth/register/route.js"],
   ["POST /api/local-postgres/sessions", "app/api/local-postgres/sessions/route.js"],
   ["GET /api/local-postgres/staff/state", "app/api/local-postgres/staff/state/route.js"],
+  ["GET /api/local-postgres/display/state", "app/api/local-postgres/display/state/route.js"],
   ["POST /api/local-postgres/staff/call-next", "app/api/local-postgres/staff/call-next/route.js"],
   ["GET /api/local-postgres/cart", "app/api/local-postgres/cart/route.js"],
   ["POST /api/local-postgres/cart/items", "app/api/local-postgres/cart/route.js"],
@@ -111,6 +112,7 @@ const LOCAL_POSTGRES_APP_ALIAS_FILES = new Map([
   ["GET /api/users", "app/api/local-postgres/users/route.js"],
   ["POST /api/users", "app/api/local-postgres/users/route.js"],
   ["GET /api/staff/state", "app/api/local-postgres/staff/state/route.js"],
+  ["GET /api/display/state", "app/api/local-postgres/display/state/route.js"],
   ["POST /api/tickets", "app/api/local-postgres/tickets/route.js"],
   ["GET /api/cart", "app/api/local-postgres/cart/route.js"],
   ["POST /api/cart/items", "app/api/local-postgres/cart/route.js"],
@@ -133,6 +135,7 @@ const localPostgresRouteModules = new Map();
 
 const PORT = Number(process.env.PORT || 3000);
 const dev = process.env.NODE_ENV !== "production";
+const supabaseRuntimeEnabled = process.env.DATA_BACKEND === "supabase";
 const DATA_DIR = process.env.DATA_DIR
   ? path.resolve(process.env.DATA_DIR)
   : resolveDefaultDataDir();
@@ -142,9 +145,9 @@ const apiOnly = process.env.API_ONLY === "1";
 let nextHandler = null;
 let nextUpgradeHandler = null;
 
-fs.mkdirSync(DATA_DIR, { recursive: true });
+if (!supabaseRuntimeEnabled) fs.mkdirSync(DATA_DIR, { recursive: true });
 
-const db = new DatabaseSync(DB_PATH);
+const db = supabaseRuntimeEnabled ? null : new DatabaseSync(DB_PATH);
 const sseClients = new Set();
 const PUSH_CONFIGURATION = loadPushConfiguration(process.env);
 const pushNotificationService = new PushNotificationService({
@@ -161,7 +164,7 @@ const STANDBY_SECONDS = 10 * 60;
 const TICKET_MIN_NUMBER = 0;
 const TICKET_MAX_NUMBER = 999;
 const BUSINESS_TIME_ZONE = "America/Sao_Paulo";
-const AUTH_ROLES = ["customer", "attendant", "manager", "admin", "tablet"];
+const AUTH_ROLES = ["customer", "attendant", "manager", "admin", "tablet", "tv"];
 const CUSTOMER_ROLES = ["customer", "manager", "admin"];
 const STAFF_ROLES = ["attendant", "manager", "admin"];
 const ADMIN_ROLES = ["manager", "admin"];
@@ -200,7 +203,7 @@ if (isStandaloneServer) {
   assertProductionBackend();
 }
 
-bootstrap();
+if (!supabaseRuntimeEnabled) bootstrap();
 
 if (isStandaloneServer) {
   startStandaloneServer();
@@ -208,13 +211,9 @@ if (isStandaloneServer) {
 
 function assertProductionBackend() {
   if (dev) return;
-  const localPostgresReady = process.env.DATA_BACKEND === "local-postgres"
-    && process.env.LOCAL_POSTGRES_ROUTES_ENABLED === "1"
-    && process.env.LOCAL_POSTGRES_APP_ENABLED === "1"
-    && process.env.SUPABASE_AUTH_ENABLED === "0"
-    && process.env.LOCAL_POSTGRES_ALLOW_LEGACY_FALLBACK !== "1";
-  if (!localPostgresReady) {
-    throw new Error("A API de produção precisa usar exclusivamente o PostgreSQL local com fallback legado e Supabase desativados.");
+  const readiness = validateProductionEnvironment(process.env);
+  if (!readiness.ok) {
+    throw new Error(`Ambiente de produção inválido: ${readiness.errors.join(" ")}`);
   }
 }
 
@@ -282,6 +281,7 @@ function listen(server) {
 }
 
 function startBackgroundJobs() {
+  if (supabaseRuntimeEnabled) return;
   setInterval(() => {
     if (isLocalPostgresEnabled()) {
       if (localMaintenanceRunning) return;
@@ -810,9 +810,50 @@ async function handleApi(req, res, url) {
   }
 }
 
+async function handleSupabaseApiRoute(req, res, url) {
+  const backend = await import("./supabase-runtime.js");
+  const headers = new Headers();
+  for (const [name, value] of Object.entries(req.headers || {})) {
+    if (value === undefined) continue;
+    headers.set(name, Array.isArray(value) ? value.join(", ") : String(value));
+  }
+
+  const rawBody = ["GET", "HEAD"].includes(req.method)
+    ? Buffer.alloc(0)
+    : await readRawRequestBody(req);
+  const requestInit = { method: req.method, headers };
+  if (rawBody.length > 0) {
+    requestInit.body = rawBody;
+    requestInit.duplex = "half";
+  }
+
+  const forwardedProtocol = String(req.headers["x-forwarded-proto"] || "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+  const requestProtocol = forwardedProtocol === "https" ? "https" : "http";
+  const request = new Request(
+    `${requestProtocol}://${req.headers.host || "localhost"}${url.pathname}${url.search}`,
+    requestInit
+  );
+  const response = await backend.handleRequest(request);
+  const setCookies = response.headers.getSetCookie?.() || [];
+  for (const [name, value] of response.headers.entries()) {
+    if (name === "set-cookie") continue;
+    res.setHeader(name, value);
+  }
+  if (setCookies.length) res.setHeader("set-cookie", setCookies);
+  res.statusCode = response.status;
+  res.end(Buffer.from(await response.arrayBuffer()));
+}
+
 async function handleApiInternal(req, res, url) {
   if (!dev && !isSecureNodeRequest(req, url)) {
     sendJson(res, 426, { error: "Esta API aceita somente conexoes HTTPS." });
+    return;
+  }
+  if (supabaseRuntimeEnabled) {
+    await handleSupabaseApiRoute(req, res, url);
     return;
   }
   if (process.env.LOCAL_POSTGRES_ROUTES_ENABLED === "1" && url.pathname.startsWith("/api/local-postgres/")) {
@@ -1728,7 +1769,8 @@ async function handlePage(req, res, url) {
     "/admin/setores": ADMIN_ROLES,
     "/admin/totens": ADMIN_ROLES,
     "/admin/usuarios": ADMIN_ROLES,
-    "/iccf": ADMIN_ROLES
+    "/iccf": ADMIN_ROLES,
+    "/tv/acougue": ["tv"]
   };
   const requiredRoles = pageRoles[requested]
     || (requested.startsWith("/admin/") ? ADMIN_ROLES : null)
@@ -2799,6 +2841,7 @@ function hasAnyRole(user, roles) {
 }
 
 function roleHome(user) {
+  if (hasAnyRole(user, ["tv"])) return "/tv/acougue";
   if (hasAnyRole(user, ["tablet"])) return "/tablet";
   if (hasAnyRole(user, ["attendant"])) return "/attendant";
   return "/";

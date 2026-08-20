@@ -38,6 +38,8 @@ let previousTicketStatuses = new Map();
 let lastStateUpdatedAt = null;
 let countdownTimer = null;
 let activeJoinSector = null;
+let selectedSectorIds = new Set();
+let ticketRequestInFlight = false;
 const STATE_POLL_INTERVAL_MS = 12000;
 let queueAlertHistory = new Set();
 let visibleQueueAlert = null;
@@ -581,7 +583,15 @@ function updateTabs(screen) {
 
 async function joinQueue(sectorId) {
   if (!sectors[sectorId]) return;
-  if (activeJoinSector) return;
+  if (ticketRequestInFlight) return;
+  const sector = sectors[sectorId];
+  if (sector.status !== "open") return;
+  if (activeQueues[sectorId]) {
+    currentSector = sectorId;
+    navigate("status");
+    return;
+  }
+  ticketRequestInFlight = true;
   activeJoinSector = sectorId;
   syncActionButtons();
   try {
@@ -593,15 +603,70 @@ async function joinQueue(sectorId) {
   } catch (exception) {
     alert(exception.message);
   } finally {
+    ticketRequestInFlight = false;
     activeJoinSector = null;
     syncActionButtons();
   }
 }
 
-function createDigitalTicket(sectorId) {
+async function requestSelectedTickets() {
+  if (ticketRequestInFlight) return;
+  const sectorIds = [...selectedSectorIds].filter((sectorId) => (
+    sectors[sectorId]?.status === "open" && !activeQueues[sectorId]
+  ));
+  if (!sectorIds.length) {
+    alert("Selecione pelo menos um local disponível.");
+    return;
+  }
+  let priority;
+  try {
+    priority = priorityPayload();
+  } catch (exception) {
+    alert(exception.message);
+    return;
+  }
+
+  ticketRequestInFlight = true;
+  activeJoinSector = "__multi__";
+  syncActionButtons();
+  try {
+    const results = await Promise.allSettled(sectorIds.map((sectorId) => createDigitalTicket(sectorId, priority)));
+    const successful = [];
+    const failures = [];
+
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled" && result.value?.ticket) {
+        const ticket = result.value.ticket;
+        activeQueues[ticket.sectorId] = withLiveCountdown(ticket);
+        successful.push(ticket);
+        return;
+      }
+      const reason = result.reason?.message || "não foi possível emitir a senha";
+      failures.push(`${sectors[sectorIds[index]]?.name || sectorIds[index]}: ${reason}`);
+    });
+
+    selectedSectorIds.clear();
+    if (successful.length) {
+      currentSector = successful[0].sectorId;
+      syncQueue();
+      navigate("status");
+    }
+    if (failures.length) {
+      alert(successful.length
+        ? `Algumas senhas não foram emitidas:\n${failures.join("\n")}`
+        : failures.join("\n"));
+    }
+  } finally {
+    ticketRequestInFlight = false;
+    activeJoinSector = null;
+    syncActionButtons();
+  }
+}
+
+function createDigitalTicket(sectorId, priority = priorityPayload()) {
   return api("/api/tickets", {
     method: "POST",
-    body: { ...identity, sectorId, ...priorityPayload() }
+    body: { ...identity, sectorId, ...priority }
   });
 }
 
@@ -722,10 +787,28 @@ function getNextSmartWaitSector() {
 async function confirmCall() {
   const data = getCurrentQueueData();
   if (!data || data.status !== "chamado") return;
-  document.querySelector("#callModal").classList.remove("visible");
-  await api(`/api/tickets/${encodeURIComponent(data.id)}/confirm`, { method: "POST", body: identity });
-  await loadState();
-  navigate("done");
+  const button = document.querySelector("#confirmCall");
+  if (button?.disabled) return;
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Confirmando...";
+  }
+  try {
+    await api(`/api/tickets/${encodeURIComponent(data.id)}/confirm`, { method: "POST", body: identity });
+    document.querySelector("#callModal").classList.remove("visible");
+    await loadState();
+    navigate("done");
+  } catch (exception) {
+    alert(exception.message || "Não foi possível confirmar sua chegada.");
+    await loadState().catch(() => {});
+    const refreshed = activeQueues[data.sectorId];
+    if (refreshed?.status === "chamado") document.querySelector("#callModal").classList.add("visible");
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Estou a caminho";
+    }
+  }
 }
 
 async function finishCurrentService() {
@@ -1119,6 +1202,10 @@ function renderActiveTickets() {
 }
 
 function renderSectorCards() {
+  selectedSectorIds = new Set([...selectedSectorIds].filter((sectorId) => (
+    sectors[sectorId]?.status === "open" && !activeQueues[sectorId]
+  )));
+
   document.querySelectorAll("[data-join]").forEach((button) => {
     const sectorId = button.dataset.join;
     const sector = sectors[sectorId];
@@ -1131,9 +1218,18 @@ function renderSectorCards() {
     card.querySelector(".sector-head span").textContent = sector.serviceLabel;
     card.querySelector(".sector-head b").textContent = sector.counterLabel;
     card.querySelector(".sector-meta").innerHTML = `<span>Fila base: ${escapeHtml(sector.queueSize)} pessoas</span><span>${escapeHtml(sector.status === "open" ? `${sector.averageServiceSeconds}s por atendimento` : "Setor indisponível")}</span>`;
-    button.disabled = sector.status !== "open" || Boolean(activeJoinSector);
+    button.disabled = sector.status !== "open" || ticketRequestInFlight;
     button.textContent = hasTicket ? `Ver ${displayCustomerName(activeQueues[sectorId])}` : `Solicitar senha - ${sector.name}`;
     if (activeJoinSector === sectorId) button.textContent = "Gerando senha...";
+
+    const selectionControl = card.querySelector("[data-select-sector]");
+    if (selectionControl) {
+      const selected = selectedSectorIds.has(sectorId);
+      selectionControl.checked = selected;
+      selectionControl.disabled = sector.status !== "open" || hasTicket || ticketRequestInFlight;
+      card.classList.toggle("selected", selected);
+      selectionControl.closest(".sector-select-control")?.classList.toggle("selected", selected);
+    }
   });
 
   document.querySelectorAll("[data-quick-join]").forEach((button) => {
@@ -1141,10 +1237,26 @@ function renderSectorCards() {
     const sector = sectors[sectorId];
     if (!sector) return;
     const hasTicket = Boolean(activeQueues[sectorId]);
-    button.disabled = sector.status !== "open" || Boolean(activeJoinSector);
+    button.disabled = sector.status !== "open" || ticketRequestInFlight;
     button.classList.toggle("has-ticket", hasTicket);
     button.textContent = activeJoinSector === sectorId ? "..." : hasTicket ? displayCustomerName(activeQueues[sectorId]) : sector.name;
   });
+
+  const selectionButton = document.querySelector("#requestSelectedTickets");
+  const selectionHint = document.querySelector("#selectedSectorHint");
+  if (selectionButton) {
+    selectionButton.disabled = ticketRequestInFlight || selectedSectorIds.size === 0;
+    selectionButton.textContent = ticketRequestInFlight && activeJoinSector === "__multi__"
+      ? "Gerando senhas..."
+      : selectedSectorIds.size > 0
+        ? `Solicitar ${selectedSectorIds.size} ${selectedSectorIds.size === 1 ? "senha" : "senhas"}`
+        : "Solicitar senhas selecionadas";
+  }
+  if (selectionHint) {
+    selectionHint.textContent = selectedSectorIds.size
+      ? `${selectedSectorIds.size} ${selectedSectorIds.size === 1 ? "local selecionado" : "locais selecionados"}. Você receberá uma senha para cada um.`
+      : "Marque os locais onde deseja atendimento.";
+  }
 }
 
 function renderOfferQueueContext() {
@@ -1679,6 +1791,8 @@ function bindEvents() {
   document.querySelectorAll("[data-tab]").forEach((button) => button.addEventListener("click", () => navigate(button.dataset.tab)));
   document.querySelectorAll("[data-join]").forEach((button) => button.addEventListener("click", () => joinQueue(button.dataset.join)));
   document.querySelectorAll("[data-quick-join]").forEach((button) => button.addEventListener("click", () => joinQueue(button.dataset.quickJoin)));
+  document.querySelectorAll("[data-select-sector]").forEach((input) => input.addEventListener("change", handleSectorSelection));
+  document.querySelector("#requestSelectedTickets")?.addEventListener("click", requestSelectedTickets);
   document.querySelector("#backButton").addEventListener("click", () => navigate("home"));
   document.querySelector("#notifyButton").addEventListener("click", handleNotifyButton);
   document.querySelector("#floatingQueue").addEventListener("click", () => navigate("status"));
@@ -1742,6 +1856,14 @@ function handleShoppingSector(sector) {
   if (productsRendered) renderProducts();
 }
 
+function handleSectorSelection(event) {
+  const sectorId = event.target.dataset.selectSector;
+  if (!sectorId || !sectors[sectorId] || activeQueues[sectorId]) return;
+  if (event.target.checked) selectedSectorIds.add(sectorId);
+  else selectedSectorIds.delete(sectorId);
+  renderSectorCards();
+}
+
 function syncPriorityControls() {
   const toggle = document.querySelector("#priorityToggle");
   const reason = document.querySelector("#priorityReason");
@@ -1803,7 +1925,7 @@ function apiTextError(response, text) {
 }
 
 function csrfHeader() {
-  const token = getCookie("senhahub_local_csrf") || getCookie("senhahub_csrf");
+  const token = getCookie("senhahub_csrf");
   return token ? { "x-csrf-token": token } : {};
 }
 

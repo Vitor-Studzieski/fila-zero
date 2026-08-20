@@ -79,12 +79,25 @@
                 <option value="obesidade">Pessoa com obesidade</option>
               </select>
             </section>
+            <section class="multi-sector-panel" aria-label="Solicitação para vários locais">
+              <div>
+                <strong>Escolha mais de um local</strong>
+                <span id="selectedSectorHint">Marque os locais onde deseja atendimento.</span>
+              </div>
+              <button class="blue-action compact" id="requestSelectedTickets" type="button" data-online-required disabled>
+                Solicitar senhas selecionadas
+              </button>
+            </section>
             <article class="sector-card">
               <div class="sector-head">
                 <div><strong>Açougue</strong><span>Carnes frescas e cortes especiais</span></div>
                 <b>Balcão 1</b>
               </div>
               <div class="sector-meta"><span>Fila atual: 7 pessoas</span><span>Atendimento médio: 42s</span></div>
+              <label class="sector-select-control">
+                <input type="checkbox" data-select-sector="acougue" />
+                <span>Selecionar este local</span>
+              </label>
               <button class="yellow-action compact" data-join="acougue" data-online-required>Solicitar senha - Açougue</button>
             </article>
             <article class="sector-card">
@@ -93,6 +106,10 @@
                 <b>Balcão 2</b>
               </div>
               <div class="sector-meta"><span>Fila atual: 4 pessoas</span><span>Atendimento médio: 36s</span></div>
+              <label class="sector-select-control">
+                <input type="checkbox" data-select-sector="frios" />
+                <span>Selecionar este local</span>
+              </label>
               <button class="yellow-action compact" data-join="frios" data-online-required>Solicitar senha - Frios</button>
             </article>
             <article class="sector-card">
@@ -101,6 +118,10 @@
                 <b>Balcão 3</b>
               </div>
               <div class="sector-meta"><span>Fila atual: 5 pessoas</span><span>Atendimento médio: 34s</span></div>
+              <label class="sector-select-control">
+                <input type="checkbox" data-select-sector="padaria" />
+                <span>Selecionar este local</span>
+              </label>
               <button class="yellow-action compact" data-join="padaria" data-online-required>Solicitar senha - Padaria</button>
             </article>
           </section>

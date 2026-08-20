@@ -1,4 +1,4 @@
-import { createTicket, getCustomerState } from "../../../../server/local-repository.js";
+import { createTicket, getLocalPublicTicket } from "../../../../server/local-repository.js";
 import {
   authenticateLocalRequest,
   hasValidCsrf
@@ -32,8 +32,8 @@ export async function POST(request) {
       customerName: session.user.name
     });
 
-    const state = await getCustomerState(session.user.customerId);
-    const publicTicket = state.tickets.find((ticket) => ticket.id === result.ticket.id) || result.ticket;
+    const publicTicket = await getLocalPublicTicket(result.ticket.id);
+    if (!publicTicket) throw new Error("Senha não encontrada após a emissão.");
     return Response.json({
       source: "postgres-local",
       alreadyExists: result.alreadyExists,

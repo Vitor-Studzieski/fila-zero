@@ -9,7 +9,8 @@ const pageRoles = {
   "/admin/totens": ["manager", "admin"],
   "/admin/usuarios": ["manager", "admin"],
   "/iccf": ["manager", "admin"],
-  "/tablet": ["tablet"]
+  "/tablet": ["tablet"],
+  "/tv/acougue": ["tv"]
 };
 const legacyPageRedirects = {
   "/index.html": "/",
@@ -60,6 +61,7 @@ function rolesForPath(pathname) {
   if (pathname === "/attendant" || pathname.startsWith("/attendant/")) return ["attendant", "manager", "admin"];
   if (pathname === "/admin" || pathname.startsWith("/admin/")) return ["manager", "admin"];
   if (pathname === "/iccf" || pathname.startsWith("/iccf/")) return ["manager", "admin"];
+  if (pathname === "/tv/acougue") return ["tv"];
   if (pathname === "/") return pageRoles["/"];
   return null;
 }
@@ -99,17 +101,22 @@ async function hasValidKioskSession(request) {
 }
 
 async function loadCurrentUser(request) {
+  const sessionToken = request.cookies.get("senhahub_auth")?.value || "";
   try {
     const response = await fetch(new URL("/api/auth/me", request.url), {
       headers: { cookie: request.headers.get("cookie") || "" },
       cache: "no-store"
     });
-    if (!response.ok) return null;
-    const payload = await response.json();
-    return payload?.user || null;
+    if (response.ok) {
+      const payload = await response.json();
+      return payload?.user || null;
+    }
+    if (response.status < 500) return null;
   } catch {
-    return null;
+    // O servidor local pode nao expor a API interna ao runtime do middleware.
   }
+  const session = await verifySessionToken(sessionToken);
+  return session?.user || null;
 }
 
 async function verifySessionToken(token) {
@@ -176,6 +183,7 @@ function normalizeRole(role) {
 }
 
 function roleHome(user) {
+  if (normalizeRole(user.role) === "tv") return "/tv/acougue";
   if (normalizeRole(user.role) === "tablet") return "/tablet";
   return normalizeRole(user.role) === "attendant" ? "/attendant" : "/";
 }
@@ -187,6 +195,7 @@ export const config = {
     "/admin/:path*",
     "/iccf/:path*",
     "/tablet/:path*",
+    "/tv/acougue",
     "/totem",
     "/totem/:path*",
     "/index.html",

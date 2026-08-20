@@ -344,7 +344,7 @@ O banco deve ter papéis separados:
 
 ```text
 postgres_admin       -> administração e migrações, nunca usado pela API
-senhahub_app         -> operações normais da API
+senhahub_service     -> operações normais da API
 senhahub_sync        -> leitura da outbox e atualização de checkpoints
 senhahub_reporting   -> consultas analíticas locais, se necessário
 backup_operator      -> execução de backup

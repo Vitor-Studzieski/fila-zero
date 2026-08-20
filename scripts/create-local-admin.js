@@ -1,6 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
-const { isCommonPassword, isStrongPassword } = require("../server/password-policy");
+const { evaluatePasswordPolicy, passwordPolicyError } = require("../server/password-policy");
 const { close, withTransaction } = require("../server/local-postgres");
 
 loadEnvFile(path.resolve(process.cwd(), ".env.local"));
@@ -19,17 +19,20 @@ if (!/^postgres(?:ql)?:\/\//i.test(String(process.env.LOCAL_DATABASE_URL || ""))
 }
 if (!email) fail("LOCAL_ADMIN_EMAIL precisa ser um e-mail valido.");
 if (name.length < 2) fail("LOCAL_ADMIN_NAME precisa ter pelo menos dois caracteres.");
-if (!isStrongPassword(password) || isCommonPassword(password)) {
-  fail("LOCAL_ADMIN_PASSWORD precisa ter 12+ caracteres, maiusculas, minusculas, numero e nao pode ser comum.");
-}
 if (!new Set(["manager", "admin"]).has(role)) {
   fail("LOCAL_ADMIN_ROLE precisa ser manager ou admin.");
 }
 
-run().catch((error) => {
+start().catch((error) => {
   console.error(`Conta administrativa nao criada: ${error.message}`);
   process.exitCode = 1;
 }).finally(() => close().catch(() => {}));
+
+async function start() {
+  const passwordPolicy = await evaluatePasswordPolicy(password);
+  if (!passwordPolicy.ok) fail(passwordPolicyError(passwordPolicy).error);
+  await run();
+}
 
 async function run() {
   const result = await withTransaction(async (client) => {

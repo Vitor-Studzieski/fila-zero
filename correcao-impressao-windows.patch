@@ -1,0 +1,16 @@
+diff --git a/.env.example b/.env.example
+--- a/.env.example
++++ b/.env.example
+@@ -95,3 +95,3 @@
+ KIOSK_PRINTER_NAME=Bematech MP - 4200 TH
+-KIOSK_PRINTER_PORT=COM5
++KIOSK_PRINTER_PORT=COM4
+ KIOSK_PAPER_WIDTH_MM=80
+diff --git a/.env.print-agent.example b/.env.print-agent.example
+--- a/.env.print-agent.example
++++ b/.env.print-agent.example
+@@ -6,3 +6,3 @@
+ # Bematech MP-4200 TH conectada como porta serial virtual.
+-KIOSK_PRINTER_PORT=COM5
++KIOSK_PRINTER_PORT=COM4
+ PRINT_SERIAL_BAUD_RATE=115200

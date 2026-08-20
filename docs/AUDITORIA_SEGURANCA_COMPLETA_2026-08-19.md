@@ -301,7 +301,7 @@ Foi criada a tabela privada `auth.password_resets` com token armazenado somente 
 
 Roles sem login: `anon`, `authenticated`, `service_role`.  
 `senhahub_service`: login, não superuser, `BYPASSRLS=false`; grants e policies explícitos; tratado em SEC-004.  
-`senhahub_app`: login, não superuser, sem bypass; tratado em SEC-008.  
+`senhahub_app`: role administrativa sem login após o hardening local; tratado em SEC-008.
 `vitorstudzieski`: superuser local de administração, não deve ser usado pela aplicação.
 
 As tabelas internas têm RLS/deny policies para clientes externos nas migrations de hardening. As funções `SECURITY DEFINER` verificadas usam `search_path` fixo quando necessário. A RLS não está `FORCE` nas tabelas públicas; por isso o papel de runtime e a proteção da credencial continuam sendo importantes.
@@ -492,18 +492,18 @@ Nenhuma vulnerabilidade conhecida Critical foi identificada nos controles analis
 
 **Status:** aberto como prevenção contínua.
 
-### SEC-008 — Papel adicional `senhahub_app` ainda tem login e privilégios amplos
+### SEC-008 — Papel adicional `senhahub_app` tinha login e privilégios amplos
 
 **ID:** SEC-008  
 **Título:** credencial de aplicação não usada aumenta a superfície operacional  
-**Severidade:** Info  
+**Severidade:** Info — corrigido
 **Categoria:** Least Privilege / Database Hardening  
 **CWE:** CWE-250 — Execution with Unnecessary Privileges  
 **OWASP:** A01 Broken Access Control; A05 Security Misconfiguration  
 **Arquivo:** roles do PostgreSQL local; grants da base  
 **Componente:** gerenciamento de identidades do banco.
 
-**Descrição:** `senhahub_app` aparece com `LOGIN=true` e sem `BYPASSRLS`, enquanto o runtime auditado usa `senhahub_service`. Uma role não utilizada não deve permanecer como credencial pronta com privilégios amplos.
+**Descrição original:** `senhahub_app` aparecia com `LOGIN=true` e sem `BYPASSRLS`, enquanto o runtime auditado usa `senhahub_service`.
 
 **Cenário de exploração:** operador reutiliza ou vaza a credencial e o atacante tenta conectar ao banco local/rede.
 
@@ -511,15 +511,15 @@ Nenhuma vulnerabilidade conhecida Critical foi identificada nos controles analis
 
 **Probabilidade:** Baixa com PostgreSQL em localhost; maior se a porta for publicada.
 
-**Evidência encontrada:** consulta de roles confirmou `senhahub_app LOGIN=true`, `SUPERUSER=false`, `BYPASSRLS=false`; o backend local usa `senhahub_service`.
+**Evidência encontrada:** a migration local de reconciliação revoga os grants e aplica `NOLOGIN` a `senhahub_app`; o backend local usa exclusivamente `senhahub_service`.
 
-**Correção recomendada:** revogar login ou remover a role se não for usada; se necessária, reduzir grants a allowlist e usar senha exclusiva rotacionada.
+**Correção aplicada:** revogar login, grants de tabelas/sequências e uso dos schemas `public` e `auth` para `senhahub_app`.
 
-**Código atual/corrigido:** não removido automaticamente para não quebrar eventual configuração do operador.
+**Código atual/corrigido:** `supabase/migrations/20260820125056_local_postgres_runtime_reconciliation.sql`.
 
 **Risco de regressão:** baixo após confirmar que a role não é usada.
 
-**Status:** aberto como hardening.
+**Status:** corrigido no PostgreSQL local.
 
 ## 14. Estado final e decisão de publicação
 

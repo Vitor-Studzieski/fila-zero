@@ -34,7 +34,7 @@ export const viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
-  themeColor: "#06466f",
+  themeColor: "#071d46",
   colorScheme: "light"
 };
 
@@ -45,13 +45,13 @@ export default function RootLayout({ children }) {
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
-        <link rel="stylesheet" href="/styles.css" />
+        <link rel="stylesheet" href="/styles.css?v=20260820.5" />
         <link rel="stylesheet" href="/pwa.css" />
       </head>
       <body>
         {children}
-        <Script src="/pwa-utils.js?v=20260820.2" strategy="afterInteractive" />
-        <Script src="/pwa.js?v=20260820.2" strategy="afterInteractive" />
+        <Script src="/pwa-utils.js?v=20260820.3" strategy="afterInteractive" />
+        <Script src="/pwa.js?v=20260820.3" strategy="afterInteractive" />
       </body>
     </html>
   );

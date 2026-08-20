@@ -203,7 +203,7 @@ async function getLocalStaffState(user = null) {
   if (!visibleSectors.length) return { serverTime: new Date().toISOString(), sectors: [] };
 
   const sectorIds = visibleSectors.map((sector) => sector.id);
-  const [ticketResult, counterResult, callsResult] = await Promise.all([
+  const [ticketResult, counterResult, callsResult, businessDateResult] = await Promise.all([
     query(
       `
         SELECT *
@@ -229,12 +229,14 @@ async function getLocalStaffState(user = null) {
         LIMIT 100
       `,
       [sectorIds]
-    )
+    ),
+    query("SELECT (now() AT TIME ZONE $1)::date AS business_date", [BUSINESS_TIME_ZONE])
   ]);
 
   const sectorById = new Map(visibleSectors.map((sector) => [sector.id, sector]));
   const rowsBySector = groupRowsBySector(ticketResult.rows);
   const counters = counterResult.rows;
+  const businessDate = businessDateResult.rows[0].business_date;
   const callsBySector = new Map(sectorIds.map((sectorId) => [sectorId, []]));
   for (const row of callsResult.rows) {
     const calls = callsBySector.get(row.sector_id);
@@ -260,10 +262,10 @@ async function getLocalStaffState(user = null) {
         sectorById.get(ticket.sector_id),
         rows,
         counters,
-        null
+        businessDate
       ));
       return {
-        ...publicSectorDto(sector, counters, null, rows),
+        ...publicSectorDto(sector, counters, businessDate, rows),
         currentCustomerName: current ? normalizeCustomerName(current.customer_name) : "",
         tickets,
         recentCalls: callsBySector.get(sector.id) || []
@@ -670,7 +672,7 @@ async function confirmLocalTicket(ticketId, user = null) {
     );
     const ticket = ticketResult.rows[0];
     if (!ticket) throw new Error("Senha não encontrada.");
-    if (!canAccessLocalSector(user, ticket.sector_id)) {
+    if (!canOperateLocalTicket(user, ticket)) {
       throw new Error("Usuário sem permissão para este setor.");
     }
     if (ticket.status !== "chamado") {
@@ -735,7 +737,7 @@ async function finishLocalTicket(ticketId, user = null) {
     );
     const ticket = ticketResult.rows[0];
     if (!ticket) throw new Error("Senha não encontrada.");
-    if (!canAccessLocalSector(user, ticket.sector_id)) {
+    if (!canOperateLocalTicket(user, ticket)) {
       throw new Error("Usuário sem permissão para este setor.");
     }
     if (ticket.status !== "em_atendimento") {
@@ -954,7 +956,7 @@ async function getLocalPublicTicket(ticketId) {
   const ticket = ticketResult.rows[0];
   if (!ticket) return null;
 
-  const [sectorResult, rowsResult, countersResult] = await Promise.all([
+  const [sectorResult, rowsResult, countersResult, businessDateResult] = await Promise.all([
     query(
       `
         SELECT id, name, prefix, counter_label, service_label,
@@ -977,7 +979,8 @@ async function getLocalPublicTicket(ticketId) {
     query(
       "SELECT sector_id, business_date, last_number FROM public.ticket_counters WHERE sector_id = $1",
       [ticket.sector_id]
-    )
+    ),
+    query("SELECT (now() AT TIME ZONE $1)::date AS business_date", [BUSINESS_TIME_ZONE])
   ]);
 
   return publicTicketDto(
@@ -985,7 +988,7 @@ async function getLocalPublicTicket(ticketId) {
     sectorResult.rows[0],
     rowsResult.rows,
     countersResult.rows,
-    null
+    businessDateResult.rows[0].business_date
   );
 }
 
@@ -1239,7 +1242,15 @@ function normalizeOptionalId(value) {
 function canAccessLocalSector(user, sectorId) {
   if (!user) return false;
   if (["manager", "admin"].includes(user.role)) return true;
+  if (user.role === "tv") return sectorId === "acougue";
   return user.role === "attendant" && (user.sectorIds || []).includes(sectorId);
+}
+
+function canOperateLocalTicket(user, ticket) {
+  if (!user || !ticket) return false;
+  if (["manager", "admin"].includes(user.role)) return true;
+  if (user.role === "customer") return ticket.customer_id === user.customerId;
+  return canAccessLocalSector(user, ticket.sector_id);
 }
 
 function normalizeCustomerName(value) {

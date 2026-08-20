@@ -4,6 +4,104 @@
 
 create extension if not exists pgcrypto;
 
+do $do$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'anon') then
+    create role anon nologin;
+  end if;
+  if not exists (select 1 from pg_roles where rolname = 'authenticated') then
+    create role authenticated nologin;
+  end if;
+  if not exists (select 1 from pg_roles where rolname = 'service_role') then
+    create role service_role nologin;
+  end if;
+end
+$do$;
+
+-- O runtime local usa um subconjunto privado de auth. No Supabase hospedado,
+-- auth.users/auth.sessions já existem e este bloco não altera essas tabelas.
+-- Em um PostgreSQL local novo, ele deixa o schema inicial reproduzível antes
+-- de public.profiles criar as referências para auth.users.
+create schema if not exists auth;
+
+do $do$
+begin
+  if to_regclass('auth.users') is null then
+    execute $sql$
+      create table auth.users (
+        id uuid primary key default gen_random_uuid(),
+        email text not null,
+        encrypted_password text not null default '',
+        raw_user_meta_data jsonb not null default '{}'::jsonb,
+        raw_app_meta_data jsonb not null default '{}'::jsonb,
+        email_confirmed_at timestamptz,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      )
+    $sql$;
+    execute 'create unique index auth_users_email_key on auth.users (email)';
+    execute 'create unique index auth_users_email_lower_key on auth.users (lower(email))';
+  end if;
+
+  if to_regclass('auth.sessions') is null then
+    execute $sql$
+      create table auth.sessions (
+        id uuid primary key default gen_random_uuid(),
+        user_id uuid not null references auth.users(id) on delete cascade,
+        token_hash text not null unique,
+        csrf_token text not null,
+        created_at timestamptz not null default now(),
+        expires_at timestamptz not null,
+        revoked_at timestamptz
+      )
+    $sql$;
+    execute 'create index auth_sessions_user_idx on auth.sessions (user_id)';
+    execute 'create index auth_sessions_expires_idx on auth.sessions (expires_at)';
+  end if;
+
+  if to_regclass('auth.login_attempts') is null then
+    execute $sql$
+      create table auth.login_attempts (
+        attempt_key text primary key,
+        count integer not null default 0,
+        first_attempt_at timestamptz not null,
+        locked_until timestamptz,
+        updated_at timestamptz not null default now()
+      )
+    $sql$;
+  end if;
+
+  if to_regclass('auth.password_resets') is null then
+    execute $sql$
+      create table auth.password_resets (
+        id uuid primary key default gen_random_uuid(),
+        user_id uuid not null references auth.users(id) on delete cascade,
+        token_hash text not null unique,
+        created_at timestamptz not null default now(),
+        expires_at timestamptz not null,
+        used_at timestamptz
+      )
+    $sql$;
+    execute 'create index auth_password_resets_user_idx on auth.password_resets (user_id, created_at desc)';
+    execute 'create index auth_password_resets_expiry_idx on auth.password_resets (expires_at) where used_at is null';
+  end if;
+end
+$do$;
+
+do $do$
+begin
+  if to_regprocedure('auth.uid()') is null then
+    execute $sql$
+      create function auth.uid()
+      returns uuid
+      language sql
+      stable
+      as $$select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid$$
+    $sql$;
+  end if;
+end
+$do$;
+
 -- New Supabase projects no longer guarantee automatic Data API grants.
 alter default privileges for role postgres in schema public
   revoke select, insert, update, delete on tables from anon, authenticated, service_role;

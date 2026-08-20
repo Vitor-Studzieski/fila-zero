@@ -19,6 +19,8 @@ async function initAdmin() {
     });
   });
   document.querySelector("#userForm")?.addEventListener("submit", createUser);
+  document.querySelector("#userRole")?.addEventListener("change", updateUserRoleFields);
+  updateUserRoleFields();
   document.querySelector("#sectorFilter")?.addEventListener("change", renderQueueTable);
   document.querySelector("#statusFilter")?.addEventListener("change", renderQueueTable);
   document.querySelector("#refreshDashboardButton")?.addEventListener("click", refreshDashboard);
@@ -429,6 +431,18 @@ function renderUsers() {
   `).join("");
 }
 
+function updateUserRoleFields() {
+  const role = document.querySelector("#userRole")?.value || "";
+  const permissions = document.querySelector("#userSectorPermissions");
+  if (!permissions) return;
+  const restricted = ["tablet", "tv"].includes(role);
+  permissions.hidden = restricted;
+  permissions.querySelectorAll("input[name=sectorIds]").forEach((input) => {
+    input.disabled = restricted;
+    if (restricted) input.checked = false;
+  });
+}
+
 async function saveSector(event) {
   event.preventDefault();
   const form = event.currentTarget;
@@ -487,7 +501,7 @@ function priorityReasonLabel(value) {
 }
 
 function roleLabel(role) {
-  return { customer: "Cliente", attendant: "Funcionário", manager: "Gestor", admin: "Gestor" }[role] || role;
+  return { customer: "Cliente", attendant: "Funcionário", manager: "Gestor", admin: "Gestor", tablet: "Tablet", tv: "TV · Açougue" }[role] || role;
 }
 
 function setText(selector, value) {
@@ -542,7 +556,7 @@ function apiTextError(response, text) {
 }
 
 function csrfHeader() {
-  const token = getCookie("senhahub_local_csrf") || getCookie("senhahub_csrf");
+  const token = getCookie("senhahub_csrf");
   return token ? { "x-csrf-token": token } : {};
 }
 

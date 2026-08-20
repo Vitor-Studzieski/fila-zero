@@ -1,5 +1,6 @@
 const crypto = require("node:crypto");
 const { query, withTransaction } = require("./local-postgres");
+const { evaluatePasswordPolicy, passwordPolicyError } = require("./password-policy");
 
 const SESSION_TTL_SECONDS = 12 * 60 * 60;
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
@@ -128,9 +129,8 @@ async function registerLocalUser({ name, email, password } = {}) {
   if (!normalizedEmail) {
     return { error: "Informe um e-mail válido." };
   }
-  if (!isStrongPassword(normalizedPassword)) {
-    return { error: "Use ao menos 12 caracteres, letras maiúsculas, minúsculas e números." };
-  }
+  const passwordPolicy = await evaluatePasswordPolicy(normalizedPassword);
+  if (!passwordPolicy.ok) return { error: passwordPolicyError(passwordPolicy).error };
 
   try {
     return await withTransaction(async (client) => {
@@ -185,9 +185,11 @@ async function changeLocalPassword({ email, currentPassword, newPassword, attemp
   const normalizedEmail = normalizeEmail(email);
   const current = String(currentPassword || "");
   const next = String(newPassword || "");
-  if (!normalizedEmail || !current || !isStrongPassword(next)) {
+  if (!normalizedEmail || !current) {
     return { error: "Informe e-mail, senha atual e uma nova senha forte com ao menos 12 caracteres, letras maiúsculas, minúsculas e números." };
   }
+  const passwordPolicy = await evaluatePasswordPolicy(next);
+  if (!passwordPolicy.ok) return { error: passwordPolicyError(passwordPolicy).error };
 
   return withTransaction(async (client) => {
     const userResult = await client.query(
@@ -259,9 +261,11 @@ async function requestLocalPasswordReset(email) {
 async function resetLocalPassword({ token, newPassword } = {}) {
   const resetToken = String(token || "");
   const next = String(newPassword || "");
-  if (!resetToken || !isStrongPassword(next)) {
+  if (!resetToken) {
     return { error: "Link de recuperação inválido ou senha fraca. Use ao menos 12 caracteres, letras maiúsculas, minúsculas e números." };
   }
+  const passwordPolicy = await evaluatePasswordPolicy(next);
+  if (!passwordPolicy.ok) return { error: passwordPolicyError(passwordPolicy).error };
 
   return withTransaction(async (client) => {
     const result = await client.query(
@@ -433,7 +437,7 @@ function userDto(row, sectorIds = []) {
     customerId: row.id,
     name: row.name,
     email: row.email,
-    role: appMetadata.access_mode === "tablet" ? "tablet" : row.role,
+    role: ["tablet", "tv"].includes(appMetadata.access_mode) ? appMetadata.access_mode : row.role,
     status: row.status,
     sectorIds,
     createdAt: row.created_at
@@ -453,13 +457,6 @@ function normalizeEmail(value) {
 
 function normalizeName(value) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, 120);
-}
-
-function isStrongPassword(value) {
-  return value.length >= 12
-    && /[a-z]/.test(value)
-    && /[A-Z]/.test(value)
-    && /\d/.test(value);
 }
 
 module.exports = {
