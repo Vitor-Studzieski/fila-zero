@@ -37,18 +37,23 @@ export async function POST(request) {
     "cache-control": "no-store",
     "content-type": "application/json; charset=utf-8"
   });
-  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  const forwardedProtocol = String(request.headers.get("x-forwarded-proto") || "")
+    .split(",")[0]
+    .trim()
+    .toLowerCase();
+  const requestProtocol = forwardedProtocol || new URL(request.url).protocol;
+  const secure = requestProtocol === "https:" ? "; Secure" : "";
   headers.append(
     "set-cookie",
-    `senhahub_local_auth=${encodeURIComponent(result.sessionToken)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`
+    `senhahub_local_auth=${encodeURIComponent(result.sessionToken)}; HttpOnly; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`
   );
   headers.append(
     "set-cookie",
-    `senhahub_local_csrf=${encodeURIComponent(result.csrfToken)}; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`
+    `senhahub_local_csrf=${encodeURIComponent(result.csrfToken)}; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`
   );
   headers.append(
     "set-cookie",
-    `senhahub_csrf=${encodeURIComponent(result.csrfToken)}; SameSite=Strict; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`
+    `senhahub_csrf=${encodeURIComponent(result.csrfToken)}; SameSite=Lax; Path=/; Max-Age=${SESSION_TTL_SECONDS}${secure}`
   );
 
   return new Response(JSON.stringify({
