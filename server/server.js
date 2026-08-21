@@ -448,6 +448,7 @@ function bootstrap() {
       sector_id TEXT PRIMARY KEY,
       business_date TEXT NOT NULL,
       last_number INTEGER NOT NULL,
+      preferential_streak INTEGER NOT NULL DEFAULT 0,
       updated_at TEXT NOT NULL,
       FOREIGN KEY (sector_id) REFERENCES sectors(id)
     );
@@ -726,6 +727,11 @@ function migrateSchema() {
   ].forEach(([column, sql]) => {
     if (!kioskColumns.includes(column)) db.exec(sql);
   });
+
+  const counterColumns = db.prepare("PRAGMA table_info(ticket_counters)").all().map((column) => column.name);
+  if (!counterColumns.includes("preferential_streak")) {
+    db.exec("ALTER TABLE ticket_counters ADD COLUMN preferential_streak INTEGER NOT NULL DEFAULT 0");
+  }
 }
 
 function seedPrintKiosk() {
@@ -1770,6 +1776,7 @@ async function handlePage(req, res, url) {
     "/admin/totens": ADMIN_ROLES,
     "/admin/usuarios": ADMIN_ROLES,
     "/iccf": ADMIN_ROLES,
+    "/tablet": ["tablet", "attendant"],
     "/tv/acougue": ["tv"]
   };
   const requiredRoles = pageRoles[requested]
@@ -1784,6 +1791,11 @@ async function handlePage(req, res, url) {
       return;
     }
     if (!hasAnyRole(user, requiredRoles)) {
+      if (requested === "/tablet") {
+        res.writeHead(302, { location: `/login?next=${encodeURIComponent(requested)}` });
+        res.end();
+        return;
+      }
       res.writeHead(302, { location: roleHome(user) });
       res.end();
       return;
@@ -3376,11 +3388,15 @@ function nextTicketNumber(sectorId, now = isoNow()) {
   const nextNumber = shouldReset ? TICKET_MIN_NUMBER : Number(current.last_number) + 1;
 
   db.prepare(`
-    INSERT INTO ticket_counters (sector_id, business_date, last_number, updated_at)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO ticket_counters (sector_id, business_date, last_number, preferential_streak, updated_at)
+    VALUES (?, ?, ?, 0, ?)
     ON CONFLICT(sector_id) DO UPDATE SET
       business_date = excluded.business_date,
       last_number = excluded.last_number,
+      preferential_streak = CASE
+        WHEN ticket_counters.business_date = excluded.business_date THEN ticket_counters.preferential_streak
+        ELSE 0
+      END,
       updated_at = excluded.updated_at
   `).run(sectorId, businessDate, nextNumber, now);
 
@@ -3452,8 +3468,6 @@ function callNextTicket(sectorId, options = {}) {
   const sector = getSector(sectorId);
   if (!sector) return fail("Setor não encontrado.");
   if (sector.status !== "open") return fail("Setor fechado.");
-  const active = getActiveSectorTicket(sectorId);
-  if (active) return fail(`Finalize a senha ${active.code} antes de chamar a proxima.`);
 
   const statuses = options.preferStandby ? CALL_ELIGIBLE_STATUSES : CALL_ELIGIBLE_STATUSES.filter((status) => status !== "standby");
   const eligibilityClause = options.requireEligible ? "AND COALESCE(eligible_at, created_at) <= ?" : "";
@@ -3464,10 +3478,21 @@ function callNextTicket(sectorId, options = {}) {
     SELECT * FROM tickets
     WHERE sector_id = ? AND status IN (${placeholders(statuses)})
     ${eligibilityClause}
-    ORDER BY ${options.preferStandby ? "CASE WHEN status = 'standby' THEN 0 ELSE 1 END," : ""} priority DESC, queue_order ASC
+    ORDER BY ${options.preferStandby ? "CASE WHEN status = 'standby' THEN 0 ELSE 1 END," : ""} queue_order ASC, created_at ASC
   `).all(...params);
 
-  for (const candidate of queue) {
+  const counter = db.prepare("SELECT preferential_streak FROM ticket_counters WHERE sector_id = ?").get(sectorId);
+  const preferentialStreak = Number(counter?.preferential_streak || 0);
+  const preferentialQueue = queue.filter((ticket) => Number(ticket.priority || 0) === 1);
+  const commonQueue = queue.filter((ticket) => Number(ticket.priority || 0) !== 1);
+  const targetPriority = preferentialQueue.length && (!commonQueue.length || preferentialStreak < 2) ? 1 : 0;
+  const fallbackPriority = preferentialQueue.length && commonQueue.length ? (targetPriority === 1 ? 0 : 1) : null;
+  const orderedQueue = [
+    ...queue.filter((ticket) => Number(ticket.priority || 0) === targetPriority),
+    ...(fallbackPriority === null ? [] : queue.filter((ticket) => Number(ticket.priority || 0) === fallbackPriority))
+  ];
+
+  for (const candidate of orderedQueue) {
     const conflict = getBlockingTicket(candidate);
     if (conflict) {
       const now = isoNow();
@@ -3483,6 +3508,11 @@ function callNextTicket(sectorId, options = {}) {
     const now = isoNow();
     db.prepare("UPDATE tickets SET status = ?, called_at = ?, standby_started_at = NULL, standby_expires_at = NULL, updated_at = ? WHERE id = ?").run("chamado", now, now, candidate.id);
     db.prepare("INSERT INTO calls (id, ticket_id, sector_id, action, created_at) VALUES (?, ?, ?, ?, ?)").run(`call-${crypto.randomUUID()}`, candidate.id, sectorId, "senha_chamada", now);
+    db.prepare("UPDATE ticket_counters SET preferential_streak = ?, updated_at = ? WHERE sector_id = ?").run(
+      Number(candidate.priority || 0) === 1 ? Math.min(preferentialStreak + 1, 2) : 0,
+      now,
+      sectorId
+    );
     registerEvent("senha_chamada", "ticket", candidate.id, candidate.customer_id, candidate.sector_id, { code: candidate.code });
     const called = getTicket(candidate.id);
     const pushType = Number(candidate.absence_count || 0) > 0 ? "queue_recalled" : "queue_called";
@@ -3496,20 +3526,6 @@ function callNextTicket(sectorId, options = {}) {
 
 function autoCallReadyTickets() {
   expireStaleActiveTickets({ broadcast: false });
-  let changed = false;
-  for (const sector of getSectors()) {
-    if (sector.status !== "open") continue;
-    const active = db.prepare(`
-      SELECT 1 FROM tickets
-      WHERE sector_id = ? AND status IN ('chamado', 'em_atendimento')
-      LIMIT 1
-    `).get(sector.id);
-    if (active) continue;
-
-    const result = callNextTicket(sector.id, { requireEligible: true });
-    changed = changed || Boolean(result.ticket);
-  }
-  if (changed) broadcast();
 }
 
 function expireAbsentCalls() {
@@ -4295,13 +4311,13 @@ function getStaffState(user = null) {
   const sectors = visibleSectors.map((sector) => {
     const rows = ticketsBySector.get(sector.id) || [];
     const stats = statsBySector.get(sector.id) || { seconds: sector.average_service_seconds, samples: 0 };
-    const active = latestBlockingTicket(rows);
-    const current = active?.code || currentCodeFromCounter(sector, countersBySector.get(sector.id));
-    const activeDelay = active ? activeServiceDelayFromRow(active, stats.seconds) : 0;
+    const recentCalls = callsBySector.get(sector.id) || [];
+    const latestCall = recentCalls.find((call) => call.action === "senha_chamada");
+    const current = latestCall?.ticket || currentCodeFromCounter(sector, countersBySector.get(sector.id));
     return {
-      ...staffSectorDto(sector, stats, current, active ? ticketName(active) : ""),
-      tickets: rows.map((row) => staffTicketDtoLocal(row, sector, stats, current, rows, activeDelay)),
-      recentCalls: callsBySector.get(sector.id) || []
+      ...staffSectorDto(sector, stats, current, latestCall?.customerName || ""),
+      tickets: rows.map((row) => staffTicketDtoLocal(row, sector, stats, current, rows, 0)),
+      recentCalls
     };
   });
 

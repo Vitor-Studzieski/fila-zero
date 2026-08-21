@@ -88,7 +88,7 @@ test("orquestra espera inteligente e libera uma senha por vez", async () => {
   assert.equal(state.tickets.find((ticket) => ticket.sectorId === "frios").status, "chamado");
 });
 
-test("nao libera espera inteligente quando o setor ja possui chamada ativa", async () => {
+test("permite chamadas em setores com outras senhas ja chamadas", async () => {
   resetSectorTickets("acougue");
   resetSectorTickets("frios");
   try {
@@ -121,11 +121,11 @@ test("nao libera espera inteligente quando o setor ja possui chamada ativa", asy
     const staff = await api("/api/staff/state", { cookie: adminCookie });
     const frios = staff.sectors.find((sector) => sector.id === "frios");
     const activeCalls = frios.tickets.filter((ticket) => ["chamado", "em_atendimento"].includes(ticket.status));
-    assert.equal(activeCalls.length, 1);
-    assert.equal(activeCalls[0].id, other.ticket.id);
+    assert.equal(activeCalls.length, 2);
+    assert.ok(activeCalls.some((ticket) => ticket.id === other.ticket.id));
 
     const customerState = await api(`/api/state?customer_id=${firstCustomer.identity.customerId}`, { cookie: firstCustomer.cookie });
-    assert.equal(customerState.tickets.find((ticket) => ticket.id === smartWait.ticket.id).status, "aguardando");
+    assert.equal(customerState.tickets.find((ticket) => ticket.id === smartWait.ticket.id).status, "chamado");
   } finally {
     resetSectorTickets("acougue");
     resetSectorTickets("frios");
@@ -253,24 +253,28 @@ test("duas emissoes paralelas no mesmo setor retornam a mesma senha", async () =
   }
 });
 
-test("duas chamadas paralelas deixam somente uma senha ativa no setor", async () => {
+test("duas chamadas paralelas registram duas senhas distintas sem duplicar uma senha", async () => {
   resetSectorTickets("acougue");
   try {
     const firstCustomer = await createCustomer("chamada-paralela-a");
     const secondCustomer = await createCustomer("chamada-paralela-b");
-    await api("/api/tickets", { method: "POST", cookie: firstCustomer.cookie, body: { ...firstCustomer.identity, sectorId: "acougue" } });
-    await api("/api/tickets", { method: "POST", cookie: secondCustomer.cookie, body: { ...secondCustomer.identity, sectorId: "acougue" } });
+    const first = await api("/api/tickets", { method: "POST", cookie: firstCustomer.cookie, body: { ...firstCustomer.identity, sectorId: "acougue" } });
+    const second = await api("/api/tickets", { method: "POST", cookie: secondCustomer.cookie, body: { ...secondCustomer.identity, sectorId: "acougue" } });
 
     const call = () => fetch(`${BASE_URL}/api/sectors/acougue/call-next`, {
       method: "POST",
       headers: { "content-type": "application/json", cookie: adminCookie, ...csrfHeader(adminCookie) }
     });
     const responses = await Promise.all([call(), call()]);
-    assert.deepEqual(responses.map((response) => response.status).sort(), [200, 400]);
+    assert.deepEqual(responses.map((response) => response.status).sort(), [200, 200]);
 
     const staff = await api("/api/staff/state", { cookie: adminCookie });
     const sector = staff.sectors.find((item) => item.id === "acougue");
-    assert.equal(sector.tickets.filter((ticket) => ["chamado", "em_atendimento"].includes(ticket.status)).length, 1);
+    const calledTestTickets = sector.tickets.filter((ticket) => [first.ticket.id, second.ticket.id].includes(ticket.id));
+    assert.equal(calledTestTickets.length, 2);
+    assert.ok(calledTestTickets.every((ticket) => ["chamado", "em_atendimento"].includes(ticket.status)));
+    const testCalls = sector.recentCalls.filter((call) => [first.ticket.ticket, second.ticket.ticket].includes(call.ticket));
+    assert.equal(new Set(testCalls.map((call) => call.ticket)).size, 2);
   } finally {
     resetSectorTickets("acougue");
   }
@@ -634,19 +638,19 @@ test("mantem tempo estimado baseado na posicao real da fila", async () => {
   assert.ok(state.tickets[0].estimatedCallAt);
 });
 
-test("senha sem ninguem na frente conta 30 segundos e chama automaticamente", async () => {
+test("senha sem ninguem na frente aguarda a chamada explicita do atendente", async () => {
+  resetSectorTickets("acougue");
   const { cookie, identity } = await createCustomer("auto-chamada");
   const created = await api("/api/tickets", { method: "POST", cookie, body: { ...identity, sectorId: "acougue" } });
   assert.equal(created.ticket.position, 1);
   assert.ok(created.ticket.secondsToCall <= 30);
   assert.ok(created.ticket.secondsToCall > 0);
 
-  await new Promise((resolve) => setTimeout(resolve, 31000));
   const state = await api(`/api/state?customer_id=${identity.customerId}`, { cookie });
-  assert.equal(state.tickets[0].status, "chamado");
+  assert.equal(state.tickets[0].status, "aguardando");
 });
 
-test("setor chama a proxima senha somente depois de finalizar o atendimento atual", async () => {
+test("atendente chama varias senhas em sequencia sem finalizar a anterior", async () => {
   resetSectorTickets("acougue");
   const firstCustomer = await createCustomer("fila-real-primeiro");
   const secondCustomer = await createCustomer("fila-real-segundo");
@@ -656,13 +660,8 @@ test("setor chama a proxima senha somente depois de finalizar o atendimento atua
   assert.equal(second.ticket.position, 2);
 
   await api("/api/sectors/acougue/call-next", { method: "POST", cookie: adminCookie });
-  await api(`/api/tickets/${first.ticket.id}/confirm`, { method: "POST", cookie: adminCookie });
-
-  const blocked = await api("/api/sectors/acougue/call-next", { method: "POST", cookie: adminCookie, ok: false });
-  assert.match(blocked.error, /Finalize a senha/i);
-
-  const finished = await api(`/api/tickets/${first.ticket.id}/finish`, { method: "POST", cookie: adminCookie });
-  assert.equal(finished.nextTicket.ticket, second.ticket.ticket);
+  const calledSecond = await api("/api/sectors/acougue/call-next", { method: "POST", cookie: adminCookie });
+  assert.equal(calledSecond.ticket.ticket, second.ticket.ticket);
 
   const secondState = await api(`/api/state?customer_id=${secondCustomer.identity.customerId}`, { cookie: secondCustomer.cookie });
   assert.equal(secondState.tickets[0].status, "chamado");
@@ -722,6 +721,41 @@ test("fila preferencial e chamada antes da fila comum", async () => {
 
   const called = await api("/api/sectors/frios/call-next", { method: "POST", cookie: adminCookie });
   assert.equal(called.ticket.ticket, priority.ticket.ticket);
+});
+
+test("fila segue duas preferenciais e uma comum, preservando a ordem de chegada", async () => {
+  resetSectorTickets("frios");
+  const firstCommonCustomer = await createCustomer("ciclo-comum-1");
+  const firstPriorityCustomer = await createCustomer("ciclo-preferencial-1");
+  const secondPriorityCustomer = await createCustomer("ciclo-preferencial-2");
+  const secondCommonCustomer = await createCustomer("ciclo-comum-2");
+
+  const firstCommon = await api("/api/tickets", {
+    method: "POST",
+    cookie: firstCommonCustomer.cookie,
+    body: { ...firstCommonCustomer.identity, sectorId: "frios" }
+  });
+  const firstPriority = await api("/api/tickets", {
+    method: "POST",
+    cookie: firstPriorityCustomer.cookie,
+    body: { ...firstPriorityCustomer.identity, sectorId: "frios", priority: true, priorityReason: "idoso_60_mais" }
+  });
+  const secondPriority = await api("/api/tickets", {
+    method: "POST",
+    cookie: secondPriorityCustomer.cookie,
+    body: { ...secondPriorityCustomer.identity, sectorId: "frios", priority: true, priorityReason: "gestante_ou_lactante" }
+  });
+  const secondCommon = await api("/api/tickets", {
+    method: "POST",
+    cookie: secondCommonCustomer.cookie,
+    body: { ...secondCommonCustomer.identity, sectorId: "frios" }
+  });
+
+  const calls = [];
+  for (let index = 0; index < 4; index += 1) {
+    calls.push((await api("/api/sectors/frios/call-next", { method: "POST", cookie: adminCookie })).ticket.ticket);
+  }
+  assert.deepEqual(calls, [firstPriority.ticket.ticket, secondPriority.ticket.ticket, firstCommon.ticket.ticket, secondCommon.ticket.ticket]);
 });
 
 test("atendente so pula senha com justificativa e registra historico", async () => {
@@ -890,6 +924,7 @@ function resetSectorTickets(sectorId) {
     SET status = 'expirado', expired_at = ?, updated_at = ?
     WHERE sector_id = ? AND status IN ('aguardando', 'proximo', 'chamado', 'em_atendimento', 'espera_inteligente', 'standby')
   `).run(new Date().toISOString(), new Date().toISOString(), sectorId);
+  database.prepare("UPDATE ticket_counters SET preferential_streak = 0 WHERE sector_id = ?").run(sectorId);
   database.close();
 }
 

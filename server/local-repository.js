@@ -215,7 +215,7 @@ async function getLocalStaffState(user = null) {
       [sectorIds, ACTIVE_STATUSES]
     ),
     query(
-      "SELECT sector_id, business_date, last_number FROM public.ticket_counters WHERE sector_id = ANY($1::text[])",
+      "SELECT sector_id, business_date, last_number, preferential_streak FROM public.ticket_counters WHERE sector_id = ANY($1::text[])",
       [sectorIds]
     ),
     query(
@@ -256,7 +256,8 @@ async function getLocalStaffState(user = null) {
     serverTime: new Date().toISOString(),
     sectors: visibleSectors.map((sector) => {
       const rows = rowsBySector.get(sector.id) || [];
-      const current = rows.find((row) => CALL_BLOCKING_STATUSES.includes(row.status));
+      const recentCalls = callsBySector.get(sector.id) || [];
+      const latestCall = recentCalls.find((call) => call.action === "senha_chamada");
       const tickets = rows.map((ticket) => publicTicketDto(
         ticket,
         sectorById.get(ticket.sector_id),
@@ -266,9 +267,10 @@ async function getLocalStaffState(user = null) {
       ));
       return {
         ...publicSectorDto(sector, counters, businessDate, rows),
-        currentCustomerName: current ? normalizeCustomerName(current.customer_name) : "",
+        current: latestCall?.ticket || publicSectorDto(sector, counters, businessDate, rows).current,
+        currentCustomerName: latestCall?.customerName || "",
         tickets,
-        recentCalls: callsBySector.get(sector.id) || []
+        recentCalls
       };
     })
   };
@@ -289,34 +291,34 @@ async function callNextLocalTicket(sectorId, user = null) {
     if (!sector) throw new Error("Setor não encontrado.");
     if (sector.status !== "open") throw new Error("Setor fechado.");
 
-    const activeResult = await client.query(
-      `
-        SELECT code
-        FROM public.tickets
-        WHERE sector_id = $1
-          AND status = ANY($2::public.ticket_status[])
-        LIMIT 1
-        FOR UPDATE
-      `,
-      [normalizedSectorId, CALL_BLOCKING_STATUSES]
+    const counterResult = await client.query(
+      "SELECT preferential_streak FROM public.ticket_counters WHERE sector_id = $1 FOR UPDATE",
+      [normalizedSectorId]
     );
-    if (activeResult.rowCount) {
-      throw new Error(`Finalize a senha ${activeResult.rows[0].code} antes de chamar a próxima.`);
-    }
-
+    const preferentialStreak = Number(counterResult.rows[0]?.preferential_streak || 0);
     const queueResult = await client.query(
       `
         SELECT *
         FROM public.tickets
         WHERE sector_id = $1
           AND status = ANY($2::public.ticket_status[])
-        ORDER BY priority DESC, queue_order ASC, created_at ASC
+        ORDER BY queue_order ASC, created_at ASC
         FOR UPDATE SKIP LOCKED
       `,
       [normalizedSectorId, CALL_ELIGIBLE_STATUSES.filter((status) => status !== "standby")]
     );
 
-    for (const candidate of queueResult.rows) {
+    const preferentialQueue = queueResult.rows.filter((ticket) => ticket.priority);
+    const commonQueue = queueResult.rows.filter((ticket) => !ticket.priority);
+    const targetPriority = preferentialQueue.length && (!commonQueue.length || preferentialStreak < 2);
+    const orderedQueue = [
+      ...queueResult.rows.filter((ticket) => Boolean(ticket.priority) === Boolean(targetPriority)),
+      ...(preferentialQueue.length && commonQueue.length
+        ? queueResult.rows.filter((ticket) => Boolean(ticket.priority) !== Boolean(targetPriority))
+        : [])
+    ];
+
+    for (const candidate of orderedQueue) {
       const conflictResult = await client.query(
         `
           SELECT id, code
@@ -362,6 +364,15 @@ async function callNextLocalTicket(sectorId, user = null) {
       await client.query(
         `INSERT INTO public.calls (id, ticket_id, sector_id, action) VALUES (gen_random_uuid(), $1, $2, $3)`,
         [candidate.id, normalizedSectorId, "senha_chamada"]
+      );
+      await client.query(
+        `
+          UPDATE public.ticket_counters
+          SET preferential_streak = $2,
+              updated_at = now()
+          WHERE sector_id = $1
+        `,
+        [normalizedSectorId, candidate.priority ? Math.min(preferentialStreak + 1, 2) : 0]
       );
       await client.query(
         `

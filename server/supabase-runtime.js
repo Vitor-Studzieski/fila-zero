@@ -70,16 +70,25 @@ const CUSTOMER_CANCELABLE_STATUSES = ["aguardando", "proximo", "chamado", "esper
 const STAFF_SKIPPABLE_STATUSES = ["aguardando", "proximo", "chamado", "standby", "espera_inteligente"];
 const CUSTOMER_ROLES = ["customer", "manager", "admin"];
 const STAFF_ROLES = ["attendant", "manager", "admin"];
+const TABLET_ACCESS_ROLES = ["attendant", "tablet"];
 const ADMIN_ROLES = ["manager", "admin"];
 const DISPLAY_ROLES = ["tv"];
 const SKIP_REASONS = new Set(["cliente_ausente", "cancelamento", "erro_operacional"]);
 const PRIORITY_CATEGORIES = new Set([
   "deficiencia_ou_mobilidade_reduzida",
   "tea",
-  "idoso_60_mais",
   "gestante_ou_lactante",
+  "obesidade",
+  "idoso_60_mais",
   "crianca_de_colo",
-  "obesidade"
+  "gestante",
+  "deficiencia",
+  "deficiencia_oculta",
+  "autismo",
+  "mobilidade_reduzida",
+  "comorbidades",
+  "doador_de_sangue",
+  "fibromialgia"
 ]);
 const LOGIN_ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_ATTEMPT_LIMIT = 5;
@@ -165,6 +174,10 @@ async function handleRequestInternal(request, context = null) {
     if (request.method === "POST" && url.pathname === "/api/auth/register") return registerCustomer(request);
     if (request.method === "POST" && url.pathname === "/api/auth/logout") return logout(request);
     if (request.method === "GET" && url.pathname === "/api/auth/me") return me(request);
+    if (request.method === "GET" && url.pathname === "/api/tablet/status") return tabletStatus(request);
+    if (request.method === "POST" && url.pathname === "/api/tablet/tickets") return tabletTickets(request);
+    const tabletPrintJob = url.pathname.match(/^\/api\/tablet\/print-jobs\/([^/]+)$/);
+    if (request.method === "GET" && tabletPrintJob) return tabletPrintJobRoute(request, decodeURIComponent(tabletPrintJob[1]));
     if (request.method === "GET" && url.pathname === "/api/kiosk/status") return kioskStatusRoute(request);
     const trackedTicket = url.pathname.match(/^\/api\/tickets\/track\/([A-Za-z0-9_-]{20,100})$/);
     if (request.method === "GET" && trackedTicket) return ticketTrackingRoute(request, decodeURIComponent(trackedTicket[1]));
@@ -727,7 +740,7 @@ async function kioskStatusRoute(request, sessionOverride = null) {
   const kiosk = kioskRows[0];
   const openSectors = await kioskSectorDtos(sectors
     .filter((sector) => sector.status === "open")
-    .filter((sector) => !kiosk || kiosk.mode !== "sector" || kiosk.sector_id === sector.id));
+    .filter((sector) => !kiosk || kioskCanAccessSector(kiosk, sector)));
   return json({
     paired: Boolean(kiosk),
     canPair: hasAnyRole(user, ADMIN_ROLES),
@@ -754,6 +767,7 @@ async function pairKioskRoute(request) {
     active: true,
     mode: KIOSK_CONFIGURATION.mode,
     sector_id: KIOSK_CONFIGURATION.sectorId || null,
+    store_code: KIOSK_CONFIGURATION.storeCode,
     printer_name: KIOSK_CONFIGURATION.printerName,
     printer_port: KIOSK_CONFIGURATION.printerPort,
     paper_width_mm: KIOSK_CONFIGURATION.paperWidthMm,
@@ -801,9 +815,8 @@ async function createPhysicalTicketRoute(request) {
   const configuredKiosk = kioskRows[0];
   if (!configuredKiosk) return json({ error: "Totem indisponivel." }, 400);
   if (!safeEqual(configuredKiosk.session_nonce, kiosk.sessionNonce)) return json({ error: "Sessao do totem revogada. Vincule o totem novamente." }, 401);
-  if (configuredKiosk.mode === "sector" && configuredKiosk.sector_id !== input.sectorId) {
-    return json({ error: "Este totem esta configurado para outro setor." }, 400);
-  }
+  const sector = await getSector(input.sectorId);
+  if (!kioskCanAccessSector(configuredKiosk, sector)) return json({ error: "Este totem nao atende a loja ou setor selecionado." }, 400);
   const kioskRate = await consumeSecurityRateLimit("kiosk:issue", kiosk.kioskId, 12, 60);
   if (kioskRate !== true) return json({ error: kioskRate === false ? "Limite de emissao atingido. Aguarde um minuto." : "Emissao temporariamente indisponivel." }, kioskRate === false ? 429 : 503);
   const priority = normalizePriority(body);
@@ -840,6 +853,10 @@ async function createPhysicalTicketBundleRoute(kiosk, body) {
   if (!configuredKiosk) return json({ error: "Totem indisponivel." }, 400);
   if (!safeEqual(configuredKiosk.session_nonce, kiosk.sessionNonce)) return json({ error: "Sessao do totem revogada. Vincule o totem novamente." }, 401);
   if (configuredKiosk.mode === "sector") return json({ error: "Este totem permite apenas uma senha por vez." }, 400);
+  const sectors = await Promise.all(input.sectorIds.map((sectorId) => getSector(sectorId)));
+  if (sectors.some((sector) => !kioskCanAccessSector(configuredKiosk, sector))) {
+    return json({ error: "Este totem nao atende a loja ou setor selecionado." }, 400);
+  }
   const kioskRate = await consumeSecurityRateLimit("kiosk:issue", kiosk.kioskId, 12, 60);
   if (kioskRate !== true) return json({ error: kioskRate === false ? "Limite de emissao atingido. Aguarde um minuto." : "Emissao temporariamente indisponivel." }, kioskRate === false ? 429 : 503);
   const priority = normalizePriority(body);
@@ -1053,6 +1070,7 @@ function kioskDto(row) {
     name: row.name,
     mode: row.mode === "sector" ? "sector" : "central",
     sectorId: row.sector_id || null,
+    storeCode: row.store_code || null,
     printerName: row.printer_name,
     printerPort: row.printer_port,
     paperWidthMm: Number(row.paper_width_mm),
@@ -1194,6 +1212,115 @@ async function state(request) {
   const user = await requireUser(request, CUSTOMER_ROLES);
   if (user.response) return user.response;
   return json(await getCustomerState(user.customerId));
+}
+
+async function tabletStatus(request) {
+  const user = await requireUser(request, TABLET_ACCESS_ROLES);
+  if (user.response) return user.response;
+
+  const sectors = (await getSectors()).filter((sector) => (
+    sector.status === "open" && canAccessSectorSync(user, sector.id)
+  ));
+  if (sectors.length !== 1) {
+    return json({ error: "Esta conta precisa estar vinculada a um único setor aberto." }, 403);
+  }
+
+  const sector = await sectorDto(sectors[0]);
+  return json({
+    source: "supabase",
+    user: userDto(user),
+    sector,
+    sectors: [sector]
+  }, 200, { "cache-control": "no-store" });
+}
+
+async function tabletTickets(request) {
+  const user = await requireUser(request, TABLET_ACCESS_ROLES);
+  if (user.response) return user.response;
+  if (!(await verifyCsrf(request, user))) return json({ error: "Token de seguranca invalido. Recarregue a pagina e tente novamente." }, 403);
+
+  const body = await readJson(request);
+  const sectors = (await getSectors()).filter((sector) => (
+    sector.status === "open" && canAccessSectorSync(user, sector.id)
+  ));
+  if (sectors.length !== 1) {
+    return json({ error: "Esta conta precisa estar vinculada a um único setor aberto." }, 403);
+  }
+
+  const sector = sectors[0];
+  if (body.sectorId && body.sectorId !== sector.id) {
+    return json({ error: "Este tablet está configurado para outro setor." }, 403);
+  }
+
+  const configuredKiosk = (await select(
+    "print_kiosks",
+    `id=eq.${encodeURIComponent(KIOSK_CONFIGURATION.id)}&active=eq.true&limit=1`
+  ))[0];
+  if (!kioskCanAccessSector(configuredKiosk, sector)) {
+    return json({ error: "O totem desta loja ainda nao esta configurado." }, 503);
+  }
+
+  const priority = normalizePriority(body);
+  const requestedIdempotencyKey = String(body.idempotencyKey || "").trim();
+  const idempotencyKey = requestedIdempotencyKey || `tablet-${user.id}-${crypto.randomUUID()}`;
+  if (!/^[A-Za-z0-9_-]{16,160}$/.test(idempotencyKey)) {
+    return json({ error: "Identificador da emissão inválido." }, 400);
+  }
+
+  const result = await rpc("issue_physical_ticket", {
+    p_kiosk_id: KIOSK_CONFIGURATION.id,
+    p_sector_id: sector.id,
+    p_idempotency_key: idempotencyKey,
+    p_install_url: KIOSK_CONFIGURATION.installUrl,
+    p_app_url: KIOSK_CONFIGURATION.appUrl,
+    p_priority: priority.enabled,
+    p_priority_reason: priority.reason,
+    p_auto_call_delay_seconds: AUTO_CALL_DELAY_SECONDS
+  });
+  if (!result || result.error || !result.ticket) {
+    return json({ error: "Não foi possível colocar a senha na fila de impressão." }, 400);
+  }
+
+  const ticket = {
+    id: result.ticket.id,
+    ticketNumber: result.ticket.number,
+    ticket: result.ticket.code,
+    current: result.ticket.code,
+    sectorId: sector.id,
+    sector: sector.name,
+    status: result.ticket.status,
+    source: result.ticket.source || "physical",
+    kioskId: result.ticket.kiosk_id || KIOSK_CONFIGURATION.id,
+    priority: Boolean(result.ticket.priority),
+    priorityReason: result.ticket.priority_reason
+  };
+  void registerEvent("senha_fisica_emitida", "ticket", result.ticket.id, null, sector.id, {
+    code: result.ticket.code,
+    priority,
+    tabletUserId: user.id,
+    kioskId: KIOSK_CONFIGURATION.id,
+    printJobId: result.printJob?.id
+  }).catch((error) => console.error("tablet_print_event_failed", error));
+  return json({
+    source: "supabase",
+    ticket,
+    tickets: [ticket],
+    printJob: printJobDto(result.printJob),
+    alreadyExists: Boolean(result.alreadyExists)
+  }, 201);
+}
+
+async function tabletPrintJobRoute(request, jobId) {
+  const user = await requireUser(request, TABLET_ACCESS_ROLES);
+  if (user.response) return user.response;
+  if (!isUuid(jobId)) return json({ error: "Trabalho de impressão inválido." }, 400);
+
+  const job = (await select("print_jobs", `id=eq.${encodeURIComponent(jobId)}&limit=1`))[0];
+  if (!job) return json({ error: "Trabalho de impressão não encontrado." }, 404);
+  const ticket = (await select("tickets", `id=eq.${encodeURIComponent(job.ticket_id)}&source=eq.physical&limit=1`))[0];
+  if (!ticket || !canAccessSectorSync(user, ticket.sector_id)) return json({ error: "Acesso negado." }, 403);
+
+  return json({ job: printJobDto(job) }, 200, { "cache-control": "no-store" });
 }
 
 async function history(request) {
@@ -1466,7 +1593,7 @@ async function callNextTicket(sectorId, options = {}) {
     p_require_eligible: Boolean(options.requireEligible),
     p_prefer_standby: Boolean(options.preferStandby)
   });
-  if (called.error) return fail("Finalize a senha atual antes de chamar a proxima.");
+  if (called.error) return fail("Não foi possível chamar a próxima senha.");
   if (called?.id) {
     const pushType = Number(called.absence_count || 0) > 0 ? "queue_recalled" : "queue_called";
     const ticket = safeTicketDto(called);
@@ -1643,14 +1770,14 @@ async function getStaffState(user) {
   const data = sectors.map((sector) => {
     const sectorTickets = ticketsBySector.get(sector.id) || [];
     const stats = recentStats.get(sector.id) || { seconds: sector.average_service_seconds, samples: 0 };
-    const active = sectorTickets.find((ticket) => CALL_BLOCKING_STATUSES.includes(ticket.status));
-    const current = active?.code || currentCodeFromCounter(sector, countersBySector.get(sector.id));
-    const currentCustomerName = active ? ticketName(active) : "";
-    const activeDelay = active ? activeServiceDelayFromTicket(active, stats.seconds) : 0;
+    const recentCalls = recentCallsBySector.get(sector.id) || [];
+    const latestCall = recentCalls.find((call) => call.action === "senha_chamada");
+    const current = latestCall?.ticket || currentCodeFromCounter(sector, countersBySector.get(sector.id));
+    const currentCustomerName = latestCall?.customerName || "";
     return {
       ...sectorDtoFromStats(sector, stats, current, currentCustomerName),
-      tickets: sectorTickets.map((ticket) => staffTicketDto(ticket, sector, stats, current, sectorTickets, activeDelay)),
-      recentCalls: recentCallsBySector.get(sector.id) || []
+      tickets: sectorTickets.map((ticket) => staffTicketDto(ticket, sector, stats, current, sectorTickets, 0)),
+      recentCalls
     };
   });
   return { serverTime: isoNow(), sectors: data };
@@ -2037,6 +2164,7 @@ function sectorDtoFromStats(row, stats, current, currentCustomerName = "") {
   return {
     id: row.id,
     name: row.name,
+    storeCode: row.store_code || null,
     prefix: row.prefix,
     counterLabel: row.counter_label,
     serviceLabel: row.service_label,
@@ -2328,7 +2456,7 @@ async function createRating(body) {
 
 async function listUsers() {
   const [profiles, authUsers] = await Promise.all([
-    select("profiles", "select=id,name,email,role,status,created_at&order=created_at.asc"),
+    select("profiles", "select=id,name,email,role,status,store_code,created_at&order=created_at.asc"),
     supabaseFetch("/auth/v1/admin/users?per_page=1000")
   ]);
   const permissions = await select("profile_sector_permissions", "select=profile_id,sector_id");
@@ -2358,15 +2486,16 @@ async function createUser(body) {
   if (!email || !name || !validateStrongPassword(password)) return fail("Informe nome, e-mail e senha com ao menos 12 caracteres, letras maiusculas, minusculas e numeros.");
   const passwordPolicy = await validatePasswordPolicy(password);
   if (passwordPolicy.error) return fail(passwordPolicy.error);
+  const storeCode = normalizeStoreCode(body.storeCode);
   const auth = await supabaseFetch("/auth/v1/admin/users", {
     method: "POST",
     body: { email, password, email_confirm: true, user_metadata: { name, role, ...(role === "tv" ? { access_mode: "tv" } : {}) } }
   });
   if (auth.error || !auth.id) return fail(auth.error || "Nao foi possivel criar usuario.");
-  const profile = await upsert("profiles", { id: auth.id, email, name, role: profileRole, status: "active" }, "id");
-  const sectorIds = role === "tv" ? [] : (Array.isArray(body.sectorIds) ? body.sectorIds : []);
+  const profile = await upsert("profiles", { id: auth.id, email, name, role: profileRole, status: "active", store_code: storeCode }, "id");
+  const sectorIds = Array.isArray(body.sectorIds) ? body.sectorIds : [];
   await setUserSectorPermissions(auth.id, sectorIds);
-  return { user: userDto({ ...profile, access_mode: role === "tv" ? "tv" : null, sectorIds }) };
+  return { user: userDto({ ...profile, access_mode: role === "tv" ? "tv" : null, sectorIds, store_code: storeCode }) };
 }
 
 async function ticketDto(row) {
@@ -2493,6 +2622,7 @@ async function sectorDto(row) {
   return {
     id: row.id,
     name: row.name,
+    storeCode: row.store_code || null,
     prefix: row.prefix,
     counterLabel: row.counter_label,
     serviceLabel: row.service_label,
@@ -2528,13 +2658,16 @@ function userDto(row) {
     email: row.email,
     role: row.access_mode === "tv" ? "tv" : normalizeRole(row.role),
     status: row.status,
+    storeCode: row.store_code || null,
     sectorIds: row.sectorIds || [],
     createdAt: row.created_at || row.createdAt || null
   };
 }
 
 function applyAccessMode(profile, accessMode) {
-  return accessMode === "tv" ? { ...profile, role: "tv", sectorIds: [] } : profile;
+  if (accessMode === "tv") return { ...profile, role: "tv" };
+  if (accessMode === "tablet") return { ...profile, role: "tablet" };
+  return profile;
 }
 
 async function upsertSession(body, userAgent) {
@@ -2580,17 +2713,8 @@ async function maybeRunScheduledJobs(options = {}) {
 }
 
 async function autoCallReadyTickets() {
-  const [sectors, eligibleTickets] = await Promise.all([
-    getSectors(),
-    select("tickets", `status=in.(${CALL_ELIGIBLE_STATUSES.join(",")})&or=(eligible_at.lte.${encodeURIComponent(isoNow())},eligible_at.is.null)&select=sector_id`)
-  ]);
-  const eligibleSectorIds = new Set(eligibleTickets.map((ticket) => ticket.sector_id));
-  for (const sector of sectors) {
-    if (sector.status !== "open" || !eligibleSectorIds.has(sector.id)) continue;
-    const active = await getActiveSectorTicket(sector.id);
-    if (active) continue;
-    await callNextTicket(sector.id, { requireEligible: true });
-  }
+  // A chamada passa a ser uma ação explícita do atendente. O agendador não
+  // deve transformar a fila inteira em chamadas automaticamente.
 }
 
 async function expireAbsentCalls() {
@@ -2758,9 +2882,21 @@ async function canAccessSector(user, sectorId) {
   return canAccessSectorSync(user, sectorId);
 }
 
+function normalizeStoreCode(value) {
+  const storeCode = cleanId(value);
+  return /^loja-[0-9]+$/.test(storeCode) ? storeCode : null;
+}
+
+function kioskCanAccessSector(kiosk, sector) {
+  if (!kiosk || !sector) return false;
+  if (kiosk.mode === "sector" && kiosk.sector_id !== sector.id) return false;
+  const kioskStoreCode = normalizeStoreCode(kiosk.store_code);
+  const sectorStoreCode = normalizeStoreCode(sector.store_code);
+  return Boolean(kioskStoreCode && sectorStoreCode && kioskStoreCode === sectorStoreCode);
+}
+
 function canAccessSectorSync(user, sectorId) {
   if (hasAnyRole(user, ADMIN_ROLES)) return true;
-  if (normalizeRole(user?.role) === "tv") return sectorId === "acougue";
   return Array.isArray(user?.sectorIds) && user.sectorIds.includes(sectorId);
 }
 
@@ -2788,7 +2924,7 @@ async function getProfile(userId, fallbackEmail = "", options = {}) {
   if (!profile) return null;
   const dto = userDto({ ...profile, email: profile.email || fallbackEmail, sectorIds: permissions.map((item) => item.sector_id) });
   profileCache.set(userId, { profile: dto, expiresAt: Date.now() + PROFILE_CACHE_TTL_MS });
-  return applyAccessMode(dto, options.accessMode);
+    return applyAccessMode(dto, options.accessMode);
 }
 
 async function getAuthUser(request) {
@@ -2796,7 +2932,7 @@ async function getAuthUser(request) {
   const session = verifySessionToken(token);
   if (!session?.user?.id) return null;
   const [profile, appSession] = await Promise.all([
-    getProfile(session.user.id, session.email, { accessMode: session.user.role === "tv" ? "tv" : null }),
+    getProfile(session.user.id, session.email, { accessMode: ["tv", "tablet"].includes(session.user.role) ? session.user.role : null }),
     getActiveAuthSession(session)
   ]);
   if (!profile || profile.status !== "active" || !appSession) return null;

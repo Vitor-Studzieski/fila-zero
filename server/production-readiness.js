@@ -21,7 +21,7 @@ function validateProductionEnvironment(environment = process.env) {
   requireSecret(environment.CRON_SECRET, "CRON_SECRET", errors);
   requireHttpsUrl(environment.PUBLIC_APP_URL, "PUBLIC_APP_URL", errors);
 
-  if (isTruthy(environment.ALLOW_DEMO_USERS)) {
+  if (isEnabledFlag(environment.ALLOW_DEMO_USERS)) {
     errors.push("ALLOW_DEMO_USERS precisa estar desativado em produção.");
   }
   if (hasDemoUsers(environment.DEMO_USERS_JSON)) {
@@ -32,7 +32,7 @@ function validateProductionEnvironment(environment = process.env) {
   requireSecret(environment.PRINT_AGENT_TOKEN, "PRINT_AGENT_TOKEN", errors);
   requireValue(environment, "KIOSK_PRINTER_PORT", null, errors);
 
-  if (isTruthy(environment.PUSH_NOTIFICATIONS_ENABLED)) {
+  if (isEnabledFlag(environment.PUSH_NOTIFICATIONS_ENABLED)) {
     requireValue(environment, "NEXT_PUBLIC_VAPID_PUBLIC_KEY", null, errors);
     requireValue(environment, "VAPID_PRIVATE_KEY", null, errors);
     requireVapidSubject(environment.VAPID_SUBJECT, errors);
@@ -66,11 +66,11 @@ function validateLocalPostgresProduction(environment, errors, warnings) {
   requireValue(environment, "SUPABASE_AUTH_ENABLED", "0", errors);
   requireDatabaseUrl(environment.LOCAL_DATABASE_URL, errors, "LOCAL_DATABASE_URL");
 
-  if (isTruthy(environment.LOCAL_POSTGRES_ALLOW_LEGACY_FALLBACK)) {
+  if (isEnabledFlag(environment.LOCAL_POSTGRES_ALLOW_LEGACY_FALLBACK)) {
     errors.push("LOCAL_POSTGRES_ALLOW_LEGACY_FALLBACK precisa estar desativado em produção.");
   }
 
-  if (isTruthy(environment.LOCAL_PUBLIC_REGISTRATION_ENABLED)) {
+  if (isEnabledFlag(environment.LOCAL_PUBLIC_REGISTRATION_ENABLED)) {
     warnings.push("Cadastro público local está habilitado; use-o somente com verificação de e-mail implementada.");
   }
 }
@@ -131,7 +131,7 @@ function hasDemoUsers(value) {
   }
 }
 
-function isTruthy(value) {
+function isEnabledFlag(value) {
   return ["1", "true", "yes", "on"].includes(String(value || "").trim().toLowerCase());
 }
 

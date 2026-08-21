@@ -8,6 +8,8 @@ let pendingSkipTicketId = null;
 const callNextInFlight = new Set();
 const callNextFeedback = new Map();
 const STAFF_POLL_INTERVAL_MS = 5000;
+const CALL_HIGHLIGHT_DURATION_MS = 15000;
+let callHighlightExpiryTimer = null;
 
 initAttendant();
 
@@ -89,16 +91,15 @@ function applyStaffState(nextState) {
 
 function renderAttendant() {
   document.querySelector("#attendantSectors").innerHTML = staffState.sectors.map((sector) => {
-    const called = sector.tickets.filter((ticket) => ticket.status === "chamado");
-    const inService = sector.tickets.filter((ticket) => ticket.status === "em_atendimento");
-    const waiting = sector.tickets.filter((ticket) => ["aguardando", "proximo", "espera_inteligente", "standby"].includes(ticket.status));
-    const currentTicket = inService[0] || called[0] || null;
-    const hasActiveService = called.length > 0 || inService.length > 0;
+    const waiting = (sector.tickets || []).filter((ticket) => ["aguardando", "proximo", "espera_inteligente", "standby"].includes(ticket.status));
+    const recentCalls = sector.recentCalls || [];
+    const latestCall = latestRecentCall(recentCalls);
+    const callHighlight = isCallHighlightActive(latestCall) ? latestCall : null;
     const isCallingNext = callNextInFlight.has(sector.id);
-    const canCallNext = sector.status === "open" && !hasActiveService && waiting.length > 0 && !isCallingNext;
+    const canCallNext = sector.status === "open" && waiting.length > 0 && !isCallingNext;
     const callNextLabel = isCallingNext
-      ? "Chamando proxima senha..."
-      : hasActiveService ? "Aguardando finalizacao" : "Chamar proxima senha";
+      ? "Chamando próxima senha..."
+      : "Chamar próxima senha";
     const feedback = callNextFeedback.get(sector.id);
     return `
       <article class="ops-card">
@@ -109,26 +110,25 @@ function renderAttendant() {
           </div>
           <b class="status-pill ${escapeHtml(sector.status)}">${escapeHtml(statusLabel(sector.status))}</b>
         </div>
-        <div class="ops-metric ${currentTicket?.priority ? "priority-current" : ""}">
-          <span>Cliente atual</span>
-          <strong>${escapeHtml(currentTicket ? displayCustomerName(currentTicket) : "--")}</strong>
-          <small>${escapeHtml(currentTicket ? `${ticketStatusLabel(currentTicket.status)} - ${supportCode(currentTicket)}` : "Nenhuma chamada ativa")}</small>
-          ${currentTicket?.priority ? priorityBadgeMarkup("priority-large") : ""}
+        <div class="ops-call-panel ${callHighlight ? "call-highlight" : ""} ${callHighlight?.priority ? "priority-current" : ""}">
+          <div class="ops-call-panel-topline">
+            <span>${callHighlight ? "Última senha chamada" : "Próxima chamada"}</span>
+            <b>${waiting.length} ${waiting.length === 1 ? "senha na fila" : "senhas na fila"}</b>
+          </div>
+          <div class="ops-call-main">
+            <strong>${escapeHtml(callHighlight ? supportCode(callHighlight) : "--")}</strong>
+            <div>
+              <b>${escapeHtml(callHighlight ? displayCustomerName(callHighlight) : "Nenhuma senha em destaque")}</b>
+              <small>${escapeHtml(callHighlight ? `Chamada registrada às ${formatClock(callHighlight.createdAt)}` : "A fila está pronta para a próxima chamada")}</small>
+            </div>
+          </div>
+          ${callHighlight ? ticketTypeBadgeMarkup(callHighlight, "priority-large") : ""}
         </div>
-        <div class="ops-sync-line">
-          <span>App e balcao sincronizados</span>
-          <b>${escapeHtml(staffState.serverTime ? formatClock(staffState.serverTime) : "--")}</b>
-        </div>
-        <div class="ops-estimate-line">
-          <span>Tempo medio do setor</span>
-          <b>${escapeHtml(formatAverageService(sector))}</b>
-        </div>
-        <button class="blue-action compact-action" data-call-next="${escapeHtml(sector.id)}" data-online-required ${canCallNext ? "" : "disabled"}>${callNextLabel}</button>
+        <button class="blue-action ops-call-button" data-call-next="${escapeHtml(sector.id)}" data-online-required ${canCallNext ? "" : "disabled"}>${callNextLabel}</button>
+        ${!waiting.length ? `<p class="ops-call-note">Nenhuma senha aguardando neste setor.</p>` : ""}
         ${feedback ? `<p class="ops-action-feedback" role="alert">${escapeHtml(feedback)}</p>` : ""}
-        ${ticketSection("Chamadas", called)}
-        ${ticketSection("Em atendimento", inService)}
-        ${ticketSection("Fila", waiting)}
-        ${callHistory(sector.recentCalls || [])}
+        ${ticketSection("Fila", waiting, "ops-queue-section")}
+        ${callHistory(recentCalls)}
       </article>
     `;
   }).join("");
@@ -136,20 +136,12 @@ function renderAttendant() {
   document.querySelectorAll("[data-call-next]").forEach((button) => {
     button.addEventListener("click", () => callNext(button.dataset.callNext));
   });
-  document.querySelectorAll("[data-start-ticket]").forEach((button) => {
-    button.addEventListener("click", () => startTicket(button.dataset.startTicket));
-  });
-  document.querySelectorAll("[data-finish-ticket]").forEach((button) => {
-    button.addEventListener("click", () => finishTicket(button.dataset.finishTicket));
-  });
-  document.querySelectorAll("[data-skip-ticket]").forEach((button) => {
-    button.addEventListener("click", () => openSkipModal(button.dataset.skipTicket));
-  });
+  scheduleCallHighlightExpiry();
 }
 
-function ticketSection(title, tickets) {
+function ticketSection(title, tickets, extraClass = "") {
   return `
-    <section class="ops-ticket-section">
+    <section class="ops-ticket-section ${extraClass}">
       <h2>${title}</h2>
       ${tickets.length ? tickets.map(ticketRow).join("") : `<p class="ops-empty">Nenhuma senha.</p>`}
     </section>
@@ -161,25 +153,19 @@ function ticketRow(ticket) {
     <div class="ops-ticket-row ${ticket.priority ? "priority-ticket" : ""}">
       <div>
         <strong>${escapeHtml(displayCustomerName(ticket))}</strong>
-        ${ticket.priority ? priorityBadgeMarkup() : ""}
-        <span>${escapeHtml(ticket.sector)} - ${escapeHtml(ticketStatusLabel(ticket.status))} - ${escapeHtml(supportCode(ticket))}</span>
+        ${ticketTypeBadgeMarkup(ticket)}
+        <span>${escapeHtml(ticket.sector)} - ${escapeHtml(supportCode(ticket))}</span>
         <small>${escapeHtml(ticketDetailLine(ticket))}</small>
       </div>
-      ${ticketActions(ticket)}
     </div>
   `;
 }
 
 function ticketActions(ticket) {
-  if (ticket.status === "chamado") {
-    return `<div class="ops-ticket-actions"><button data-start-ticket="${escapeHtml(ticket.id)}" data-online-required>Iniciar</button><button class="danger-action" data-skip-ticket="${escapeHtml(ticket.id)}" data-online-required>Pular</button></div>`;
-  }
-  if (ticket.status === "em_atendimento") return `<button data-finish-ticket="${escapeHtml(ticket.id)}" data-online-required>Finalizar</button>`;
-  return `<div class="ops-ticket-actions"><small>${escapeHtml(`${ticket.position}º`)}</small><button class="danger-action" data-skip-ticket="${escapeHtml(ticket.id)}" data-online-required>Pular</button></div>`;
+  return "";
 }
 
 function ticketDetailLine(ticket) {
-  if (ticket.status === "chamado" || ticket.status === "em_atendimento") return "Atendimento atual no balcao";
   if (ticket.status === "standby") return `Standby por ausencia - ${formatStandbyTime(ticket)} restantes`;
   if (ticket.position === 1) return "Proxima senha da fila";
   return `${ticket.ahead} pessoas na frente - estimativa ${formatEstimateMinutes(ticket.secondsToCall)}`;
@@ -218,11 +204,11 @@ function formatStandbyTime(ticket) {
 
 function callHistory(items) {
   return `
-    <section class="ops-ticket-section call-history">
-      <h2>Ultimas chamadas</h2>
+    <section class="ops-ticket-section ops-call-history">
+      <h2>Últimas chamadas</h2>
       ${items.length ? items.map((item) => `
         <div class="history-row">
-          <span>${escapeHtml(item.customerName || "Cliente")} - ${escapeHtml(supportCode(item))} - ${escapeHtml(callActionLabel(item.action))}</span>
+          <span>${escapeHtml(item.customerName || "Cliente")} - ${escapeHtml(supportCode(item))} - ${escapeHtml(callActionLabel(item.action))} ${item.action === "senha_chamada" ? escapeHtml(item.priority ? "· preferencial" : "· comum") : ""}</span>
           <b>${escapeHtml(formatClock(item.createdAt))}</b>
         </div>
       `).join("") : `<p class="ops-empty">Nenhum registro recente.</p>`}
@@ -257,6 +243,35 @@ function priorityIcon() {
 
 function priorityBadgeMarkup(extraClass = "") {
   return `<em class="priority-badge ${extraClass}">${priorityIcon()}<span>PREFERENCIAL</span></em>`;
+}
+
+function ticketTypeBadgeMarkup(ticket, extraClass = "") {
+  return ticket?.priority
+    ? priorityBadgeMarkup(extraClass)
+    : `<em class="ticket-type-badge ${extraClass}">COMUM</em>`;
+}
+
+function latestRecentCall(items) {
+  return items.find((item) => item.action === "senha_chamada") || null;
+}
+
+function isCallHighlightActive(item) {
+  if (!item?.createdAt) return false;
+  const age = Date.now() - new Date(item.createdAt).getTime();
+  return Number.isFinite(age) && age >= 0 && age <= CALL_HIGHLIGHT_DURATION_MS;
+}
+
+function scheduleCallHighlightExpiry() {
+  clearTimeout(callHighlightExpiryTimer);
+  const expiresAt = staffState.sectors
+    .flatMap((sector) => (sector.recentCalls || []))
+    .filter((item) => item.action === "senha_chamada" && item.createdAt)
+    .map((item) => new Date(item.createdAt).getTime() + CALL_HIGHLIGHT_DURATION_MS)
+    .filter((value) => Number.isFinite(value) && value > Date.now())
+    .sort((left, right) => left - right)[0];
+  if (!expiresAt) return;
+  const delay = Math.max(50, expiresAt - Date.now() + 50);
+  callHighlightExpiryTimer = setTimeout(renderAttendant, delay);
 }
 
 async function callNext(sectorId) {
@@ -295,10 +310,20 @@ function applyCalledTicket(sectorId, ticket) {
         counterLabel: ticket.counterLabel || sector.counterLabel,
         serviceLabel: ticket.serviceLabel || sector.serviceLabel
       };
+      const recentCall = {
+        action: "senha_chamada",
+        customerName: calledTicket.customerName,
+        ticketNumber: calledTicket.ticketNumber,
+        ticket: calledTicket.ticket,
+        status: calledTicket.status,
+        priority: Boolean(calledTicket.priority),
+        createdAt: new Date().toISOString()
+      };
       return {
         ...sector,
         current: calledTicket.current || calledTicket.ticket || sector.current,
         currentCustomerName: calledTicket.currentCustomerName || calledTicket.customerName || sector.currentCustomerName || "",
+        recentCalls: [recentCall, ...(sector.recentCalls || []).filter((item) => item.ticket !== recentCall.ticket || item.action !== "senha_chamada")].slice(0, 6),
         tickets: [calledTicket, ...sector.tickets.filter((item) => item.id !== calledTicket.id)]
       };
     })

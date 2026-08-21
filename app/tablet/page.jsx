@@ -10,7 +10,7 @@ export default function TabletPage() {
   return (
     <>
       <HtmlTemplate fileName="tablet.html" />
-      <Script src="/tablet.js" strategy="afterInteractive" />
+      <Script src="/tablet.js?v=20260821-priority-direct" strategy="afterInteractive" />
     </>
   );
 }

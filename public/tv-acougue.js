@@ -37,7 +37,7 @@
     setConnection("loading", "Atualizando");
     try {
       const payload = await api("/api/display/state");
-      const sector = (payload.sectors || []).find((item) => item.id === "acougue") || payload.sectors?.[0];
+      const sector = payload.sectors?.[0];
       if (!sector) throw new Error("A fila do açougue ainda não está disponível.");
       renderQueue(sector);
       setConnection("online", "Online");

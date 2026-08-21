@@ -29,42 +29,27 @@
       </section>
 
       <section class="tablet-operation" id="tabletOperation" hidden>
-        <div class="tablet-heading">
-          <div><p class="tablet-eyebrow">Emissão digital</p><h1>Solicite sua senha</h1></div>
-          <p>Escolha o tipo de atendimento e o setor. A senha aparecerá na tela e não será impressa.</p>
+        <div class="tablet-heading tablet-type-heading">
+          <div><h1>Como você precisa ser atendido?</h1><p>Escolha apenas uma opção.</p></div>
         </div>
 
-        <div class="tablet-progress" aria-label="Etapas da solicitação">
-          <span class="active" data-tablet-progress="type">1 <small>Atendimento</small></span>
-          <span data-tablet-progress="priority">2 <small>Categoria</small></span>
-          <span data-tablet-progress="sector">3 <small>Setor</small></span>
-          <span data-tablet-progress="confirm">4 <small>Confirmar</small></span>
-        </div>
-
-        <section class="tablet-step" id="tabletStepType">
-          <div class="tablet-step-heading"><h2>Como você precisa ser atendido?</h2><p>Escolha uma opção para continuar.</p></div>
+        <section class="tablet-step tablet-type-step" id="tabletStepType">
           <div class="tablet-choice-grid">
             <button class="tablet-choice" type="button" data-tablet-type="normal"><strong>Atendimento normal</strong><span>Entre na fila comum do setor.</span></button>
             <button class="tablet-choice tablet-choice-priority" type="button" data-tablet-type="preferencial"><strong>Atendimento preferencial</strong><span>Para quem tem direito ao atendimento prioritário.</span></button>
           </div>
         </section>
 
-        <section class="tablet-step" id="tabletStepPriority" hidden>
+        <section class="tablet-step tablet-priority-step" id="tabletStepPriority" hidden>
           <div class="tablet-step-heading"><h2>Qual é a categoria preferencial?</h2><p>Selecione a categoria correspondente.</p></div>
           <div class="tablet-priority-grid" id="tabletPriorityOptions"></div>
           <button class="tablet-secondary" id="tabletBackToType" type="button">Voltar</button>
         </section>
 
-        <section class="tablet-step" id="tabletStepSector" hidden>
-          <div class="tablet-step-heading"><h2>Escolha o setor</h2><p>Selecione onde deseja ser atendido.</p></div>
-          <div class="tablet-sectors" id="tabletSectors" aria-live="polite"></div>
-          <div class="tablet-step-actions"><button class="tablet-secondary" id="tabletBackToTypeFromSector" type="button">Voltar</button><button class="tablet-primary" id="tabletContinueToConfirm" type="button" disabled>Continuar</button></div>
-        </section>
-
         <section class="tablet-step" id="tabletStepConfirm" hidden>
           <div class="tablet-step-heading"><h2>Confirme a solicitação</h2><p>Confira os dados antes de entrar na fila.</p></div>
           <div class="tablet-confirm" id="tabletConfirmSummary"></div>
-          <div class="tablet-step-actions"><button class="tablet-secondary" id="tabletBackToSector" type="button">Voltar</button><button class="tablet-primary" id="tabletIssueButton" type="button">Solicitar senha</button></div>
+          <div class="tablet-step-actions"><button class="tablet-secondary" id="tabletBackToSector" type="button">Voltar</button><button class="tablet-primary" id="tabletIssueButton" type="button">Emitir e imprimir senha</button></div>
         </section>
 
         <p class="tablet-feedback" id="tabletFeedback" role="alert" aria-live="assertive"></p>
@@ -72,8 +57,9 @@
 
       <section class="tablet-result" id="tabletResult" hidden aria-live="assertive">
         <p class="tablet-eyebrow">Solicitação concluída</p>
-        <h1>Sua senha digital</h1>
+        <h1>Sua senha</h1>
         <p class="tablet-result-copy">Acompanhe a chamada na tela do sistema ou pelo link de acompanhamento.</p>
+        <p class="tablet-print-state" id="tabletPrintStatus" aria-live="polite">Senha aguardando a impressora.</p>
         <div class="tablet-result-tickets" id="tabletResultTickets"></div>
         <button class="tablet-primary" id="tabletNewRequest" type="button">Nova solicitação</button>
       </section>

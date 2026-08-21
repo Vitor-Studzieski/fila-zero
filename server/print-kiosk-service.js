@@ -10,11 +10,14 @@ function loadKioskConfiguration(env = process.env) {
   const mode = ["central", "sector"].includes(String(env.KIOSK_MODE || "").trim().toLowerCase())
     ? String(env.KIOSK_MODE).trim().toLowerCase()
     : "central";
+  const configuredStoreCode = cleanId(env.KIOSK_STORE_CODE);
+  const storeCode = /^loja-[0-9]+$/.test(configuredStoreCode) ? configuredStoreCode : "loja-1";
   return {
     id: cleanId(env.KIOSK_ID) || DEFAULT_KIOSK_ID,
     name: cleanText(env.KIOSK_NAME, 120) || "Totem Supermercado Pompeia",
     appUrl: appUrl || DEFAULT_APP_URL,
     mode,
+    storeCode,
     sectorId: mode === "sector" ? cleanId(env.KIOSK_SECTOR_ID) : "",
     printerName: cleanText(env.KIOSK_PRINTER_NAME, 160) || "Bematech MP - 4200 TH",
     printerPort: cleanText(env.KIOSK_PRINTER_PORT, 40) || "COM3",

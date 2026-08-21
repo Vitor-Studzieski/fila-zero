@@ -1,10 +1,14 @@
 const PRIORITY_CATEGORIES = [
-  { id: "deficiencia_ou_mobilidade_reduzida", label: "Deficiência ou mobilidade reduzida", icon: "♿" },
-  { id: "tea", label: "Pessoa com TEA", icon: "🧩" },
-  { id: "idoso_60_mais", label: "Pessoa com 60 anos ou mais", icon: "🧓" },
-  { id: "gestante_ou_lactante", label: "Gestante ou lactante", icon: "🤰" },
-  { id: "crianca_de_colo", label: "Pessoa com criança de colo", icon: "👶" },
-  { id: "obesidade", label: "Pessoa com obesidade", icon: "🧍" }
+  { id: "idoso_60_mais", label: "Idosos acima de 60+ anos", image: "/assets/tablet-priority/idoso.jpg" },
+  { id: "crianca_de_colo", label: "Pessoas com criança de colo", image: "/assets/tablet-priority/crianca-de-colo.webp" },
+  { id: "gestante", label: "Gestantes", image: "/assets/tablet-priority/gestante.webp" },
+  { id: "deficiencia", label: "Pessoas com deficiência", image: "/assets/tablet-priority/acessibilidade.webp" },
+  { id: "deficiencia_oculta", label: "Deficiência ocultas", image: "/assets/tablet-priority/deficiencia-oculta.jpg" },
+  { id: "autismo", label: "Portadores de autismo", image: "/assets/tablet-priority/autismo.png" },
+  { id: "mobilidade_reduzida", label: "Pessoas com mobilidade reduzida", image: "/assets/tablet-priority/mobilidade-reduzida.jpg" },
+  { id: "comorbidades", label: "Pessoas com comorbidades", image: "/assets/tablet-priority/comorbidade.jpeg" },
+  { id: "doador_de_sangue", label: "Doadores de sangue", image: "/assets/tablet-priority/doador-de-sangue.png" },
+  { id: "fibromialgia", label: "Fibromialgia", image: "/assets/tablet-priority/fibromialgia.png" }
 ];
 
 const state = {
@@ -15,6 +19,10 @@ const state = {
   step: "type",
   inFlight: false,
   statusRequestInFlight: false,
+  issueIdempotencyKey: null,
+  printJobs: [],
+  printJobStatuses: new Map(),
+  printPollTimer: null,
   refreshTimer: null
 };
 
@@ -27,23 +35,18 @@ const elements = {
   result: document.querySelector("#tabletResult"),
   connection: document.querySelector("#tabletConnection"),
   feedback: document.querySelector("#tabletFeedback"),
-  sectors: document.querySelector("#tabletSectors"),
   priorityOptions: document.querySelector("#tabletPriorityOptions"),
   confirmSummary: document.querySelector("#tabletConfirmSummary"),
-  continueButton: document.querySelector("#tabletContinueToConfirm"),
   issueButton: document.querySelector("#tabletIssueButton"),
-  resultTickets: document.querySelector("#tabletResultTickets")
+  resultTickets: document.querySelector("#tabletResultTickets"),
+  printStatus: document.querySelector("#tabletPrintStatus")
 };
 
 document.querySelectorAll("[data-tablet-type]").forEach((button) => {
   button.addEventListener("click", () => selectServiceType(button.dataset.tabletType));
 });
 document.querySelector("#tabletBackToType")?.addEventListener("click", () => setStep("type"));
-document.querySelector("#tabletBackToTypeFromSector")?.addEventListener("click", () => setStep("type"));
-document.querySelector("#tabletBackToSector")?.addEventListener("click", () => setStep("sector"));
-elements.continueButton?.addEventListener("click", () => {
-  if (state.selectedSector) setStep("confirm");
-});
+document.querySelector("#tabletBackToSector")?.addEventListener("click", () => setStep("type"));
 elements.issueButton?.addEventListener("click", issueTicket);
 document.querySelector("#tabletNewRequest")?.addEventListener("click", resetOperation);
 document.querySelector("#tabletLogoutButton")?.addEventListener("click", logout);
@@ -62,6 +65,8 @@ async function loadStatus() {
     }
     if (!response.ok || payload.error) throw new Error(payload.error || "Não foi possível carregar os setores.");
     state.status = payload;
+    state.selectedSector = payload.sector || payload.sectors?.[0] || null;
+    if (!state.selectedSector) throw new Error("Esta conta não está vinculada a um setor aberto.");
     renderStatus();
     setConnection("online", "Tablet online");
   } catch (error) {
@@ -75,21 +80,20 @@ function renderStatus() {
   elements.error.hidden = true;
   elements.operation.hidden = false;
   elements.result.hidden = true;
-  renderSectors(state.status?.sectors || []);
   resetOperation();
   clearInterval(state.refreshTimer);
   state.refreshTimer = setInterval(refreshStatus, 2000);
 }
 
 async function refreshStatus() {
-  if (elements.operation.hidden || state.step !== "sector") return;
+  if (elements.operation.hidden) return;
   if (state.statusRequestInFlight) return;
   state.statusRequestInFlight = true;
   try {
     const response = await fetch("/api/tablet/status", { credentials: "same-origin", cache: "no-store" });
     if (!response.ok) return;
     state.status = await response.json();
-    renderSectors(state.status.sectors || []);
+    state.selectedSector = state.status.sector || state.status.sectors?.[0] || state.selectedSector;
   } catch {
     // A lista atual continua disponível até a próxima atualização.
   } finally {
@@ -97,32 +101,11 @@ async function refreshStatus() {
   }
 }
 
-function renderSectors(sectors) {
-  elements.sectors.innerHTML = "";
-  if (!sectors.length) {
-    elements.sectors.innerHTML = '<p class="tablet-empty">Nenhum setor está aberto neste momento.</p>';
-    return;
-  }
-  sectors.forEach((sector) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "tablet-sector";
-    button.dataset.sectorId = sector.id;
-    button.setAttribute("aria-pressed", "false");
-    button.innerHTML = [
-      `<span class="tablet-sector-prefix">${escapeHtml(sector.prefix || "")}</span>`,
-      `<span class="tablet-sector-copy"><strong>${escapeHtml(sector.name)}</strong><small>${Number(sector.queueSize || 0)} aguardando</small></span>`,
-      '<span class="tablet-sector-arrow" aria-hidden="true">→</span>'
-    ].join("");
-    button.addEventListener("click", () => selectSector(sector));
-    elements.sectors.append(button);
-  });
-}
-
 function renderPriorityOptions() {
   elements.priorityOptions.innerHTML = PRIORITY_CATEGORIES.map((category) => `
     <button class="tablet-priority" type="button" data-tablet-priority="${category.id}">
-      <span aria-hidden="true">${category.icon}</span><strong>${escapeHtml(category.label)}</strong>
+      <img class="tablet-priority-image" src="${category.image}" alt="" loading="lazy" />
+      <strong>${escapeHtml(category.label)}</strong>
     </button>
   `).join("");
   elements.priorityOptions.querySelectorAll("[data-tablet-priority]").forEach((button) => {
@@ -130,7 +113,7 @@ function renderPriorityOptions() {
       state.priorityReason = button.dataset.tabletPriority;
       elements.priorityOptions.querySelectorAll(".selected").forEach((item) => item.classList.remove("selected"));
       button.classList.add("selected");
-      setStep("sector");
+      issueTicket();
     });
   });
 }
@@ -138,31 +121,20 @@ function renderPriorityOptions() {
 function selectServiceType(type) {
   state.serviceType = type === "preferencial" ? "preferencial" : "normal";
   state.priorityReason = null;
-  state.selectedSector = null;
   document.querySelectorAll("[data-tablet-type]").forEach((button) => {
     button.classList.toggle("selected", button.dataset.tabletType === state.serviceType);
   });
   elements.priorityOptions.querySelectorAll(".selected").forEach((item) => item.classList.remove("selected"));
-  setStep(state.serviceType === "preferencial" ? "priority" : "sector");
-}
-
-function selectSector(sector) {
-  state.selectedSector = sector;
-  document.querySelectorAll(".tablet-sector").forEach((button) => {
-    const selected = button.dataset.sectorId === sector.id;
-    button.classList.toggle("selected", selected);
-    button.setAttribute("aria-pressed", String(selected));
-  });
-  elements.continueButton.disabled = false;
-  elements.feedback.textContent = "";
+  if (state.serviceType === "preferencial") setStep("priority");
+  else issueTicket();
 }
 
 function setStep(step) {
   state.step = step;
+  elements.operation.dataset.tabletStep = step;
   const steps = {
     type: document.querySelector("#tabletStepType"),
     priority: document.querySelector("#tabletStepPriority"),
-    sector: document.querySelector("#tabletStepSector"),
     confirm: document.querySelector("#tabletStepConfirm")
   };
   Object.entries(steps).forEach(([name, element]) => { element.hidden = name !== step; });
@@ -170,7 +142,6 @@ function setStep(step) {
     item.classList.toggle("active", item.dataset.tabletProgress === step);
   });
   if (step === "confirm") renderConfirmSummary();
-  elements.continueButton.disabled = !state.selectedSector;
   elements.feedback.textContent = "";
 }
 
@@ -187,31 +158,39 @@ function renderConfirmSummary() {
 async function issueTicket() {
   if (!state.selectedSector || state.inFlight) return;
   state.inFlight = true;
+  state.issueIdempotencyKey ||= createIdempotencyKey();
+  const requestButtons = document.querySelectorAll("[data-tablet-type], [data-tablet-priority]");
+  requestButtons.forEach((button) => { button.disabled = true; });
   elements.issueButton.disabled = true;
   elements.issueButton.textContent = "Solicitando...";
-  elements.feedback.textContent = "";
+  elements.feedback.textContent = "Emitindo e imprimindo...";
   try {
     const payload = await api("/api/tablet/tickets", {
       method: "POST",
       body: {
-        sectorIds: [state.selectedSector.id],
+        sectorId: state.selectedSector.id,
+        idempotencyKey: state.issueIdempotencyKey,
         priority: state.serviceType === "preferencial",
         priorityReason: state.priorityReason
       }
     });
-    renderResult(payload.tickets || []);
+    if (!payload.printJob?.id) throw new Error("A senha foi emitida, mas não entrou na fila de impressão.");
+    resetOperation();
   } catch (error) {
     elements.feedback.textContent = error.message;
   } finally {
+    requestButtons.forEach((button) => { button.disabled = false; });
     state.inFlight = false;
     elements.issueButton.disabled = false;
-    elements.issueButton.textContent = "Solicitar senha";
+    elements.issueButton.textContent = "Emitir e imprimir senha";
   }
 }
 
-function renderResult(tickets) {
+function renderResult(tickets, printJobs = []) {
   elements.operation.hidden = true;
   elements.result.hidden = false;
+  state.printJobs = printJobs;
+  state.printJobStatuses = new Map(printJobs.map((job) => [job.id, job.status || "pending"]));
   elements.resultTickets.innerHTML = tickets.map((ticket) => `
     <article class="tablet-ticket-card">
       <span>${escapeHtml(ticket.sector || "Setor")}</span>
@@ -219,13 +198,64 @@ function renderResult(tickets) {
       <small>${ticket.priority ? "Atendimento preferencial" : "Atendimento normal"}</small>
     </article>
   `).join("");
+  setPrintState();
+  if (printJobs.length) pollPrintJobs(printJobs.map((job) => job.id));
+}
+
+async function pollPrintJobs(jobIds) {
+  clearTimeout(state.printPollTimer);
+  const results = await Promise.all(jobIds.map(async (jobId) => {
+    try {
+      const payload = await api(`/api/tablet/print-jobs/${encodeURIComponent(jobId)}`);
+      return { jobId, status: payload.job?.status || "failed", error: payload.job?.lastError || "" };
+    } catch (error) {
+      return { jobId, status: "failed", error: error.message };
+    }
+  }));
+  if (elements.result.hidden) return;
+  results.forEach((result) => state.printJobStatuses.set(result.jobId, result.status));
+  setPrintState(results);
+  if (results.some((result) => ["pending", "printing"].includes(result.status))) {
+    state.printPollTimer = setTimeout(() => pollPrintJobs(jobIds), 1200);
+  }
+}
+
+function setPrintState(latestResults = []) {
+  if (!elements.printStatus) return;
+  const statuses = [...state.printJobStatuses.values()];
+  if (!statuses.length) {
+    elements.printStatus.textContent = "Senha emitida.";
+    elements.printStatus.dataset.state = "printed";
+    return;
+  }
+  const failed = statuses.includes("failed");
+  const status = failed
+    ? "failed"
+    : statuses.includes("printing")
+      ? "printing"
+      : statuses.includes("pending")
+        ? "pending"
+        : "printed";
+  const message = status === "failed"
+    ? latestResults.find((result) => result.status === "failed")?.error || "Falha na impressão. Solicite ajuda."
+    : {
+        pending: "Senha aguardando a impressora.",
+        printing: "Imprimindo sua senha...",
+        printed: "Senha impressa. Retire o papel."
+      }[status];
+  elements.printStatus.dataset.state = status;
+  elements.printStatus.textContent = message;
 }
 
 function resetOperation() {
+  clearTimeout(state.printPollTimer);
+  state.printPollTimer = null;
   state.serviceType = null;
   state.priorityReason = null;
-  state.selectedSector = null;
-  document.querySelectorAll("[data-tablet-type], .tablet-sector, .tablet-priority").forEach((item) => item.classList.remove("selected"));
+  state.issueIdempotencyKey = null;
+  state.printJobs = [];
+  state.printJobStatuses = new Map();
+  document.querySelectorAll("[data-tablet-type], .tablet-priority").forEach((item) => item.classList.remove("selected"));
   setStep("type");
   elements.result.hidden = true;
   elements.operation.hidden = false;
@@ -280,4 +310,9 @@ function getCookie(name) {
 
 function escapeHtml(value) {
   return String(value || "").replace(/[&<>'"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[character]));
+}
+
+function createIdempotencyKey() {
+  if (globalThis.crypto?.randomUUID) return `tablet-${globalThis.crypto.randomUUID()}`;
+  return `tablet-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }

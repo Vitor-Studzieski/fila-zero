@@ -9,7 +9,7 @@ const pageRoles = {
   "/admin/totens": ["manager", "admin"],
   "/admin/usuarios": ["manager", "admin"],
   "/iccf": ["manager", "admin"],
-  "/tablet": ["tablet"],
+  "/tablet": ["tablet", "attendant"],
   "/tv/acougue": ["tv"]
 };
 const legacyPageRedirects = {
@@ -51,7 +51,10 @@ export async function proxy(request) {
   // the next long-lived cookie refresh.
   const user = await loadCurrentUser(request);
   if (user && roles.includes(normalizeRole(user.role))) return NextResponse.next();
-  if (user) return NextResponse.redirect(new URL(roleHome(user), request.url));
+  if (user) {
+    if (pathname === "/tablet") return redirectToLogin(request, pathname);
+    return NextResponse.redirect(new URL(roleHome(user), request.url));
+  }
 
   return redirectToLogin(request, pathname);
 }
