@@ -180,6 +180,19 @@ test("migration fixa o totem fisico na Loja 2", () => {
   assert.match(migration, /store_code = 'loja-2'/i);
 });
 
+test("migration permite chamadas sucessivas e aplica prioridade 2:1", () => {
+  const migration = fs.readFileSync(
+    path.resolve(__dirname, "../supabase/migrations/20260821124657_attendant_multiple_calls_priority_cycle.sql"),
+    "utf8"
+  );
+  assert.match(migration, /drop index if exists public\.uq_tickets_active_call_sector/i);
+  assert.match(migration, /add column if not exists preferential_streak/i);
+  assert.match(migration, /create or replace function public\.call_next_ticket/i);
+  assert.match(migration, /v_counter\.preferential_streak/i);
+  assert.match(migration, /priority = v_target_priority/i);
+  assert.doesNotMatch(migration, /raise exception 'active_ticket_exists'/i);
+});
+
 test("emissao digital ignora configuracao antiga de QR e nao exige presenca", async () => {
   const port = 3400 + Math.floor(Math.random() * 300);
   const baseUrl = `http://127.0.0.1:${port}`;
