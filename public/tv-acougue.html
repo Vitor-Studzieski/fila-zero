@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TV do Açougue - SenhaHub</title>
+    <title>TV de atendimento - SenhaHub</title>
   </head>
   <body>
     <main class="tv-screen" id="tvScreen">
@@ -13,16 +13,24 @@
           <div><strong>SENHA<span>HUB</span></strong><small>Sua vez, sem filas.</small></div>
         </div>
         <div class="tv-header-meta">
-          <div class="tv-clock"><span aria-hidden="true">◷</span><time id="tvClock">--:--</time></div>
-          <div class="tv-date" id="tvDate">--</div>
-          <div class="tv-connection" id="tvConnection" data-state="loading"><span></span><b>Conectando</b></div>
+          <div class="tv-header-live">
+            <div class="tv-clock"><span aria-hidden="true">◷</span><time id="tvClock">--:--</time></div>
+            <div class="tv-weather" id="tvWeather" data-state="loading" aria-live="polite">
+              <span class="tv-weather-icon" id="tvWeatherIcon" aria-hidden="true">☁</span>
+              <div><strong id="tvWeatherTemperature">--°C</strong><small id="tvWeatherCondition">Consultando clima</small></div>
+            </div>
+          </div>
+          <div class="tv-header-details">
+            <div class="tv-date" id="tvDate">--</div>
+            <div class="tv-connection" id="tvConnection" data-state="loading"><span></span><b>Conectando</b></div>
+          </div>
         </div>
       </header>
 
       <section class="tv-content">
         <section class="tv-queue-area" aria-labelledby="tvQueueTitle">
           <div class="tv-queue-heading">
-            <div><p>Atendimento</p><h1 id="tvQueueTitle">Açougue</h1><span>Senhas em tempo real</span></div>
+            <div><p>Atendimento</p><h1 id="tvQueueTitle">--</h1><span id="tvQueueSubtitle">Senhas em tempo real</span></div>
             <div class="tv-queue-status">
               <div class="tv-queue-called">
                 <span class="tv-speaker" aria-hidden="true">◖))</span>
@@ -39,7 +47,7 @@
             </article>
 
             <article class="tv-queue-card tv-waiting-card">
-              <div class="tv-card-title"><span class="tv-card-icon tv-card-icon-wait">#</span><div><h2>Aguardando</h2><p>Próximas senhas do açougue</p></div></div>
+              <div class="tv-card-title"><span class="tv-card-icon tv-card-icon-wait">#</span><div><h2>Aguardando</h2><p id="tvWaitingSubtitle">Próximas senhas</p></div></div>
               <div class="tv-waiting-total"><strong id="tvWaitingCount">--</strong><span>pessoas na fila</span></div>
               <div class="tv-waiting-list" id="tvWaitingTickets"><div class="tv-empty-row">Consultando fila...</div></div>
             </article>
@@ -52,11 +60,25 @@
           </div>
         </section>
 
-        <aside class="tv-promo-area" aria-labelledby="tvPromoTitle">
-          <div class="tv-promo-topline"><span>Ofertas do dia</span><b>EXCLUSIVO AÇOUGUE</b></div>
-          <div class="tv-promo-heading"><span class="tv-promo-logo"><img src="/assets/mercado-pompeia-logo.jpg" alt="Logo do Supermercado Pompeia" /></span><div><h2 id="tvPromoTitle">Promoções<br /><em>imperdíveis!</em></h2><p>Cortes selecionados para deixar sua refeição ainda melhor.</p></div></div>
-          <div class="tv-promo-grid" id="tvPromotions"></div>
-          <div class="tv-promo-note"><span>✓</span><strong>Consulte a disponibilidade<br />no balcão do açougue.</strong></div>
+        <aside class="tv-media-area" aria-labelledby="tvMediaTitle">
+          <div class="tv-media-header">
+            <div><p>Comunicação Pompeia</p><h2 id="tvMediaTitle">Conteúdos da loja</h2><span>Vídeos institucionais e informativos</span></div>
+            <b class="tv-media-badge">PLAYLIST</b>
+          </div>
+          <div class="tv-video-stage" id="tvVideoStage" data-state="empty">
+            <video id="tvPlaylistVideo" playsinline muted preload="metadata" aria-label="Vídeo da playlist da loja"></video>
+            <div class="tv-video-placeholder" id="tvVideoPlaceholder">
+              <span class="tv-video-placeholder-icon" aria-hidden="true">▶</span>
+              <strong>Nenhum vídeo disponível</strong>
+              <small>Os conteúdos da loja aparecerão aqui.</small>
+            </div>
+            <div class="tv-video-overlay" aria-hidden="true"><span id="tvVideoLabel">Playlist da loja</span><b id="tvVideoCounter">--</b></div>
+          </div>
+          <div class="tv-playlist-panel">
+            <div class="tv-playlist-heading"><strong>Programação da tela</strong><small id="tvPlaylistStatus">Aguardando materiais</small></div>
+            <div class="tv-playlist-list" id="tvPlaylistList"><div class="tv-playlist-empty">Adicione vídeos à playlist para iniciar a reprodução.</div></div>
+          </div>
+          <p class="tv-media-feedback" id="tvMediaFeedback" role="status" aria-live="polite"></p>
         </aside>
       </section>
 

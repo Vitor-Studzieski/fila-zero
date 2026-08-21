@@ -5190,6 +5190,361 @@ textarea:focus {
   color: #64748b;
 }
 
+/* TV communication panel and weather */
+.tv-header-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tv-header-live,
+.tv-header-details {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: clamp(12px, 1.4vw, 24px);
+}
+
+.tv-header-live {
+  min-width: 0;
+}
+
+.tv-header-details {
+  gap: 14px;
+}
+
+.tv-header-details .tv-date {
+  width: auto;
+  margin-left: auto;
+}
+
+.tv-weather {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding-left: clamp(12px, 1.2vw, 22px);
+  border-left: 1px solid #e5eaf1;
+  text-align: left;
+}
+
+.tv-weather-icon {
+  display: grid;
+  place-items: center;
+  width: clamp(30px, 2.8vw, 48px);
+  height: clamp(30px, 2.8vw, 48px);
+  border-radius: 50%;
+  color: var(--tv-yellow);
+  background: #fff9df;
+  font-size: clamp(20px, 1.8vw, 32px);
+  line-height: 1;
+}
+
+.tv-weather[data-state="offline"] .tv-weather-icon {
+  color: #94a3b8;
+  background: #f1f5f9;
+}
+
+.tv-weather strong,
+.tv-weather small {
+  display: block;
+  white-space: nowrap;
+}
+
+.tv-weather strong {
+  color: var(--tv-navy);
+  font-size: clamp(15px, 1.2vw, 23px);
+  font-weight: 900;
+  line-height: 1;
+}
+
+.tv-weather small {
+  max-width: clamp(145px, 13vw, 230px);
+  margin-top: 4px;
+  overflow: hidden;
+  color: #64748b;
+  font-size: clamp(8px, .62vw, 12px);
+  font-weight: 700;
+  text-overflow: ellipsis;
+}
+
+.tv-media-area {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: clamp(14px, 1.25vw, 24px);
+  overflow: hidden;
+  padding: clamp(20px, 2.3vw, 46px) clamp(20px, 2.4vw, 48px) clamp(18px, 2vw, 38px);
+  border-left: 1px solid #e5eaf1;
+  background: #f8fafc;
+  color: var(--tv-navy);
+}
+
+.tv-media-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.tv-media-header p {
+  margin: 0 0 5px;
+  color: var(--tv-red);
+  font-size: clamp(9px, .7vw, 13px);
+  font-weight: 900;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.tv-media-header h2 {
+  margin: 0;
+  color: var(--tv-navy);
+  font-size: clamp(25px, 2.15vw, 42px);
+  letter-spacing: -.04em;
+  line-height: 1;
+}
+
+.tv-media-header span {
+  display: block;
+  margin-top: 7px;
+  color: #64748b;
+  font-size: clamp(10px, .75vw, 15px);
+  font-weight: 600;
+}
+
+.tv-media-badge {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border: 1px solid rgba(201, 35, 43, .22);
+  border-radius: 999px;
+  color: var(--tv-red);
+  font-size: clamp(8px, .58vw, 11px);
+  letter-spacing: .1em;
+}
+
+.tv-video-stage {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-height: clamp(220px, 32vh, 440px);
+  overflow: hidden;
+  border: 1px solid #dfe6ef;
+  border-radius: clamp(14px, 1vw, 22px);
+  background: #101b30;
+  box-shadow: 0 12px 26px rgba(23, 35, 59, .1);
+}
+
+.tv-video-stage video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: contain;
+  background: #101b30;
+}
+
+.tv-video-stage[data-state="empty"] video,
+.tv-video-stage[data-state="loading"] video {
+  visibility: hidden;
+}
+
+.tv-video-stage[data-orientation="portrait"] video {
+  object-fit: contain;
+}
+
+.tv-video-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px;
+  color: #fff;
+  text-align: center;
+  background: radial-gradient(circle at 50% 35%, rgba(60, 91, 139, .62), transparent 42%), #101b30;
+}
+
+.tv-video-placeholder[hidden] {
+  display: none;
+}
+
+.tv-video-placeholder-icon {
+  display: grid;
+  place-items: center;
+  width: clamp(46px, 4.3vw, 76px);
+  height: clamp(46px, 4.3vw, 76px);
+  padding-left: 4px;
+  border: 1px solid rgba(255, 255, 255, .24);
+  border-radius: 50%;
+  color: var(--tv-yellow);
+  background: rgba(255, 255, 255, .08);
+  font-size: clamp(20px, 2vw, 34px);
+}
+
+.tv-video-placeholder strong {
+  font-size: clamp(15px, 1.25vw, 24px);
+}
+
+.tv-video-placeholder small {
+  color: rgba(255, 255, 255, .68);
+  font-size: clamp(9px, .7vw, 13px);
+}
+
+.tv-video-overlay {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  color: #fff;
+  background: linear-gradient(transparent, rgba(4, 20, 50, .8));
+  font-size: clamp(9px, .68vw, 13px);
+  font-weight: 800;
+}
+
+.tv-video-overlay b {
+  color: var(--tv-yellow);
+}
+
+.tv-playlist-panel {
+  flex: 0 0 auto;
+  overflow: hidden;
+  border: 1px solid #dfe6ef;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.tv-playlist-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 14px;
+  border-bottom: 1px solid #e5eaf1;
+}
+
+.tv-playlist-heading strong {
+  color: var(--tv-navy);
+  font-size: clamp(11px, .8vw, 15px);
+}
+
+.tv-playlist-heading small {
+  color: #64748b;
+  font-size: clamp(8px, .58vw, 11px);
+  font-weight: 700;
+}
+
+.tv-playlist-list {
+  max-height: clamp(68px, 12vh, 126px);
+  overflow: auto;
+}
+
+.tv-playlist-item,
+.tv-playlist-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 34px;
+  padding: 7px 14px;
+  border-bottom: 1px solid #eef2f6;
+  color: #64748b;
+  font-size: clamp(9px, .65vw, 12px);
+}
+
+.tv-playlist-item:last-child,
+.tv-playlist-empty:last-child {
+  border-bottom: 0;
+}
+
+.tv-playlist-item > span {
+  color: #94a3b8;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.tv-playlist-item strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tv-navy);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tv-playlist-item small {
+  margin-left: auto;
+  color: #94a3b8;
+  font-size: .9em;
+}
+
+.tv-playlist-item.is-active {
+  background: #fff9df;
+}
+
+.tv-playlist-item.is-active > span,
+.tv-playlist-item.is-active strong {
+  color: var(--tv-red);
+}
+
+.tv-playlist-empty {
+  justify-content: center;
+  min-height: 54px;
+  padding: 12px 14px;
+  text-align: center;
+}
+
+.tv-media-feedback {
+  min-height: 12px;
+  margin: -5px 0 0;
+  color: #64748b;
+  font-size: clamp(8px, .58vw, 11px);
+  text-align: right;
+}
+
+@media (max-width: 1050px) {
+  .tv-header-live,
+  .tv-header-details {
+    justify-content: space-between;
+  }
+
+  .tv-media-area {
+    min-height: 560px;
+  }
+}
+
+@media (max-width: 680px) {
+  .tv-header-live,
+  .tv-header-details {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .tv-weather {
+    padding-left: 0;
+    border-left: 0;
+  }
+
+  .tv-header-details .tv-date {
+    margin-left: 0;
+  }
+
+  .tv-media-area {
+    min-height: 430px;
+  }
+
+  .tv-video-stage {
+    min-height: 230px;
+  }
+}
+
 /* Digital ticket tablet */
 .tablet-stage {
   min-height: 100vh;

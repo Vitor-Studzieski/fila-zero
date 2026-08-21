@@ -117,7 +117,7 @@ Simplificar o fluxo do atendente, melhorar a experiência do cliente, modernizar
 
 ## Onda 2 — Tela da TV
 
-### Sprint 2.1 — Clima ao lado do horário
+### Sprint 2.1 — Clima ao lado do horário ✅
 
 **Objetivo:** exibir o clima junto das informações de horário na TV.
 
@@ -136,7 +136,9 @@ Simplificar o fluxo do atendente, melhorar a experiência do cliente, modernizar
 
 **Esforço estimado:** M — Médio.
 
-### Sprint 2.2 — Estrutura para vídeos promocionais
+**Status:** concluída na tela de TV. O clima usa Pompéia/SP, exibe temperatura em °C, condição atualiza a cada 25 minutos e mostra fallback sem interromper a fila quando o serviço externo falha.
+
+### Sprint 2.2 — Estrutura para vídeos promocionais ✅
 
 **Objetivo:** preparar a TV para reproduzir vídeos promocionais e de divulgação utilizados pela Júlia nas redes sociais.
 
@@ -156,6 +158,8 @@ Simplificar o fluxo do atendente, melhorar a experiência do cliente, modernizar
 - É possível substituir ou reorganizar os vídeos.
 
 **Esforço estimado:** G — Grande.
+
+**Status:** estrutura concluída. A playlist fica em `public/data/tv-playlist.json`, aceita ordem, ativação, vídeos horizontais/verticais, loop automático e isolamento de erros por vídeo. A tela inicia sem materiais para não exibir produtos ou ofertas fictícias.
 
 ---
 
