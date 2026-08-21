@@ -366,6 +366,21 @@ test("logout revoga a sessao imediatamente", async () => {
   assert.equal(payload.user, null);
 });
 
+test("atendente consegue sair e o runtime Supabase aceita todos os perfis autenticados", async () => {
+  const cookie = await createStaffUser("logout-atendente", "attendant", ["acougue"]);
+  await api("/api/auth/logout", { method: "POST", cookie });
+
+  const response = await fetch(`${BASE_URL}/api/auth/me`, { headers: { cookie } });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).user, null);
+
+  const runtime = fs.readFileSync(path.resolve(__dirname, "../server/supabase-runtime.js"), "utf8");
+  const logoutStart = runtime.indexOf("async function logout(request)");
+  const meStart = runtime.indexOf("async function me(request)");
+  assert.ok(logoutStart >= 0 && meStart > logoutStart);
+  assert.match(runtime.slice(logoutStart, meStart), /requireUser\(request, AUTHENTICATED_ROLES\)/);
+});
+
 test("permite alterar senha informando senha atual", async () => {
   const email = `troca-senha-${crypto.randomUUID()}@${TEST_DOMAIN}`;
   const password = strongPassword();

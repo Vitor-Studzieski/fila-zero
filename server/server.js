@@ -1011,8 +1011,21 @@ async function handleApiInternal(req, res, url) {
       return;
     }
     const sessionNonce = crypto.randomBytes(24).toString("base64url");
-    db.prepare("UPDATE print_kiosks SET active = 1, session_nonce = ?, updated_at = ? WHERE id = ?")
-      .run(sessionNonce, isoNow(), KIOSK_CONFIGURATION.id);
+    db.prepare(`
+      UPDATE print_kiosks
+      SET active = 1,
+          mode = ?,
+          sector_id = ?,
+          session_nonce = ?,
+          updated_at = ?
+      WHERE id = ?
+    `).run(
+      KIOSK_CONFIGURATION.mode,
+      KIOSK_CONFIGURATION.sectorId || null,
+      sessionNonce,
+      isoNow(),
+      KIOSK_CONFIGURATION.id
+    );
     const session = createKioskSession(KIOSK_CONFIGURATION.id, AUTH_SECRET, Date.now(), sessionNonce);
     kioskCookies(session, !dev).forEach((cookie) => appendCookie(res, cookie));
     registerEvent("totem_vinculado", "kiosk", KIOSK_CONFIGURATION.id, null, null, { userId: user.id });

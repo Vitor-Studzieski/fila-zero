@@ -68,6 +68,7 @@ const QUEUE_WAITING_STATUSES = ["aguardando", "proximo", "espera_inteligente", "
 const CALL_BLOCKING_STATUSES = ["chamado", "em_atendimento"];
 const CUSTOMER_CANCELABLE_STATUSES = ["aguardando", "proximo", "chamado", "espera_inteligente", "standby"];
 const STAFF_SKIPPABLE_STATUSES = ["aguardando", "proximo", "chamado", "standby", "espera_inteligente"];
+const AUTHENTICATED_ROLES = ["customer", "attendant", "manager", "admin", "tablet", "tv"];
 const CUSTOMER_ROLES = ["customer", "manager", "admin"];
 const STAFF_ROLES = ["attendant", "manager", "admin"];
 const TABLET_ACCESS_ROLES = ["attendant", "tablet"];
@@ -553,7 +554,7 @@ async function registerCustomer(request) {
 }
 
 async function logout(request) {
-  const user = await requireUser(request, CUSTOMER_ROLES);
+  const user = await requireUser(request, AUTHENTICATED_ROLES);
   if (user.response) return user.response;
   if (!(await verifyCsrf(request, user))) return json({ error: "Token de seguranca invalido. Recarregue a pagina e tente novamente." }, 403);
   await revokeAuthSession(user.session_id);
@@ -729,6 +730,31 @@ async function observabilityRoute(request) {
   });
 }
 
+async function syncConfiguredKiosk(kiosk) {
+  if (!kiosk || kiosk.id !== KIOSK_CONFIGURATION.id) return kiosk;
+
+  const configuration = {
+    mode: KIOSK_CONFIGURATION.mode,
+    sector_id: KIOSK_CONFIGURATION.sectorId || null,
+    store_code: KIOSK_CONFIGURATION.storeCode
+  };
+  const isCurrent = kiosk.mode === configuration.mode
+    && (kiosk.sector_id || null) === configuration.sector_id
+    && (kiosk.store_code || null) === configuration.store_code;
+  if (isCurrent) return kiosk;
+
+  try {
+    const updated = await update("print_kiosks", kiosk.id, {
+      ...configuration,
+      updated_at: isoNow()
+    });
+    return updated || { ...kiosk, ...configuration };
+  } catch (error) {
+    console.error("kiosk_configuration_sync_failed", error);
+    return { ...kiosk, ...configuration };
+  }
+}
+
 async function kioskStatusRoute(request, sessionOverride = null) {
   const session = sessionOverride || verifyKioskSession(getCookie(request, "senhahub_kiosk"), AUTH_SECRET);
   const [user, kioskRows, sectors] = await Promise.all([
@@ -737,7 +763,7 @@ async function kioskStatusRoute(request, sessionOverride = null) {
     getSectors()
   ]);
   if (!session && !hasAnyRole(user, ADMIN_ROLES)) return json({ error: "Acesso do totem nao autorizado." }, 401);
-  const kiosk = kioskRows[0];
+  const kiosk = await syncConfiguredKiosk(kioskRows[0]);
   const openSectors = await kioskSectorDtos(sectors
     .filter((sector) => sector.status === "open")
     .filter((sector) => !kiosk || kioskCanAccessSector(kiosk, sector)));
@@ -812,7 +838,7 @@ async function createPhysicalTicketRoute(request) {
   const input = validatePhysicalTicketInput(body);
   if (input.error) return json(input, 400);
   const kioskRows = await select("print_kiosks", `id=eq.${encodeURIComponent(kiosk.kioskId)}&active=eq.true&limit=1`);
-  const configuredKiosk = kioskRows[0];
+  const configuredKiosk = await syncConfiguredKiosk(kioskRows[0]);
   if (!configuredKiosk) return json({ error: "Totem indisponivel." }, 400);
   if (!safeEqual(configuredKiosk.session_nonce, kiosk.sessionNonce)) return json({ error: "Sessao do totem revogada. Vincule o totem novamente." }, 401);
   const sector = await getSector(input.sectorId);
@@ -849,7 +875,7 @@ async function createPhysicalTicketBundleRoute(kiosk, body) {
   const input = validatePhysicalTicketBundleInput(body);
   if (input.error) return json(input, 400);
   const kioskRows = await select("print_kiosks", `id=eq.${encodeURIComponent(kiosk.kioskId)}&active=eq.true&limit=1`);
-  const configuredKiosk = kioskRows[0];
+  const configuredKiosk = await syncConfiguredKiosk(kioskRows[0]);
   if (!configuredKiosk) return json({ error: "Totem indisponivel." }, 400);
   if (!safeEqual(configuredKiosk.session_nonce, kiosk.sessionNonce)) return json({ error: "Sessao do totem revogada. Vincule o totem novamente." }, 401);
   if (configuredKiosk.mode === "sector") return json({ error: "Este totem permite apenas uma senha por vez." }, 400);
@@ -1252,10 +1278,10 @@ async function tabletTickets(request) {
     return json({ error: "Este tablet está configurado para outro setor." }, 403);
   }
 
-  const configuredKiosk = (await select(
+  const configuredKiosk = await syncConfiguredKiosk((await select(
     "print_kiosks",
     `id=eq.${encodeURIComponent(KIOSK_CONFIGURATION.id)}&active=eq.true&limit=1`
-  ))[0];
+  ))[0]);
   if (!kioskCanAccessSector(configuredKiosk, sector)) {
     return json({ error: "O totem desta loja ainda nao esta configurado." }, 503);
   }
@@ -1587,13 +1613,114 @@ async function notifyStandbyExpiringTickets() {
   }
 }
 
+function shouldUseCallNextCompatibility(error) {
+  const message = String(error || "").toLowerCase();
+  return message.includes("active_ticket_exists")
+    || message.includes("call_next_ticket")
+    || message.includes("preferential_streak");
+}
+
+async function recentPreferentialStreak(sectorId) {
+  const calls = await select(
+    "calls",
+    `sector_id=eq.${encodeURIComponent(sectorId)}&action=eq.senha_chamada&select=ticket_id&order=created_at.desc&limit=2`
+  );
+  const ticketIds = calls.map((call) => call.ticket_id).filter(Boolean);
+  if (!ticketIds.length) return 0;
+  const tickets = await select("tickets", `id=in.(${ticketIds.map(encodeURIComponent).join(",")})&select=id,priority`);
+  const priorities = new Map(tickets.map((ticket) => [ticket.id, Boolean(ticket.priority)]));
+  let streak = 0;
+  for (const call of calls) {
+    if (!priorities.get(call.ticket_id)) break;
+    streak += 1;
+  }
+  return Math.min(streak, 2);
+}
+
+async function callNextTicketCompatibility(sectorId, options = {}) {
+  const statuses = options.preferStandby
+    ? ["aguardando", "proximo", "standby"]
+    : ["aguardando", "proximo"];
+  const queue = await select(
+    "tickets",
+    `sector_id=eq.${encodeURIComponent(sectorId)}&status=in.(${statuses.map(encodeURIComponent).join(",")})`
+  );
+  const eligibleQueue = queue.filter((ticket) => (
+    !options.requireEligible
+      || new Date(ticket.eligible_at || ticket.created_at).getTime() <= Date.now()
+  ));
+  if (!eligibleQueue.length) return null;
+
+  const preferentialQueue = eligibleQueue.filter((ticket) => Boolean(ticket.priority));
+  const commonQueue = eligibleQueue.filter((ticket) => !Boolean(ticket.priority));
+  const preferentialStreak = await recentPreferentialStreak(sectorId);
+  const targetPriority = preferentialQueue.length
+    && (!commonQueue.length || preferentialStreak < 2);
+  const fallbackPriority = preferentialQueue.length && commonQueue.length
+    ? !targetPriority
+    : null;
+  const priorityOrder = [targetPriority, ...(fallbackPriority === null ? [] : [fallbackPriority])];
+  const orderedQueue = priorityOrder.flatMap((priority) => eligibleQueue
+    .filter((ticket) => Boolean(ticket.priority) === Boolean(priority))
+    .sort((left, right) => {
+      if (options.preferStandby && left.status !== right.status) {
+        return left.status === "standby" ? -1 : 1;
+      }
+      const queueOrder = Number(left.queue_order || 0) - Number(right.queue_order || 0);
+      if (queueOrder !== 0) return queueOrder;
+      return new Date(left.created_at).getTime() - new Date(right.created_at).getTime();
+    }));
+
+  for (const candidate of orderedQueue) {
+    const conflict = await getBlockingTicket(candidate);
+    if (conflict) {
+      const now = isoNow();
+      const moved = await updateTicketIfStatus(candidate.id, statuses, {
+        status: "espera_inteligente",
+        smart_wait_reason: `Cliente ja possui a senha ${conflict.code} em atendimento ou chamada.`,
+        blocked_by_ticket_id: conflict.id,
+        smart_wait_since: now,
+        updated_at: now
+      });
+      if (moved) {
+        await registerEvent("espera_inteligente_iniciada", "ticket", candidate.id, candidate.customer_id, candidate.sector_id, {
+          blockedByTicketId: conflict.id
+        });
+      }
+      continue;
+    }
+
+    const now = isoNow();
+    const called = await updateTicketIfStatus(candidate.id, statuses, {
+      status: "chamado",
+      called_at: now,
+      standby_started_at: null,
+      standby_expires_at: null,
+      updated_at: now
+    });
+    if (called) {
+      await insert("calls", {
+        ticket_id: called.id,
+        sector_id: called.sector_id,
+        action: "senha_chamada",
+        created_at: now
+      }, false);
+      return called;
+    }
+  }
+  return null;
+}
+
 async function callNextTicket(sectorId, options = {}) {
-  const called = await rpc("call_next_ticket", {
+  let called = await rpc("call_next_ticket", {
     p_sector_id: sectorId,
     p_require_eligible: Boolean(options.requireEligible),
     p_prefer_standby: Boolean(options.preferStandby)
   });
-  if (called.error) return fail("Não foi possível chamar a próxima senha.");
+  if (called?.error && shouldUseCallNextCompatibility(called.error)) {
+    called = await callNextTicketCompatibility(sectorId, options);
+  }
+  if (called?.error) return fail("Não foi possível chamar a próxima senha.");
   if (called?.id) {
     const pushType = Number(called.absence_count || 0) > 0 ? "queue_recalled" : "queue_called";
     const ticket = safeTicketDto(called);
