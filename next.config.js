@@ -17,6 +17,7 @@ const contentSecurityPolicy = [
   "font-src 'self' https://fonts.gstatic.com",
   "worker-src 'self'",
   "media-src 'self' https:",
+  "frame-src 'self' https://www.instagram.com",
   "manifest-src 'self'",
   "object-src 'none'",
   "base-uri 'self'",

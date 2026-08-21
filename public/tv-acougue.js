@@ -49,7 +49,8 @@
     playlistSignature: "",
     currentVideoIndex: -1,
     failedVideos: new Set(),
-    videoErrorHandled: false
+    videoErrorHandled: false,
+    mediaAdvanceTimer: null
   };
   const elements = {
     clock: document.querySelector("#tvClock"),
@@ -72,6 +73,7 @@
     feedback: document.querySelector("#tvFeedback"),
     videoStage: document.querySelector("#tvVideoStage"),
     video: document.querySelector("#tvPlaylistVideo"),
+    instagramFrame: document.querySelector("#tvInstagramFrame"),
     videoPlaceholder: document.querySelector("#tvVideoPlaceholder"),
     videoLabel: document.querySelector("#tvVideoLabel"),
     videoCounter: document.querySelector("#tvVideoCounter"),
@@ -88,6 +90,7 @@
     elements.video.addEventListener("error", handleVideoError);
     elements.video.addEventListener("loadeddata", handleVideoReady);
   }
+  if (elements.instagramFrame) elements.instagramFrame.addEventListener("load", handleInstagramReady);
   window.setInterval(updateClock, 1000);
   loadState();
   state.timer = window.setInterval(loadState, POLL_INTERVAL_MS);
@@ -198,11 +201,13 @@
           id: String(item.id || `video-${index + 1}`),
           title: String(item.title || `Vídeo ${index + 1}`).trim(),
           src: item.src.trim(),
+          type: item.type === "instagram" || isInstagramUrl(item.src) ? "instagram" : "video",
           orientation: item.orientation === "portrait" ? "portrait" : "landscape",
-          order: Number.isFinite(Number(item.order)) ? Number(item.order) : index
+          order: Number.isFinite(Number(item.order)) ? Number(item.order) : index,
+          durationSeconds: Math.max(15, Number(item.durationSeconds) || 30)
         }))
         .sort((left, right) => left.order - right.order);
-      const signature = playlist.map((item) => `${item.id}|${item.src}|${item.orientation}|${item.order}|${item.title}`).join("||");
+      const signature = playlist.map((item) => `${item.id}|${item.src}|${item.type}|${item.orientation}|${item.order}|${item.title}|${item.durationSeconds}`).join("||");
       if (signature === state.playlistSignature) return;
       state.playlistSignature = signature;
       state.playlist = playlist;
@@ -224,7 +229,7 @@
     }
     elements.playlistList.innerHTML = state.playlist.map((item, index) => `
       <div class="tv-playlist-item" data-video-id="${escapeHtml(item.id)}">
-        <span>${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(item.title)}</strong><small>${item.orientation === "portrait" ? "Vertical" : "Horizontal"}</small>
+        <span>${String(index + 1).padStart(2, "0")}</span><strong>${escapeHtml(item.title)}</strong><small>${item.type === "instagram" ? "Instagram" : (item.orientation === "portrait" ? "Vertical" : "Horizontal")}</small>
       </div>
     `).join("");
     if (elements.playlistStatus) elements.playlistStatus.textContent = `${state.playlist.length} ${state.playlist.length === 1 ? "vídeo ativo" : "vídeos ativos"}`;
@@ -244,15 +249,33 @@
     state.currentVideoIndex = nextIndex;
     const item = state.playlist[nextIndex];
     state.videoErrorHandled = false;
+    if (state.mediaAdvanceTimer) window.clearTimeout(state.mediaAdvanceTimer);
     if (elements.videoStage) {
       elements.videoStage.dataset.state = "loading";
       elements.videoStage.dataset.orientation = item.orientation;
+      elements.videoStage.dataset.mediaType = item.type;
     }
     if (elements.videoPlaceholder) elements.videoPlaceholder.hidden = true;
     if (elements.videoLabel) elements.videoLabel.textContent = item.title;
     if (elements.videoCounter) elements.videoCounter.textContent = `${nextIndex + 1}/${state.playlist.length}`;
     document.querySelectorAll(".tv-playlist-item").forEach((row) => row.classList.toggle("is-active", row.dataset.videoId === item.id));
+    const isInstagram = item.type === "instagram";
+    if (elements.video) {
+      elements.video.hidden = isInstagram;
+      elements.video.pause();
+      elements.video.removeAttribute("src");
+      elements.video.load();
+    }
+    if (elements.instagramFrame) {
+      elements.instagramFrame.hidden = !isInstagram;
+      elements.instagramFrame.src = isInstagram ? instagramEmbedUrl(item.src) : "about:blank";
+    }
+    if (isInstagram) {
+      state.mediaAdvanceTimer = window.setTimeout(playNextVideo, item.durationSeconds * 1000);
+      return;
+    }
     if (!elements.video) return;
+    elements.video.hidden = false;
     elements.video.src = item.src;
     elements.video.load();
     const playRequest = elements.video.play();
@@ -277,15 +300,25 @@
   }
 
   function handleVideoReady() {
-    if (elements.videoStage) elements.videoStage.dataset.state = "playing";
+    if (state.playlist[state.currentVideoIndex]?.type === "video" && elements.videoStage) elements.videoStage.dataset.state = "playing";
+  }
+
+  function handleInstagramReady() {
+    if (state.playlist[state.currentVideoIndex]?.type === "instagram" && elements.videoStage) elements.videoStage.dataset.state = "playing";
   }
 
   function showEmptyPlaylist(status) {
+    if (state.mediaAdvanceTimer) window.clearTimeout(state.mediaAdvanceTimer);
     if (elements.videoStage) elements.videoStage.dataset.state = "empty";
     if (elements.video) {
+      elements.video.hidden = false;
       elements.video.pause();
       elements.video.removeAttribute("src");
       elements.video.load();
+    }
+    if (elements.instagramFrame) {
+      elements.instagramFrame.hidden = true;
+      elements.instagramFrame.src = "about:blank";
     }
     if (elements.videoPlaceholder) elements.videoPlaceholder.hidden = false;
     if (elements.playlistStatus) elements.playlistStatus.textContent = status;
@@ -299,6 +332,15 @@
   function storeName(value) {
     const match = String(value || "").match(/loja[- ]?([12])/i);
     return match ? `Loja ${match[1]}` : "Loja Pompeia";
+  }
+
+  function isInstagramUrl(value) {
+    return /^https?:\/\/(www\.)?instagram\.com\/(p|reel|tv)\//i.test(String(value || "").trim());
+  }
+
+  function instagramEmbedUrl(value) {
+    const source = String(value || "").trim().replace(/\/+$/, "");
+    return `${source}/embed/`;
   }
 
   function setConnection(status, label) {

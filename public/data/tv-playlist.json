@@ -1,5 +1,16 @@
 {
   "version": 1,
   "loop": true,
-  "items": []
+  "items": [
+    {
+      "id": "instagram-db-p7ybiepq",
+      "title": "Conteúdo do Instagram",
+      "src": "https://www.instagram.com/p/Db_p7Ybiepq/",
+      "type": "instagram",
+      "active": true,
+      "order": 1,
+      "orientation": "portrait",
+      "durationSeconds": 30
+    }
+  ]
 }

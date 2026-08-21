@@ -159,7 +159,7 @@ Simplificar o fluxo do atendente, melhorar a experiência do cliente, modernizar
 
 **Esforço estimado:** G — Grande.
 
-**Status:** estrutura concluída. A playlist fica em `public/data/tv-playlist.json`, aceita ordem, ativação, vídeos horizontais/verticais, loop automático e isolamento de erros por vídeo. A tela inicia sem materiais para não exibir produtos ou ofertas fictícias.
+**Status:** estrutura concluída. A playlist fica em `public/data/tv-playlist.json`, aceita ordem, ativação, vídeos horizontais/verticais, embeds do Instagram, loop automático e isolamento de erros por vídeo. O primeiro conteúdo configurado usa o embed oficial do post informado, sem baixar ou versionar o vídeo.
 
 ---
 
