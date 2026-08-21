@@ -1,6 +1,23 @@
 (function initializeTotem() {
   const GENERAL_QR_URL = "https://senhahub.vercel.app/login?next=%2F";
   const RESULT_DISPLAY_MS = 4000;
+  // Novos tipos de atendimento podem ser adicionados aqui sem alterar a estrutura da tela.
+  const SERVICE_TYPES = [
+    {
+      id: "normal",
+      label: "Atendimento normal",
+      description: "Entre na fila comum do setor.",
+      marker: "N",
+      className: "totem-choice-normal"
+    },
+    {
+      id: "preferencial",
+      label: "Atendimento preferencial",
+      description: "Para quem tem direito ao atendimento prioritário.",
+      marker: "P",
+      className: "totem-choice-priority"
+    }
+  ];
   const PRIORITY_CATEGORIES = [
     { id: "deficiencia_ou_mobilidade_reduzida", label: "Pessoa com deficiência ou mobilidade reduzida", icon: "♿" },
     { id: "tea", label: "Pessoa com transtorno do espectro autista", icon: "♢" },
@@ -40,16 +57,13 @@
     flowDescription: document.querySelector("#totemFlowDescription"),
     generalQrCard: document.querySelector("#totemGeneralQrCard"),
     generalQr: document.querySelector("#totemGeneralQr"),
+    serviceOptions: document.querySelector("#totemServiceOptions"),
     typeStep: document.querySelector("#totemStepType"),
     sectorStep: document.querySelector("#totemStepSector"),
     priorityStep: document.querySelector("#totemStepPriority"),
-    issueStep: document.querySelector("#totemStepIssue"),
     priorityOptions: document.querySelector("#totemPriorityOptions"),
     sectorSelectionSummary: document.querySelector("#totemSectorSelectionSummary"),
     backToTypeFromSectorsButton: document.querySelector("#backToTypeFromSectorsButton"),
-    continueToIssueButton: document.querySelector("#continueToIssueButton"),
-    issueSummary: document.querySelector("#totemIssueSummary"),
-    backToSectorsButton: document.querySelector("#backToSectorsButton"),
     issueTicketsButton: document.querySelector("#issueTicketsButton"),
     backToType: document.querySelector("#backToTypeButton"),
     newTicketButton: document.querySelector("#newTicketButton"),
@@ -61,15 +75,11 @@
   };
 
   elements.pairButton?.addEventListener("click", pairKiosk);
-  elements.backToSectorsButton?.addEventListener("click", () => setStep("sector"));
   elements.backToType?.addEventListener("click", () => {
     state.priorityReason = null;
     state.selectedSectors = [];
     elements.priorityOptions?.querySelectorAll(".selected").forEach((item) => item.classList.remove("selected"));
     setStep("type");
-  });
-  elements.continueToIssueButton?.addEventListener("click", () => {
-    if (state.selectedSectors.length) setStep("issue");
   });
   elements.backToTypeFromSectorsButton?.addEventListener("click", () => {
     state.selectedSectors = [];
@@ -79,11 +89,9 @@
   });
   elements.issueTicketsButton?.addEventListener("click", issueTickets);
   elements.newTicketButton?.addEventListener("click", resetOperation);
-  document.querySelectorAll("[data-service-type]").forEach((button) => {
-    button.addEventListener("click", () => selectServiceType(button.dataset.serviceType));
-  });
   window.addEventListener("online", loadStatus);
   window.addEventListener("offline", () => setConnection("offline", "Sem internet"));
+  renderServiceOptions();
   renderPriorityOptions();
   loadStatus();
 
@@ -138,7 +146,7 @@
     state.printJobs = [];
     state.printJobStatuses = new Map();
     state.issueInFlight = false;
-    document.querySelectorAll("[data-service-type], #totemPriorityOptions .selected").forEach((button) => button.classList.remove("selected"));
+    document.querySelectorAll("#totemServiceOptions .selected, #totemPriorityOptions .selected").forEach((button) => button.classList.remove("selected"));
     setStep("type");
   }
 
@@ -219,19 +227,21 @@
       button.classList.toggle("selected", selected);
       button.setAttribute("aria-pressed", String(selected));
     });
-    if (!elements.sectorSelectionSummary || !elements.continueToIssueButton) return;
+    if (!elements.sectorSelectionSummary || !elements.issueTicketsButton) return;
     const count = state.selectedSectors.length;
     elements.sectorSelectionSummary.textContent = count
       ? `${count} ${count === 1 ? "setor selecionado" : "setores selecionados"}`
       : "Nenhum setor selecionado";
-    elements.continueToIssueButton.disabled = count === 0;
+    elements.issueTicketsButton.disabled = state.issueInFlight || !count || !state.serviceType || (state.serviceType === "preferencial" && !state.priorityReason);
   }
 
   function selectServiceType(type) {
-    state.serviceType = type === "preferencial" ? "preferencial" : "normal";
+    const serviceType = SERVICE_TYPES.find((item) => item.id === type);
+    if (!serviceType) return;
+    state.serviceType = serviceType.id;
     state.priorityReason = null;
     state.selectedSectors = [];
-    document.querySelectorAll("[data-service-type]").forEach((button) => {
+    document.querySelectorAll("#totemServiceOptions [data-service-type]").forEach((button) => {
       button.classList.toggle("selected", button.dataset.serviceType === state.serviceType);
     });
     elements.priorityOptions?.querySelectorAll(".selected").forEach((item) => item.classList.remove("selected"));
@@ -242,10 +252,24 @@
   function continueAfterServiceSelection() {
     if (state.mode === "sector") {
       state.selectedSectors = state.selectedSector ? [state.selectedSector] : [];
-      setStep("issue");
+      issueTickets();
       return;
     }
     setStep("sector");
+  }
+
+  function renderServiceOptions() {
+    if (!elements.serviceOptions) return;
+    elements.serviceOptions.innerHTML = SERVICE_TYPES.map((service) => `
+      <button class="totem-choice ${service.className || ""}" type="button" data-service-type="${service.id}" aria-describedby="totem-service-${service.id}-description">
+        <span class="totem-choice-marker" aria-hidden="true">${service.marker}</span>
+        <span class="totem-choice-content"><strong>${escapeHtml(service.label)}</strong><span id="totem-service-${service.id}-description">${escapeHtml(service.description)}</span></span>
+        <span class="totem-choice-arrow" aria-hidden="true">&#8594;</span>
+      </button>
+    `).join("");
+    elements.serviceOptions.querySelectorAll("[data-service-type]").forEach((button) => {
+      button.addEventListener("click", () => selectServiceType(button.dataset.serviceType));
+    });
   }
 
   function renderPriorityOptions() {
@@ -269,8 +293,7 @@
     const steps = {
       type: elements.typeStep,
       priority: elements.priorityStep,
-      sector: elements.sectorStep,
-      issue: elements.issueStep
+      sector: elements.sectorStep
     };
     Object.entries(steps).forEach(([name, element]) => {
       if (!element) return;
@@ -280,28 +303,11 @@
     const copy = {
       type: ["Escolha o atendimento", "Escolha atendimento normal ou preferencial."],
       priority: ["Categoria preferencial", "Selecione a categoria que corresponde à sua necessidade."],
-      sector: ["Escolha os setores", "Selecione um ou mais setores para receber suas senhas."],
-      issue: ["Emitir senha", "Confirme os setores selecionados para imprimir suas senhas."]
+      sector: ["Escolha os setores", "Selecione um ou mais setores e retire sua senha."]
     }[step] || ["Retire sua senha", "Escolha como deseja ser atendido."];
     elements.flowTitle.textContent = copy[0];
     elements.flowDescription.textContent = copy[1];
     renderSectorSelection();
-    renderIssueSummary();
-  }
-
-  function renderIssueSummary() {
-    if (!elements.issueSummary) return;
-    const category = PRIORITY_CATEGORIES.find((item) => item.id === state.priorityReason);
-    const serviceLabel = state.serviceType === "preferencial" ? "Atendimento preferencial" : "Atendimento normal";
-    const sectorItems = state.selectedSectors.map((sector) => `
-      <div class="totem-issue-summary-item"><span>${escapeHtml(sector.prefix || "")}</span><strong>${escapeHtml(sector.name)}</strong></div>
-    `).join("");
-    elements.issueSummary.innerHTML = [
-      `<div class="totem-confirm-card"><div><span>Tipo de atendimento</span><strong>${escapeHtml(serviceLabel)}</strong></div>`,
-      state.serviceType === "preferencial" ? `<div><span>Categoria</span><strong>${escapeHtml(category?.label || "Não selecionada")}</strong></div>` : "",
-      `<div><span>Setores selecionados</span><strong>${state.selectedSectors.length}</strong></div></div>`,
-      `<div class="totem-issue-sectors">${sectorItems || "<p>Nenhum setor selecionado.</p>"}</div>`
-    ].join("");
     if (elements.issueTicketsButton) {
       elements.issueTicketsButton.disabled = state.issueInFlight || !state.selectedSectors.length || !state.serviceType || (state.serviceType === "preferencial" && !state.priorityReason);
     }
@@ -329,7 +335,6 @@
     state.issueInFlight = true;
     elements.issueTicketsButton.disabled = true;
     elements.issueTicketsButton.textContent = "Emitindo...";
-    renderIssueSummary();
     try {
       const body = {
         idempotencyKey: createIdempotencyKey(),
@@ -355,7 +360,7 @@
       state.issueInFlight = false;
       elements.issueTicketsButton.textContent = "Emitir senha";
       if (!elements.result.hidden) return;
-      renderIssueSummary();
+      renderSectorSelection();
     }
   }
 
