@@ -170,6 +170,16 @@ test("migration do totem protege fila de impressao e funcoes do agente", () => {
   assert.match(migration, /alter table public\.services alter column customer_id drop not null/i);
 });
 
+test("migration fixa o totem fisico na Loja 2", () => {
+  const migration = fs.readFileSync(
+    path.resolve(__dirname, "../supabase/migrations/20260821121101_kiosk_store_2.sql"),
+    "utf8"
+  );
+  assert.match(migration, /update public\.print_kiosks/i);
+  assert.match(migration, /where id = 'totem-pompeia-01'/i);
+  assert.match(migration, /store_code = 'loja-2'/i);
+});
+
 test("emissao digital ignora configuracao antiga de QR e nao exige presenca", async () => {
   const port = 3400 + Math.floor(Math.random() * 300);
   const baseUrl = `http://127.0.0.1:${port}`;

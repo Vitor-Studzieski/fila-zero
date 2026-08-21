@@ -6,7 +6,7 @@ const path = require("node:path");
 const test = require("node:test");
 
 const { buildTicketReceipt } = require("../server/escpos-receipt");
-const { printJobDto } = require("../server/print-kiosk-service");
+const { loadKioskConfiguration, printJobDto } = require("../server/print-kiosk-service");
 const { assertPrintableJob, processJob, receiptPayload } = require("../scripts/print-agent");
 const { SerialPrinter, queryStatus } = require("../scripts/print-agent/serial-printer");
 const {
@@ -138,6 +138,14 @@ test("carrega configuracao local sem sobrescrever variaveis do processo", () => 
     process.env = previous;
     fs.rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test("mantem o totem Pompeia na Loja 2 mesmo com configuracao antiga", () => {
+  const configuration = loadKioskConfiguration({
+    KIOSK_ID: "totem-pompeia-01",
+    KIOSK_STORE_CODE: "loja-1"
+  });
+  assert.equal(configuration.storeCode, "loja-2");
 });
 
 test("usa a porta configurada pelo agente ao criar a impressora", () => {

@@ -2,18 +2,22 @@ const crypto = require("node:crypto");
 
 const KIOSK_SESSION_SECONDS = 60 * 60 * 24 * 30;
 const DEFAULT_KIOSK_ID = "totem-pompeia-01";
+const DEFAULT_KIOSK_STORE_CODE = "loja-2";
 const DEFAULT_INSTALL_URL = "https://senhahub.vercel.app/instalar";
 const DEFAULT_APP_URL = "https://senhahub.vercel.app";
 
 function loadKioskConfiguration(env = process.env) {
+  const kioskId = cleanId(env.KIOSK_ID) || DEFAULT_KIOSK_ID;
   const appUrl = normalizeHttpsUrl(env.PUBLIC_APP_URL) || "https://senhahub.vercel.app";
   const mode = ["central", "sector"].includes(String(env.KIOSK_MODE || "").trim().toLowerCase())
     ? String(env.KIOSK_MODE).trim().toLowerCase()
     : "central";
   const configuredStoreCode = cleanId(env.KIOSK_STORE_CODE);
-  const storeCode = /^loja-[0-9]+$/.test(configuredStoreCode) ? configuredStoreCode : "loja-1";
+  const storeCode = kioskId === DEFAULT_KIOSK_ID
+    ? DEFAULT_KIOSK_STORE_CODE
+    : (/^loja-[0-9]+$/.test(configuredStoreCode) ? configuredStoreCode : "loja-1");
   return {
-    id: cleanId(env.KIOSK_ID) || DEFAULT_KIOSK_ID,
+    id: kioskId,
     name: cleanText(env.KIOSK_NAME, 120) || "Totem Supermercado Pompeia",
     appUrl: appUrl || DEFAULT_APP_URL,
     mode,
