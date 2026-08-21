@@ -77,7 +77,7 @@ test("totem exibe o QR geral separado do QR individual da senha", () => {
   assert.doesNotMatch(html, /Acompanhe sua posição pelo celular/);
   assert.doesNotMatch(html, /Escaneie o QR Code para acompanhar sua fila/);
   assert.match(html, /id="backToTypeFromSectorsButton"/);
-  assert.match(page, /const TOTEM_ASSET_VERSION = "2026\.08\.21\.3"/);
+  assert.match(page, /const TOTEM_ASSET_VERSION = "2026\.08\.21\.4"/);
   assert.match(page, /`\/totem\.js\?v=\$\{TOTEM_ASSET_VERSION\}`/);
   assert.match(html, /id="issueTicketsButton"/);
   assert.match(html, /id="resultTickets"/);
@@ -92,6 +92,7 @@ test("totem exibe o QR geral separado do QR individual da senha", () => {
   assert.match(html, /data-progress-step="sector">3 <small>Setores<\/small>/);
   assert.doesNotMatch(html, /data-progress-step="issue"/);
   assert.match(html, /id="totemServiceOptions"/);
+  assert.match(html, /class="totem-step totem-priority-step"/);
   assert.ok(html.indexOf('id="totemStepType"') < html.indexOf('id="totemStepSector"'));
   assert.match(script, /kiosk\?\.appUrl/);
   assert.match(script, /senhahub\.vercel\.app\/login\?next=%2F/);
@@ -103,6 +104,8 @@ test("totem exibe o QR geral separado do QR individual da senha", () => {
   assert.match(script, /continueAfterServiceSelection/);
   assert.match(script, /const SERVICE_TYPES = \[/);
   assert.match(script, /function renderServiceOptions\(\)/);
+  assert.match(script, /tablet-priority\/idoso\.jpg/);
+  assert.match(script, /tablet-priority\/fibromialgia\.png/);
   assert.match(script, /body\.sectorIds = sectors\.map/);
   assert.match(script, /const tickets = result\.tickets \|\|/);
   assert.match(script, /function pollPrintJobs\(jobIds\)/);

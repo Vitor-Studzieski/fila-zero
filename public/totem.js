@@ -19,12 +19,16 @@
     }
   ];
   const PRIORITY_CATEGORIES = [
-    { id: "deficiencia_ou_mobilidade_reduzida", label: "Pessoa com deficiência ou mobilidade reduzida", icon: "♿" },
-    { id: "tea", label: "Pessoa com transtorno do espectro autista", icon: "♢" },
-    { id: "idoso_60_mais", label: "Pessoa idosa (60 anos ou mais)", icon: "♙" },
-    { id: "gestante_ou_lactante", label: "Gestante ou lactante", icon: "♡" },
-    { id: "crianca_de_colo", label: "Pessoa com criança de colo", icon: "♧" },
-    { id: "obesidade", label: "Pessoa com obesidade", icon: "＋" }
+    { id: "idoso_60_mais", label: "Idosos acima de 60+ anos", image: "/assets/tablet-priority/idoso.jpg" },
+    { id: "crianca_de_colo", label: "Pessoas com criança de colo", image: "/assets/tablet-priority/crianca-de-colo.webp" },
+    { id: "gestante", label: "Gestantes", image: "/assets/tablet-priority/gestante.webp" },
+    { id: "deficiencia", label: "Pessoas com deficiência", image: "/assets/tablet-priority/acessibilidade.webp" },
+    { id: "deficiencia_oculta", label: "Deficiência ocultas", image: "/assets/tablet-priority/deficiencia-oculta.jpg" },
+    { id: "autismo", label: "Portadores de autismo", image: "/assets/tablet-priority/autismo.png" },
+    { id: "mobilidade_reduzida", label: "Pessoas com mobilidade reduzida", image: "/assets/tablet-priority/mobilidade-reduzida.jpg" },
+    { id: "comorbidades", label: "Pessoas com comorbidades", image: "/assets/tablet-priority/comorbidade.jpeg" },
+    { id: "doador_de_sangue", label: "Doadores de sangue", image: "/assets/tablet-priority/doador-de-sangue.png" },
+    { id: "fibromialgia", label: "Fibromialgia", image: "/assets/tablet-priority/fibromialgia.png" }
   ];
   const state = {
     status: null,
@@ -275,7 +279,8 @@
   function renderPriorityOptions() {
     elements.priorityOptions.innerHTML = PRIORITY_CATEGORIES.map((category) => `
       <button class="totem-priority-option" type="button" data-priority-category="${category.id}">
-        <span aria-hidden="true">${category.icon}</span><strong>${escapeHtml(category.label)}</strong>
+        <img class="totem-priority-image" src="${category.image}" alt="" loading="lazy" />
+        <strong>${escapeHtml(category.label)}</strong>
       </button>
     `).join("");
     elements.priorityOptions.querySelectorAll("[data-priority-category]").forEach((button) => {
@@ -290,6 +295,7 @@
 
   function setStep(step) {
     state.currentStep = step;
+    elements.operation.dataset.totemStep = step;
     const steps = {
       type: elements.typeStep,
       priority: elements.priorityStep,

@@ -4896,6 +4896,10 @@ textarea:focus {
   --tv-yellow: #f4c400;
   --tv-red: #c9232b;
   --tv-paper: #ffffff;
+  width: 100vw;
+  height: 100vh;
+  min-height: 100vh;
+  max-height: 100vh;
   background: #ffffff;
   color: var(--tv-navy);
 }
@@ -4970,9 +4974,12 @@ textarea:focus {
 
 .tv-content {
   background: #ffffff;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .tv-queue-area {
+  min-height: 0;
   background: #ffffff;
   color: var(--tv-navy);
 }
@@ -5278,6 +5285,7 @@ textarea:focus {
 .tv-media-area {
   display: flex;
   flex-direction: column;
+  min-height: 0;
   min-width: 0;
   gap: clamp(14px, 1.25vw, 24px);
   overflow: hidden;
@@ -5333,7 +5341,7 @@ textarea:focus {
   position: relative;
   display: flex;
   flex: 1 1 auto;
-  min-height: clamp(220px, 32vh, 440px);
+  min-height: 0;
   overflow: hidden;
   border: 1px solid #dfe6ef;
   border-radius: clamp(14px, 1vw, 22px);
@@ -10204,6 +10212,126 @@ textarea:focus {
   .totem-install-qr {
     width: 112px;
     height: 112px;
+  }
+}
+
+/* Tela preferencial do totem alinhada ao padrão visual do tablet. */
+.totem-operation[data-totem-step="priority"] .totem-heading {
+  display: none;
+}
+
+.totem-operation[data-totem-step="priority"] .totem-progress {
+  display: none;
+}
+
+.totem-operation[data-totem-step="priority"] {
+  padding-top: 24px;
+}
+
+.totem-priority-step {
+  border: 3px solid #092d91;
+  border-radius: 20px;
+  background: #f2bd00;
+  box-shadow: 0 16px 40px rgb(20 34 56 / 10%);
+}
+
+.totem-priority-step .totem-step-heading h2 {
+  color: #092d91;
+  font-size: clamp(24px, 3vw, 32px);
+}
+
+.totem-priority-step .totem-step-heading p {
+  color: #17223c;
+}
+
+.totem-priority-step .totem-priority-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.totem-priority-step .totem-priority-option {
+  display: grid;
+  min-height: 174px;
+  align-content: center;
+  justify-items: center;
+  gap: 6px;
+  border-color: transparent;
+  border-radius: 14px;
+  padding: 8px 6px;
+  background: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+.totem-priority-step .totem-priority-option:hover,
+.totem-priority-step .totem-priority-option.selected {
+  border-color: #092d91;
+  box-shadow: 0 8px 18px rgb(9 45 145 / 18%);
+  transform: none;
+}
+
+.totem-priority-image {
+  width: 120px;
+  height: 120px;
+  border-radius: 16px;
+  background: #092d91;
+  object-fit: cover;
+}
+
+.totem-priority-step .totem-priority-option strong {
+  color: #101010;
+  font-size: 10px;
+  line-height: 1.1;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+.totem-priority-step .totem-secondary {
+  border-color: #092d91;
+  background: #092d91;
+  color: #ffffff;
+}
+
+@media (max-width: 760px) {
+  .totem-priority-step .totem-priority-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .totem-priority-step .totem-priority-option {
+    min-height: 152px;
+    padding: 8px 5px;
+  }
+
+  .totem-priority-image {
+    width: 78px;
+    height: 78px;
+  }
+
+  .totem-priority-step .totem-priority-option strong {
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 520px) {
+  .totem-priority-step .totem-priority-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .totem-priority-step .totem-priority-option {
+    min-height: 144px;
+    padding: 10px;
+  }
+
+  .totem-priority-image {
+    width: 82px;
+    height: 82px;
+  }
+
+  .totem-priority-step .totem-priority-option strong {
+    font-size: 10px;
   }
 }
 

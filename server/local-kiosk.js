@@ -26,7 +26,15 @@ const PRIORITY_REASONS = new Set([
   "idoso_60_mais",
   "gestante_ou_lactante",
   "crianca_de_colo",
-  "obesidade"
+  "obesidade",
+  "gestante",
+  "deficiencia",
+  "deficiencia_oculta",
+  "autismo",
+  "mobilidade_reduzida",
+  "comorbidades",
+  "doador_de_sangue",
+  "fibromialgia"
 ]);
 
 function localKioskSecret(environment = process.env) {
